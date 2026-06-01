@@ -1,1 +1,43 @@
+const express = require('express');
+const Anthropic = require('@anthropic-ai/sdk');
 
+const app = express();
+app.use(express.json());
+
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
+let signals = [];
+let stats = {
+  wins: 0,
+  losses: 0,
+  pnl: 0,
+  todaySignals: 0
+};
+
+const SYMBOLS = [
+  'EURUSD',
+  'GBPUSD',
+  'USDJPY',
+  'USDCAD',
+  'USDCHF',
+  'AUDUSD',
+  'NZDUSD',
+  'EURJPY',
+  'GBPJPY',
+  'AUDJPY',
+  'EURGBP',
+  'EURAUD',
+  'EURCAD',
+app.get('/', (req, res) => {
+  res.send('SCALP.BOT ONLINE');
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('SCALP.BOT ONLINE PORT ' + PORT);
+});
+  'GBPAUD',
+  'GBPCAD'
+];
