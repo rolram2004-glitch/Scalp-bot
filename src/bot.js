@@ -1,80 +1,110 @@
-const config = require("./config");
-const oanda = require("./oanda");
-const { analyzeMarket } = require("./strategy");
+const config = require(”./config”);
+const oanda = require(”./oanda”);
+const { analyzeMarket } = require(”./strategy”);
 
 class ScalpingBot {
-  constructor() {
-    this.running = false;
+constructor() {
+this.running = false;
+}
+
+async scanSymbol(symbol) {
+try {
+console.log(📊 Analisi ${symbol});
+
+  const candles = await oanda.getCandles(symbol, 250);
+  if (!candles || candles.length < 200) {
+    return;
   }
-
-  async scanSymbol(symbol) {
-    try {
-      console.log(`📊 Analisi ${symbol}`);
-
-      const candles = await oanda.getCandles(symbol, 250);
-
-      if (!candles || candles.length < 200) {
-        return;
-      }
-
-      const priceData = await oanda.getPrice(symbol);
-
-      if (!priceData) {
-        return;
-      }
-
-      const spread =
-        Math.abs(
-          parseFloat(priceData.closeoutAsk) -
-          parseFloat(priceData.closeoutBid)
-        ) * 10000;
-
-      const signal = analyzeMarket(
-        candles,
-        spread
-      );
-
-      console.log(
-        `${symbol} | ${signal.action} | RSI ${signal.rsi.toFixed(2)} | Trend ${signal.trend}`
-      );
-
-      if (
-        signal.action !== "HOLD" &&
-        signal.confidence >= config.MIN_CONFIDENCE
-      ) {
-        console.log(
-          `🚀 SEGNALE ${signal.action} ${symbol}`
-        );
-
-        // QUI andrà l'esecuzione ordini OANDA
-      }
-    } catch (err) {
-      console.error(
-        `${symbol} Error:`,
-        err.message
-      );
-    }
+  const priceData = await oanda.getPrice(symbol);
+  if (!priceData) {
+    return;
   }
+  const spread =
+    Math.abs(
+      parseFloat(priceData.closeoutAsk) -
+      parseFloat(priceData.closeoutBid)
+    ) * 10000;
+  const signal = analyzeMarket(
+    candles,
+    spread
+  );
+  console.log(`
 
-  async scanAll() {
-    for (const symbol of config.SYMBOLS) {
-      await this.scanSymbol(symbol);
-    }
-  }
+═══════════════════════════════
+📊 ${symbol}
 
-  start() {
-    if (this.running) return;
+🎯 ACTION: ${signal.action}
+📌 SETUP: ${signal.setup}
 
-    this.running = true;
+📈 TREND: ${signal.trend}
+📊 RSI: ${signal.rsi.toFixed(2)}
 
-    console.log("🤖 Scalping Bot Started");
+🔥 CONFIDENCE: ${signal.confidence}%
 
-    this.scanAll();
+🛑 SL: ${signal.stopLoss.toFixed(5)}
+🎯 TP: ${signal.takeProfit.toFixed(5)}
 
-    setInterval(() => {
-      this.scanAll();
-    }, config.SCAN_INTERVAL);
-  }
+📝 REASON:
+${signal.reason}
+
+═══════════════════════════════
+`);
+
+  if (
+    signal.action !== "HOLD" &&
+    signal.confidence >= 65
+  ) {
+    console.log(`
+
+🚀 NUOVO SEGNALE
+
+PAIR: ${symbol}
+SETUP: ${signal.setup}
+ACTION: ${signal.action}
+
+ENTRY: ${candles[candles.length - 1].mid.c}
+SL: ${signal.stopLoss.toFixed(5)}
+TP: ${signal.takeProfit.toFixed(5)}
+
+CONFIDENCE: ${signal.confidence}%
+
+REASON:
+${signal.reason}
+`);
+}
+
+} catch (err) {
+  console.error(
+    `${symbol} Error:`,
+    err.message
+  );
+}
+
+}
+
+async scanAll() {
+for (const symbol of config.SYMBOLS) {
+await this.scanSymbol(symbol);
+}
+}
+
+start() {
+if (this.running) return;
+
+this.running = true;
+console.log(`
+
+╔════════════════════════════╗
+║      SCALP BOT LIVE        ║
+╚════════════════════════════╝
+`);
+
+this.scanAll();
+setInterval(() => {
+  this.scanAll();
+}, config.SCAN_INTERVAL);
+
+}
 }
 
 module.exports = ScalpingBot;
