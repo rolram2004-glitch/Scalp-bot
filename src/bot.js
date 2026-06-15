@@ -1,6 +1,6 @@
-const config = require(”./config”);
-const oanda = require(”./oanda”);
-const { analyzeMarket } = require(”./strategy”);
+const config = require("./config");
+const oanda = require("./oanda");
+const { analyzeMarket } = require("./strategy");
 
 class ScalpingBot {
 constructor() {
