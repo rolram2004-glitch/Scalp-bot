@@ -1,39 +1,12 @@
-export interface MarketData {
-  symbol: string;
-  bid: number;
-  ask: number;
-  spread: number;
-
-  ema20: number;
-  ema50: number;
-  ema200: number;
-
-  rsi: number;
-
-  session: string;
-  trend: string;
-
-  openPositions: number;
-  todayTradeCount: number;
-}
-
-export interface TradingDecision {
-  action: "BUY" | "SELL" | "HOLD";
-  confidence: number;
-  reasoning: string;
-
-  stopLossPips?: number;
-  takeProfitPips?: number;
-  lotSize?: number;
-
-  setupType?: string;
-}
+import {
+  MarketData,
+  TradingDecision
+} from "./types";
 
 export async function getScalpingSignal(
   data: MarketData
 ): Promise<TradingDecision> {
 
-  // spread filter
   if (data.spread > 2) {
     return {
       action: "HOLD",
@@ -42,7 +15,8 @@ export async function getScalpingSignal(
     };
   }
 
-  // bullish trend
+  // BUY SETUP
+
   if (
     data.bid > data.ema20 &&
     data.ema20 > data.ema50 &&
@@ -60,7 +34,8 @@ export async function getScalpingSignal(
     };
   }
 
-  // bearish trend
+  // SELL SETUP
+
   if (
     data.bid < data.ema20 &&
     data.ema20 < data.ema50 &&
