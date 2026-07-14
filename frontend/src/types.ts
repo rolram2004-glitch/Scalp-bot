@@ -1,0 +1,36 @@
+export interface StatusSnapshot {
+  status: string;
+  isRunning: boolean;
+  startedAt?: string;
+  lastUpdated?: string;
+  dataSource: string;
+  oandaConnected?: boolean;
+  oandaReason?: string;
+  executionMode: string;
+  symbols: string[];
+  dailyTarget: number;
+  maxDailyTrades: number;
+  maxOpenPositions: number;
+  defaultLotSize?: number;
+  maxDailyLoss?: number;
+  currentSymbol?: string;
+  currentAction?: string;
+  currentConfidence?: number;
+  currentReasoning?: string;
+  currentPrice?: number;
+  entryPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  riskAmount?: number;
+  rewardAmount?: number;
+  profitLoss?: number;
+  dailyTradeCount: number;
+  signalsAnalyzed: number;
+  signalsDiscarded: number;
+  openTrades: any[];
+  closedTrades: any[];
+  session: string;
+  killzone: boolean;
+  logs: string[];
+  marketData?: Record<string, any>;
+}
