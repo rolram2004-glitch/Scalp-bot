@@ -1,5 +1,6 @@
 module.exports = {
   SYMBOLS: [
+    "XAU_USD",
     "EUR_USD",
     "GBP_USD",
     "USD_JPY",
@@ -19,7 +20,7 @@ module.exports = {
 
   TIMEFRAME: "M5",
 
-  MAX_SPREAD: 2.0,
+  MAX_SPREAD: 35.0,
   MAX_OPEN_TRADES: 15,
   MAX_TRADES_PER_SYMBOL: 1,
   MAX_DAILY_TRADES: 50,
@@ -28,7 +29,17 @@ module.exports = {
 
   SCAN_INTERVAL: 60000,
 
-  RISK_PERCENT: 1,
+  RISK_PERCENT: Number(process.env.MAX_RISK_PERCENT || 0.25),
+  DEFAULT_LOT_SIZE: Number(process.env.DEFAULT_LOT_SIZE || 0.01),
+  MAX_DAILY_LOSS: Number(process.env.MAX_DAILY_LOSS || 50),
+  TRADING_MODE: String(process.env.TRADING_MODE || "PAPER").toUpperCase() === "LIVE" ? "LIVE" : "PAPER",
+  LIVE_TRADING_ENABLED: String(process.env.TRADING_MODE || "PAPER").toUpperCase() === "LIVE" && process.env.LIVE_TRADING_ENABLED === "true",
+  DEFAULT_UNITS: Number(process.env.DEFAULT_UNITS || 1000),
+  XAUUSD_UNITS: Number(process.env.XAUUSD_UNITS || 1),
+  NORMAL_STOP_LOSS_USD: Number(process.env.NORMAL_STOP_LOSS_USD || 1.2),
+  NORMAL_TAKE_PROFIT_USD: Number(process.env.NORMAL_TAKE_PROFIT_USD || 2.4),
+  XAUUSD_STOP_LOSS_AMOUNT: Number(process.env.XAUUSD_STOP_LOSS_AMOUNT || 7.5),
+  XAUUSD_TAKE_PROFIT_USD: Number(process.env.XAUUSD_TAKE_PROFIT_USD || 15),
 
   OANDA_API_KEY: process.env.OANDA_API_KEY,
   OANDA_ACCOUNT_ID: process.env.OANDA_ACCOUNT_ID

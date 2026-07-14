@@ -1,21 +1,15 @@
 export function detectOrderBlock(): boolean {
-  return Math.random() > 0.7;
+  return false;
 }
 
 export function detectFVG(): string {
-  return Math.random() > 0.5
-    ? "BULLISH_FVG"
-    : "BEARISH_FVG";
+  return "NOT_DETECTED";
 }
 
 export function detectLiquidity(): string {
-  return Math.random() > 0.5
-    ? "BUY_SIDE"
-    : "SELL_SIDE";
+  return "UNKNOWN";
 }
 
 export function detectStructure(): string {
-  return Math.random() > 0.5
-    ? "BULLISH"
-    : "BEARISH";
+  return "UNKNOWN";
 }
