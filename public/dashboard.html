@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scalp Bot Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app">
+    <div class="header card">
+      <div style="display:flex;gap:12px;align-items:center">
+        <h1>SCALP.BOT</h1>
+        <div class="controls">
+          <button id="startBtn">Start</button>
+          <button id="stopBtn">Stop</button>
+          <button id="modeToggle">Paper</button>
+          <button id="refreshBtn">Refresh</button>
+          <button id="exportBtn">Export</button>
+        </div>
+      </div>
+      <div class="top-meta">
+        <div id="accountStatus" style="font-size:12px;color:var(--muted)">OANDA DISCONNECTED</div>
+        <div id="lastSignal" style="font-size:12px;color:var(--muted)">—</div>
+      </div>
+    </div>
+
+      <div id="terminal" class="section active">
+        <div class="card">
+          <div class="metrics-row">
+            <div class="metric"><strong>P&L OGGI</strong><div id="plToday" class="value">0.00</div></div>
+            <div class="metric"><strong>WIN RATE</strong><div id="winRate" class="value">0%</div></div>
+            <div class="metric"><strong>TRADE OGGI</strong><div id="tradeToday" class="value">0</div></div>
+            <div class="metric"><strong>POSIZIONI APERTE</strong><div id="positionsOpen" class="value">0</div></div>
+            <div class="metric"><strong>W/L</strong><div id="winLoss" class="value">0/0</div></div>
+            <div class="metric"><strong>ULTIMO SEGNALE</strong><div id="lastSignal" class="value">—</div></div>
+          </div>
+        </div>
+        <div class="control-room card">
+          <div class="scanner" id="scanner">
+            <h3>LIVE MARKET SCANNER</h3>
+            <div class="scanner-table-wrap"><table id="scannerTable"><thead><tr><th>Coppia</th><th>Prezzo</th><th>Trend</th><th>Segnale</th><th>Conf.</th><th>Setup</th><th>Spread</th><th>Sessione</th><th>Reason</th></tr></thead><tbody></tbody></table></div>
+          </div>
+
+          <div class="active-trades" id="activeTrades">
+            <h3>ACTIVE TRADES</h3>
+            <div id="tradesList"></div>
+          </div>
+
+          <div class="activity-log" id="activityLog">
+            <h3>BOT ACTIVITY / DECISION LOG</h3>
+            <div id="logs" class="logs"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="chart" class="section">
+        <div class="card controls">
+          <select id="symbolSelect"></select>
+          <select id="tfSelect"><option>1m</option><option selected>5m</option><option>15m</option><option>1h</option></select>
+        </div>
+        <div class="card" id="chart"></div>
+      </div>
+
+      <div id="history" class="section">
+        <div class="card">
+          <h3>STORICO TRADE</h3>
+          <table class="table">
+            <thead><tr><th>Data</th><th>Coppia</th><th>BUY/SELL</th><th>Lot</th><th>Setup</th><th>Entrata</th><th>Uscita</th><th>P&L</th><th>Pip</th><th>Reasoning</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="analytics" class="section">
+        <div class="card">
+          <h3>ANALYTICS</h3>
+          <div id="analyticsDist"></div>
+          <div id="analyticsPerDay"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="bottom-nav">
+      <div id="navTerminal" class="nav-btn active">Terminal</div>
+      <div id="navChart" class="nav-btn">Grafico</div>
+      <div id="navHistory" class="nav-btn">Storico</div>
+      <div id="navAnalytics" class="nav-btn">Analytics</div>
+    </div>
+
+    <script src="/app.js"></script>
+  </div>
+  </div>
+  </body>
+  </html>
