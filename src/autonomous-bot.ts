@@ -32,7 +32,8 @@ const SYMBOLS = [
   "GBPAUD"
 ];
 
-const SIGNAL_INTERVAL = 60000;
+// Market data uses M5 candles, so run one decision cycle per five-minute bar.
+const SIGNAL_INTERVAL = 5 * 60 * 1000;
 const CLOSE_INTERVAL = 5000;
 
 const MAX_DAILY_TRADES = 1000;

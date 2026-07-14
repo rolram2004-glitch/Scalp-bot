@@ -10,8 +10,11 @@ export async function getScalpingSignal(
   const maxSpread = isGold ? 80 : 25;
   const bullishStructure = data.structureBias === "BULLISH";
   const bearishStructure = data.structureBias === "BEARISH";
-  const bullishMomentum = data.bid > data.ema20 && data.ema20 > data.ema50 && data.ema50 > data.ema200 && data.rsi > 55 && data.macdHistogram >= 0;
-  const bearishMomentum = data.bid < data.ema20 && data.ema20 < data.ema50 && data.ema50 < data.ema200 && data.rsi < 45 && data.macdHistogram <= 0;
+  // Preserve the original Forex entry logic: EMA stack + RSI. MACD remains
+  // visible in the reasoning, but an opposite lagging histogram must not turn
+  // an otherwise valid real-data setup into HOLD.
+  const bullishMomentum = data.bid > data.ema20 && data.ema20 > data.ema50 && data.ema50 > data.ema200 && data.rsi > 55;
+  const bearishMomentum = data.bid < data.ema20 && data.ema20 < data.ema50 && data.ema50 < data.ema200 && data.rsi < 45;
 
   if (data.spread > maxSpread) {
     return {
@@ -33,7 +36,7 @@ export async function getScalpingSignal(
       lotSize: 0.01,
       riskRewardRatio: 2,
       setupType: bullishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
-      reasoning: `BUY accepted: real OANDA price above EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram positive, structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`
+      reasoning: `BUY accepted: real OANDA price above EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`
     };
   }
 
@@ -49,7 +52,7 @@ export async function getScalpingSignal(
       lotSize: 0.01,
       riskRewardRatio: 2,
       setupType: bearishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
-      reasoning: `SELL accepted: real OANDA price below EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram negative, structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`
+      reasoning: `SELL accepted: real OANDA price below EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`
     };
   }
 
