@@ -30,7 +30,9 @@ PM2 keeps the bot running and restarts it automatically if it crashes.
 
 This setup lets you move the bot to a remote host or cloud VM so it can remain online even when your local PC is turned off.
 
-## Notes
+## Execution modes
 
-- The bot currently runs in simulation/fallback mode unless valid OANDA credentials are provided.
-- Add credentials in a `.env` file based on `.env.example` when connecting to a live account.
+- `TRADING_MODE=PAPER`: real OANDA market data, no OANDA orders.
+- `TRADING_MODE=LIVE` plus `LIVE_TRADING_ENABLED=true`: verified orders on OANDA Practice only.
+
+There is no synthetic market-data fallback. If OANDA data is unavailable, the scanner reports it and does not invent prices or trades. See `RAILWAY_DEPLOYMENT.md` before enabling OANDA Practice execution.
