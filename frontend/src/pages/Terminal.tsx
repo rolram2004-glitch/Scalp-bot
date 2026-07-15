@@ -1,11 +1,13 @@
-import { StatusSnapshot } from '../types';
+import { BotTrade, OandaStatus, StatusSnapshot } from '../types';
 
-function money(value = 0) {
+function money(value: number | undefined, currency?: string) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || !currency) return 'N/A';
   const sign = value >= 0 ? '+' : '-';
-  return `${sign}$${Math.abs(value).toFixed(2)}`;
+  return `${sign}${Math.abs(value).toFixed(2)} ${currency}`;
 }
 
-function pips(value = 0) {
+function pips(value?: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'N/A';
   const sign = value >= 0 ? '+' : '-';
   return `${sign}${Math.abs(value).toFixed(1)} pips`;
 }
@@ -18,63 +20,148 @@ function time(value?: string) {
   return value ? new Date(value).toLocaleTimeString() : '-';
 }
 
-function confidenceClass(value?: number) {
-  if ((value || 0) >= 78) return 'hot';
-  if ((value || 0) >= 68) return 'warm';
+function confidenceClass(value: number) {
+  if (value >= 78) return 'hot';
+  if (value >= 68) return 'warm';
   return 'cool';
 }
 
-function sourceLabel(status: StatusSnapshot | null, oandaStatus?: any) {
+function sourceLabel(status: StatusSnapshot | null, oandaStatus?: OandaStatus) {
   return oandaStatus?.connected ? 'OANDA MARKET DATA' : 'OANDA DISCONNECTED';
 }
 
-function TradeFeedCard({ trade }: { trade: any }) {
+function textValue(value: unknown) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function resolvedTradeMode(trade: BotTrade, fallback?: string) {
+  return textValue(
+    trade.executionMode ??
+    trade.mode ??
+    (trade.source === 'PAPER' || trade.id?.startsWith('PAPER-') ? 'PAPER' : fallback)
+  );
+}
+
+function isPaperMode(mode?: string) {
+  return String(mode || '').toUpperCase().includes('PAPER');
+}
+
+function quoteCurrency(symbol?: string) {
+  const normalized = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
+  return normalized.length >= 6 ? normalized.slice(-3) : undefined;
+}
+
+function TradeFeedCard({
+  trade,
+  currency,
+  dataSource,
+  executionMode
+}: {
+  trade: BotTrade;
+  currency?: string;
+  dataSource?: string;
+  executionMode?: string;
+}) {
   const isBuy = trade.side === 'BUY';
   const isOpen = trade.status === 'OPEN';
-  const confidence = trade.confidence || 72;
+  const confidence = typeof trade.confidence === 'number' && Number.isFinite(trade.confidence)
+    ? trade.confidence
+    : undefined;
+  const units = textValue(trade.units ?? trade.initialUnits ?? trade.currentUnits);
+  const orderId = textValue(trade.oandaOrderId ?? trade.oandaOrderID ?? trade.orderId ?? trade.orderID);
+  const oandaTradeId = textValue(trade.oandaTradeId ?? trade.oandaTradeID ?? trade.tradeId ?? trade.tradeID);
+  const source = textValue(trade.source ?? trade.dataSource ?? dataSource) || 'N/A';
+  const mode = resolvedTradeMode(trade, executionMode) || 'N/A';
+  const paperTrade = isPaperMode(mode);
+  const pnlCurrency = paperTrade ? quoteCurrency(trade.symbol) : textValue(trade.accountCurrency ?? currency);
+  const verifiedOandaTrade = trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED';
+  const formattedPnl = paperTrade || verifiedOandaTrade ? money(trade.pnl, pnlCurrency) : 'N/A';
+  const meta = [
+    trade.openedAt ? time(trade.openedAt) : undefined,
+    units ? `Units ${units}` : undefined,
+    typeof trade.entryPrice === 'number' ? `Entry ${price(trade.entryPrice)}` : undefined,
+    typeof trade.currentPrice === 'number' ? `Current ${price(trade.currentPrice)}` : undefined
+  ].filter(Boolean);
+  const riskItems = [
+    typeof trade.stopLoss === 'number' ? `SL ${price(trade.stopLoss)}` : undefined,
+    typeof trade.takeProfit === 'number' ? `TP ${price(trade.takeProfit)}` : undefined,
+    typeof trade.riskRewardRatio === 'number' && Number.isFinite(trade.riskRewardRatio)
+      ? `R:R 1:${trade.riskRewardRatio.toFixed(1)}`
+      : undefined,
+    typeof trade.pnlPips === 'number' ? pips(trade.pnlPips) : undefined
+  ].filter((item): item is string => Boolean(item));
 
   return (
     <article className={`feed-card ${isBuy ? 'buy' : 'sell'}`}>
-      <div className="feed-direction">{isBuy ? 'BUY' : 'SELL'}</div>
+      <div className="feed-direction">{trade.side || 'N/A'}</div>
       <div className="feed-main">
         <div className="feed-head">
           <div>
-            <strong>{trade.symbol}</strong>
-            <span className={`badge ${isOpen ? 'open' : 'closed'}`}>{trade.status}</span>
-            <span className="badge setup">{trade.setupType || 'EMA_STACK'}</span>
+            <strong>{trade.symbol || 'N/A'}</strong>
+            {trade.status && <span className={`badge ${isOpen ? 'open' : 'closed'}`}>{trade.status}</span>}
+            {trade.setupType && <span className="badge setup">{trade.setupType}</span>}
           </div>
-          <div className={trade.pnl >= 0 ? 'money win' : 'money loss'}>{money(trade.pnl || 0)}</div>
-        </div>
-        <div className="feed-meta">
-          {time(trade.openedAt)} · 0.01 lot · {price(trade.entryPrice)} - {price(trade.currentPrice)}
-        </div>
-        <div className="feed-risk">
-          <span>SL {price(trade.stopLoss)}</span>
-          <span>TP {price(trade.takeProfit)}</span>
-          <span>R:R 1:2.0</span>
-          <span>{pips(trade.pnlPips || trade.pnl || 0)}</span>
-        </div>
-        <p>{trade.reasoning || 'EMA stack, momentum and risk filters aligned.'}</p>
-        <div className="confidence-row">
-          <div className="confidence-track">
-            <div className={`confidence-fill ${confidenceClass(confidence)}`} style={{ width: `${Math.min(confidence, 100)}%` }} />
+          <div className={typeof trade.pnl === 'number' && trade.pnl < 0 ? 'money loss' : 'money win'}>
+            {formattedPnl}{formattedPnl !== 'N/A' && paperTrade ? ' PAPER' : ''}
           </div>
-          <span>{confidence}%</span>
         </div>
+        <div className="feed-source">
+          <span>Source: {source}</span>
+          <span>Mode: {mode}</span>
+        </div>
+        {meta.length > 0 && <div className="feed-meta">{meta.join(' | ')}</div>}
+        {(orderId || oandaTradeId) && (
+          <div className="feed-identifiers">
+            {orderId && <span>OANDA ORDER ID: {orderId}</span>}
+            {oandaTradeId && <span>OANDA TRADE ID: {oandaTradeId}</span>}
+          </div>
+        )}
+        {riskItems.length > 0 && <div className="feed-risk">{riskItems.map((item) => <span key={item}>{item}</span>)}</div>}
+        {trade.reasoning && <p>{trade.reasoning}</p>}
+        {confidence !== undefined && (
+          <div className="confidence-row">
+            <div className="confidence-track">
+              <div className={`confidence-fill ${confidenceClass(confidence)}`} style={{ width: `${Math.min(Math.max(confidence, 0), 100)}%` }} />
+            </div>
+            <span>{confidence}%</span>
+          </div>
+        )}
       </div>
     </article>
   );
 }
 
-export function TerminalPage({ status, marketData, news = [], oandaStatus }: { status: StatusSnapshot | null; marketData: Record<string, any>; news?: any[]; oandaStatus?: any; }) {
+export function TerminalPage({ status, marketData, news = [], oandaStatus }: { status: StatusSnapshot | null; marketData: Record<string, any>; news?: any[]; oandaStatus?: OandaStatus; }) {
   const openTrades = status?.openTrades || [];
   const closedTrades = status?.closedTrades || [];
-  const feed = [...openTrades, ...closedTrades].slice(0, 12);
-  const pnlToday = [...openTrades, ...closedTrades].reduce((sum, trade) => sum + (trade.pnl || 0), 0);
-  const wins = closedTrades.filter((trade: any) => (trade.pnl || 0) > 0).length;
-  const losses = closedTrades.filter((trade: any) => (trade.pnl || 0) <= 0).length;
-  const winRate = closedTrades.length > 0 ? Math.round((wins / closedTrades.length) * 1000) / 10 : 0;
-  const marketRows = Object.entries(marketData || {}).slice(0, 10);
+  const feed = [
+    ...openTrades,
+    ...closedTrades.slice(0, Math.max(0, 20 - openTrades.length))
+  ];
+  const accountCurrency = textValue(oandaStatus?.currency ?? status?.accountCurrency);
+  const paperExecution = isPaperMode(status?.executionMode);
+  const pnlValues = [...openTrades, ...closedTrades]
+    .filter((trade) => trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED')
+    .map((trade) => trade.pnl)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const pnlToday = !paperExecution && pnlValues.length > 0
+    ? pnlValues.reduce((sum, value) => sum + value, 0)
+    : undefined;
+  const closedPnl = closedTrades
+    .map((trade) => trade.pnl)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const wins = closedPnl.filter((value) => value > 0).length;
+  const losses = closedPnl.filter((value) => value < 0).length;
+  const decidedTrades = wins + losses;
+  const winRate = decidedTrades > 0 ? Math.round((wins / decidedTrades) * 1000) / 10 : undefined;
+  const configuredSymbols = status?.symbols || [];
+  const marketSymbols = [
+    ...configuredSymbols,
+    ...Object.keys(marketData || {}).filter((symbol) => !configuredSymbols.includes(symbol))
+  ];
+  const marketRows = marketSymbols.map((symbol) => [symbol, marketData?.[symbol]] as const);
 
   return (
     <div className="terminal-page">
@@ -91,12 +178,12 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
       <section className="metric-grid">
         <div className="metric-card">
           <span>P&L oggi</span>
-          <strong className={pnlToday >= 0 ? 'win' : 'loss'}>{money(pnlToday)}</strong>
-          <small>Calcolato solo da trade paper con prezzi OANDA</small>
+          <strong className={typeof pnlToday === 'number' && pnlToday < 0 ? 'loss' : 'win'}>{money(pnlToday, accountCurrency)}</strong>
+          <small>{paperExecution ? 'P&L aggregato PAPER: N/A (conversione conto non verificata)' : `Valuta conto: ${accountCurrency || 'N/A'}`}</small>
         </div>
         <div className="metric-card">
           <span>Win rate</span>
-          <strong>{winRate.toFixed(1)}%</strong>
+          <strong>{winRate === undefined ? 'N/A' : `${winRate.toFixed(1)}%`}</strong>
           <small><b className="win">{wins}W</b> - <b className="loss">{losses}L</b></small>
         </div>
         <div className="metric-card">
@@ -113,34 +200,45 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
       <section className="panel feed-panel">
         <div className="panel-title">
-          <h2>Live trade feed</h2>
-          <span>{status?.executionMode || 'PAPER TRADING'}</span>
+          <h2>Trade feed</h2>
+          <span>{status?.executionMode || 'N/A'}</span>
         </div>
         <div className="feed-list">
-          {feed.length > 0 ? feed.map((trade: any) => <TradeFeedCard key={trade.id} trade={trade} />) : (
+          {feed.length > 0 ? feed.map((trade) => (
+            <TradeFeedCard
+              key={trade.id}
+              trade={trade}
+              currency={accountCurrency}
+              dataSource={status?.dataSource}
+              executionMode={status?.executionMode}
+            />
+          )) : (
             <div className="empty-state">In attesa del primo trade. Premi START se il bot e fermo.</div>
           )}
         </div>
       </section>
 
       <section className="panel scanner-panel">
-        <div className="panel-title"><h2>Market scanner</h2><span>{sourceLabel(status, oandaStatus)}</span></div>
+        <div className="panel-title"><h2>Market scanner</h2><span>{marketRows.length} strumenti | {sourceLabel(status, oandaStatus)}</span></div>
         <div className="scanner-table">
           <table>
             <thead>
               <tr><th>Pair</th><th>Price</th><th>Trend</th><th>Signal</th><th>Confidence</th><th>Data</th></tr>
             </thead>
             <tbody>
-              {marketRows.map(([symbol, item]: [string, any]) => (
-                <tr key={symbol}>
-                  <td>{symbol}</td>
-                  <td>{price(item.closePrice)}</td>
-                  <td><span className={item.trend === 'BULLISH' ? 'win' : 'loss'}>{item.trend}</span></td>
-                  <td>{status?.currentSymbol === symbol ? status?.currentAction : '-'}</td>
-                  <td>{status?.currentSymbol === symbol ? `${status?.currentConfidence || 0}%` : '-'}</td>
-                  <td>{item.closePrice ? 'OANDA' : 'NON DISP.'}</td>
-                </tr>
-              ))}
+              {marketRows.map(([symbol, item]) => {
+                const signal = status?.lastSignals?.[symbol];
+                return (
+                  <tr key={symbol}>
+                    <td>{symbol}</td>
+                    <td>{price(item?.closePrice)}</td>
+                    <td>{item?.trend ? <span className={item.trend === 'BULLISH' ? 'win' : 'loss'}>{item.trend}</span> : 'N/A'}</td>
+                    <td>{signal?.action || 'N/A'}</td>
+                    <td>{typeof signal?.confidence === 'number' ? `${signal.confidence}%` : 'N/A'}</td>
+                    <td>{typeof item?.closePrice === 'number' && Number.isFinite(item.closePrice) ? 'OANDA' : 'NON DISP.'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
