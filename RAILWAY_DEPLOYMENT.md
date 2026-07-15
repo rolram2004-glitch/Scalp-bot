@@ -25,7 +25,7 @@ Il wrapper usa esclusivamente `https://api-fxpractice.oanda.com/v3`. La modalita
 Prima dell'attivazione devono essere tutti veri:
 
 - OANDA Practice connesso e account/currency verificati;
-- 15 coppie FX scansionate ogni 5 minuti;
+- 15 coppie FX scansionate ogni 2 minuti;
 - size, precisione, minimum trade size e conversione verso la valuta conto disponibili;
 - massimo 6 nuovi ingressi validi per ciclo (mai una quota obbligatoria);
 - nessuna posizione gia aperta sul simbolo, verificata su trade e posizioni OANDA;
