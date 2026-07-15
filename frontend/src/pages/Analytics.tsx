@@ -11,10 +11,17 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
     return acc;
   }, {});
   const distributionEntries = Object.entries(distribution);
-  const recentBars = Array.from({ length: 12 }, (_, index) => {
-    const trade = status?.closedTrades?.[index];
-    return trade ? Math.max(-30, Math.min(90, trade.pnl || 0)) : (index % 4 === 0 ? 18 : index % 5);
-  }).reverse();
+  const recentBars = (status?.closedTrades || [])
+    .filter((trade) => typeof trade.pnl === 'number' && Number.isFinite(trade.pnl))
+    .slice(0, 30)
+    .map((trade) => Number(trade.pnl))
+    .reverse();
+  const pnlToday = typeof analytics?.pnlToday === 'number' && Number.isFinite(analytics.pnlToday)
+    ? analytics.pnlToday
+    : undefined;
+  const winRate = typeof analytics?.winRate === 'number' && Number.isFinite(analytics.winRate)
+    ? analytics.winRate
+    : undefined;
 
   return (
     <div className="analytics-page">
@@ -26,10 +33,10 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
       </section>
 
       <section className="metric-grid">
-        <div className="metric-card"><span>P&L oggi</span><strong className={(analytics?.pnlToday || 0) >= 0 ? 'win' : 'loss'}>{(analytics?.pnlToday || 0).toFixed(2)}</strong></div>
-        <div className="metric-card"><span>Win rate</span><strong>{analytics?.winRate || 0}%</strong></div>
-        <div className="metric-card"><span>Wins</span><strong className="win">{analytics?.wins || 0}</strong></div>
-        <div className="metric-card"><span>Losses</span><strong className="loss">{analytics?.losses || 0}</strong></div>
+        <div className="metric-card"><span>P&L oggi</span><strong className={pnlToday !== undefined && pnlToday < 0 ? 'loss' : 'win'}>{pnlToday === undefined ? 'N/A' : `${pnlToday.toFixed(2)} ${analytics?.pnlCurrency || ''}`.trim()}</strong></div>
+        <div className="metric-card"><span>Win rate</span><strong>{winRate === undefined ? 'N/A' : `${winRate}%`}</strong></div>
+        <div className="metric-card"><span>Wins</span><strong className="win">{analytics ? analytics.wins ?? 0 : 'N/A'}</strong></div>
+        <div className="metric-card"><span>Losses</span><strong className="loss">{analytics ? analytics.losses ?? 0 : 'N/A'}</strong></div>
       </section>
 
       <section className="panel analytics-card-wide">
@@ -49,14 +56,14 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
       </section>
 
       <section className="panel analytics-card-wide">
-        <div className="panel-title"><h2>P&L 30 giorni</h2><span>paper trading</span></div>
-        <div className="bar-chart">
-          {recentBars.map((value, index) => (
+        <div className="panel-title"><h2>P&L trade chiusi</h2><span>{analytics?.executionMode || 'N/A'} {analytics?.pnlCurrency || ''}</span></div>
+        {recentBars.length > 0 ? <div className="bar-chart">
+          {recentBars.map((value: number, index: number) => (
             <div key={index} className="bar-slot">
               <div className={value >= 0 ? 'bar positive' : 'bar negative'} style={{ height: `${Math.max(6, Math.abs(value))}%` }} />
             </div>
           ))}
-        </div>
+        </div> : <div className="empty-state">DATI NON DISPONIBILI: nessun trade chiuso verificabile.</div>}
       </section>
 
       <section className="panel analytics-card-wide">

@@ -11,7 +11,7 @@
     "build:frontend": "cd frontend && npm run build",
     "build": "npm run build:frontend",
     "postinstall": "npm --prefix frontend install && npm --prefix frontend run build",
-    "test": "node --test tests/smoke.test.js"
+    "test": "node --test"
   },
   "dependencies": {
     "axios": "^1.7.2",

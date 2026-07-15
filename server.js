@@ -6,7 +6,6 @@ require("ts-node/register/transpile-only");
 
 const {
   startAutonomousBot,
-  stopAutonomousBot,
   getBotSnapshot,
   subscribeToBotUpdates,
   getAnalytics
@@ -71,8 +70,10 @@ function createApp() {
   });
 
   app.post("/api/bot/stop", (req, res) => {
-    stopAutonomousBot();
-    res.json(getBotSnapshot());
+    res.status(403).json({
+      error: "bot_stop_disabled",
+      message: "Always-on execution is enabled. Restart the Railway service for maintenance."
+    });
   });
 
   app.get("/api/analytics", (req, res) => {
