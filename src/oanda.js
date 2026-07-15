@@ -185,6 +185,27 @@ class OandaAPI {
     }
   }
 
+  async getPrices(symbols) {
+    const requested = Array.isArray(symbols) ? symbols : [symbols];
+    const instruments = [...new Set(requested.map(normalizeOandaSymbol).filter(Boolean))];
+    if (instruments.length === 0) return [];
+
+    try {
+      const response = await axios.get(
+        `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/pricing`,
+        {
+          headers: this.headers,
+          params: { instruments: instruments.join(",") },
+          timeout: 8000
+        }
+      );
+      return Array.isArray(response.data?.prices) ? response.data.prices : [];
+    } catch (error) {
+      this.rememberError("prices", error);
+      return [];
+    }
+  }
+
   async getPricingContext(symbol) {
     try {
       const response = await axios.get(
