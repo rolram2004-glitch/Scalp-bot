@@ -59,6 +59,8 @@ export interface StatusSnapshot {
   isRunning: boolean;
   startedAt?: string;
   lastUpdated?: string;
+  lastPriceAt?: string;
+  priceFeedStatus?: 'CONNECTED' | 'DISCONNECTED';
   dataSource: string;
   oandaConnected?: boolean;
   oandaReason?: string;
@@ -90,5 +92,6 @@ export interface StatusSnapshot {
   killzone: boolean;
   logs: string[];
   marketData?: Record<string, any>;
+  livePrices?: Record<string, { bid: number; ask: number; mid: number; time: string; tradeable: boolean }>;
   lastSignals?: Record<string, TradingDecisionSnapshot>;
 }
