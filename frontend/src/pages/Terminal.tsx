@@ -27,7 +27,9 @@ function confidenceClass(value: number) {
 }
 
 function sourceLabel(status: StatusSnapshot | null, oandaStatus?: OandaStatus) {
-  return oandaStatus?.connected ? 'OANDA MARKET DATA' : 'OANDA DISCONNECTED';
+  return oandaStatus?.connected && status?.priceFeedStatus === 'CONNECTED'
+    ? 'OANDA 1S MARKET DATA'
+    : 'OANDA DISCONNECTED';
 }
 
 function textValue(value: unknown) {
@@ -223,19 +225,21 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <div className="scanner-table">
           <table>
             <thead>
-              <tr><th>Pair</th><th>Price</th><th>Trend</th><th>Signal</th><th>Confidence</th><th>Data</th></tr>
+              <tr><th>Pair</th><th>Price</th><th>Trend</th><th>Signal</th><th>Confidence</th><th>Last tick</th><th>Data</th></tr>
             </thead>
             <tbody>
               {marketRows.map(([symbol, item]) => {
                 const signal = status?.lastSignals?.[symbol];
+                const livePrice = status?.livePrices?.[symbol];
                 return (
                   <tr key={symbol}>
                     <td>{symbol}</td>
-                    <td>{price(item?.closePrice)}</td>
+                    <td>{price(livePrice?.mid ?? item?.closePrice)}</td>
                     <td>{item?.trend ? <span className={item.trend === 'BULLISH' ? 'win' : 'loss'}>{item.trend}</span> : 'N/A'}</td>
                     <td>{signal?.action || 'N/A'}</td>
                     <td>{typeof signal?.confidence === 'number' ? `${signal.confidence}%` : 'N/A'}</td>
-                    <td>{typeof item?.closePrice === 'number' && Number.isFinite(item.closePrice) ? 'OANDA' : 'NON DISP.'}</td>
+                    <td>{livePrice?.time ? time(livePrice.time) : 'N/A'}</td>
+                    <td>{livePrice ? 'OANDA 1S' : typeof item?.closePrice === 'number' && Number.isFinite(item.closePrice) ? 'OANDA M5' : 'NON DISP.'}</td>
                   </tr>
                 );
               })}
