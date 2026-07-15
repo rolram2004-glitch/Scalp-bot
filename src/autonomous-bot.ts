@@ -33,8 +33,8 @@ const SYMBOLS = [
   "GBPAUD"
 ];
 
-// Market data uses M5 candles, so run one decision cycle per five-minute bar.
-const SIGNAL_INTERVAL = 5 * 60 * 1000;
+// Market data uses M5 candles; evaluate the latest real OANDA data every two minutes.
+const SIGNAL_INTERVAL = 2 * 60 * 1000;
 const CLOSE_INTERVAL = 5000;
 const PRICE_INTERVAL = 1000;
 
@@ -755,7 +755,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
 
 async function scanAllSymbols() {
   if (!botState.isRunning || scanInProgress) {
-    if (scanInProgress) pushLog("Market scan skipped: previous five-minute cycle is still running");
+    if (scanInProgress) pushLog("Market scan skipped: previous two-minute cycle is still running");
     return;
   }
 
