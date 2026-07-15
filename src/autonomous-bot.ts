@@ -36,6 +36,7 @@ const SYMBOLS = [
 // Market data uses M5 candles, so run one decision cycle per five-minute bar.
 const SIGNAL_INTERVAL = 5 * 60 * 1000;
 const CLOSE_INTERVAL = 5000;
+const PRICE_INTERVAL = 1000;
 
 const MAX_DAILY_TRADES = 1000;
 const DAILY_TARGET = 800;
@@ -77,6 +78,8 @@ export interface BotSnapshot {
   isRunning: boolean;
   startedAt?: string;
   lastUpdated?: string;
+  lastPriceAt?: string;
+  priceFeedStatus: "CONNECTED" | "DISCONNECTED";
   dataSource: string;
   oandaConnected: boolean;
   oandaReason?: string;
@@ -108,6 +111,7 @@ export interface BotSnapshot {
   killzone: boolean;
   logs: string[];
   marketData?: Record<string, MarketData>;
+  livePrices?: Record<string, { bid: number; ask: number; mid: number; time: string; tradeable: boolean; }>;
   lastSignals?: Record<string, TradingDecision & { scannedAt: string }>;
 }
 
@@ -116,6 +120,7 @@ const botState: BotSnapshot = {
   isRunning: false,
   dataSource: "OANDA_UNAVAILABLE",
   oandaConnected: false,
+  priceFeedStatus: "DISCONNECTED",
   executionMode: config.TRADING_MODE === "LIVE" && config.LIVE_TRADING_ENABLED ? "LIVE OANDA PRACTICE" : "PAPER",
   symbols: SYMBOLS,
   dailyTarget: DAILY_TARGET,
@@ -132,14 +137,18 @@ const botState: BotSnapshot = {
   killzone: false,
   logs: []
   ,marketData: {},
+  livePrices: {},
   lastSignals: {}
 };
 
 const listeners = new Set<(snapshot: BotSnapshot) => void>();
 let signalTimer: ReturnType<typeof setInterval> | undefined;
 let closeTimer: ReturnType<typeof setInterval> | undefined;
+let priceTimer: ReturnType<typeof setInterval> | undefined;
 let scanInProgress = false;
 let runGeneration = 0;
+let priceRefreshInProgress = false;
+let lastPriceErrorLogAt = 0;
 
 function liveExecutionActive() {
   return config.TRADING_MODE === "LIVE" && config.LIVE_TRADING_ENABLED === true;
@@ -327,6 +336,73 @@ export function getAnalytics() {
     distribution,
     tradesPerDay: perDay
   };
+}
+
+async function refreshLivePrices() {
+  if (!botState.isRunning || priceRefreshInProgress) return;
+  priceRefreshInProgress = true;
+
+  try {
+    const prices = await oanda.getPrices(SYMBOLS);
+    if (!Array.isArray(prices) || prices.length === 0) {
+      throw new Error("OANDA_PRICE_SNAPSHOT_UNAVAILABLE");
+    }
+
+    botState.livePrices = botState.livePrices || {};
+    let updated = 0;
+    let latestTime = botState.lastPriceAt;
+
+    for (const item of prices) {
+      const symbol = cleanSymbol(item?.instrument);
+      const bid = Number(item?.bids?.[0]?.price ?? item?.closeoutBid);
+      const ask = Number(item?.asks?.[0]?.price ?? item?.closeoutAsk);
+      if (!symbol || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) continue;
+
+      const mid = (bid + ask) / 2;
+      const time = String(item?.time || "");
+      botState.livePrices[symbol] = {
+        bid,
+        ask,
+        mid,
+        time,
+        tradeable: item?.tradeable !== false && String(item?.status || "tradeable").toLowerCase() === "tradeable"
+      };
+
+      const existing = botState.marketData?.[symbol];
+      if (existing) {
+        const multiplier = isGold(symbol) ? 10 : pipMultiplier(symbol);
+        botState.marketData![symbol] = {
+          ...existing,
+          bid,
+          ask,
+          closePrice: mid,
+          spread: Math.max(0, ask - bid) * multiplier
+        };
+      }
+
+      if (time && (!latestTime || time > latestTime)) latestTime = time;
+      updated += 1;
+    }
+
+    if (updated === 0) throw new Error("OANDA_PRICE_SNAPSHOT_EMPTY");
+    botState.lastPriceAt = latestTime;
+    botState.priceFeedStatus = "CONNECTED";
+    botState.oandaConnected = true;
+    botState.oandaReason = undefined;
+    botState.dataSource = "OANDA MARKET DATA";
+    emitState();
+  } catch (_error) {
+    botState.priceFeedStatus = "DISCONNECTED";
+    const now = Date.now();
+    if (now - lastPriceErrorLogAt >= 30000) {
+      lastPriceErrorLogAt = now;
+      pushLog("OANDA one-second price feed unavailable: no synthetic price used");
+    } else {
+      emitState();
+    }
+  } finally {
+    priceRefreshInProgress = false;
+  }
 }
 
 function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: BotTrade): BotTrade {
@@ -801,6 +877,9 @@ export function startAutonomousBot() {
       pushLog(status.connected
         ? `OANDA Practice connected: account ${botState.accountCurrency || "currency N/A"}`
         : "OANDA not connected: no market data will be invented");
+      if (status.connected) {
+        await refreshLivePrices();
+      }
       if (status.connected && liveExecutionActive()) {
         await reconcileLiveTrades();
       }
@@ -829,6 +908,7 @@ export function startAutonomousBot() {
 
   if (signalTimer) clearInterval(signalTimer);
   if (closeTimer) clearInterval(closeTimer);
+  if (priceTimer) clearInterval(priceTimer);
 
   signalTimer = setInterval(() => {
     void scanAllSymbols();
@@ -837,13 +917,20 @@ export function startAutonomousBot() {
   closeTimer = setInterval(() => {
     void monitorTrades();
   }, CLOSE_INTERVAL);
+
+  priceTimer = setInterval(() => {
+    void refreshLivePrices();
+  }, PRICE_INTERVAL);
 }
 
 export function stopAutonomousBot() {
   if (signalTimer) clearInterval(signalTimer);
   if (closeTimer) clearInterval(closeTimer);
+  if (priceTimer) clearInterval(priceTimer);
   signalTimer = undefined;
   closeTimer = undefined;
+  priceTimer = undefined;
+  priceRefreshInProgress = false;
   runGeneration += 1;
   botState.status = "OFFLINE";
   botState.isRunning = false;
