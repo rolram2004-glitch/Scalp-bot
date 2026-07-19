@@ -331,9 +331,15 @@ class OandaAPI {
     }
   }
 
-  async createMarketOrder({ instrument, side, units, stopLoss, takeProfit, clientTag }) {
+  async createMarketOrder({ instrument, side, units, stopLoss, takeProfit, clientTag, strategyVariant }) {
     if (config.TRADING_MODE !== "LIVE" || !config.LIVE_TRADING_ENABLED) {
       throw new Error("LIVE_ORDER_BLOCKED_BY_CONFIGURATION");
+    }
+    if (!config.LIVE_EXECUTION_VARIANT_VALID || strategyVariant !== config.LIVE_EXECUTION_VARIANT) {
+      throw new Error("LIVE_EXECUTION_VARIANT_BLOCKED_BY_CONFIGURATION");
+    }
+    if (!clientTag || !String(clientTag).startsWith(`GEMMO-${strategyVariant}-SIG-`)) {
+      throw new Error("ORDER_CLIENT_TAG_REQUIRED");
     }
 
     const normalizedInstrument = normalizeOandaSymbol(instrument);
@@ -347,6 +353,7 @@ class OandaAPI {
       type: "MARKET", instrument: normalizedInstrument, units: signedUnits,
       timeInForce: "FOK", positionFill: "DEFAULT",
       clientExtensions: clientTag ? { tag: String(clientTag).slice(0, 128) } : undefined,
+      tradeClientExtensions: clientTag ? { tag: String(clientTag).slice(0, 128) } : undefined,
       stopLossOnFill: normalizedStopLoss ? { price: normalizedStopLoss, timeInForce: "GTC" } : undefined,
       takeProfitOnFill: normalizedTakeProfit ? { price: normalizedTakeProfit, timeInForce: "GTC" } : undefined
     };
@@ -413,6 +420,12 @@ class OandaAPI {
       accountId: account.id || account.accountID || account.accountId,
       currency: account.currency,
       balance: account.balance,
+      nav: account.NAV,
+      unrealizedPL: account.unrealizedPL,
+      openTradeCount: account.openTradeCount,
+      openPositionCount: account.openPositionCount,
+      marginAvailable: account.marginAvailable,
+      state: account.state,
       mode: "practice"
     };
   }

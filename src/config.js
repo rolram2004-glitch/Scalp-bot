@@ -1,3 +1,7 @@
+const tradingMode = String(process.env.TRADING_MODE || "PAPER").toUpperCase() === "LIVE" ? "LIVE" : "PAPER";
+const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "MAIN").trim().toUpperCase();
+const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
+
 module.exports = {
   SYMBOLS: [
     "XAU_USD",
@@ -33,8 +37,10 @@ module.exports = {
   RISK_PERCENT: Number(process.env.MAX_RISK_PERCENT || 0.25),
   DEFAULT_LOT_SIZE: Number(process.env.DEFAULT_LOT_SIZE || 0.01),
   MAX_DAILY_LOSS: Number(process.env.MAX_DAILY_LOSS || 50),
-  TRADING_MODE: String(process.env.TRADING_MODE || "PAPER").toUpperCase() === "LIVE" ? "LIVE" : "PAPER",
-  LIVE_TRADING_ENABLED: String(process.env.TRADING_MODE || "PAPER").toUpperCase() === "LIVE" && process.env.LIVE_TRADING_ENABLED === "true",
+  TRADING_MODE: tradingMode,
+  LIVE_TRADING_ENABLED: tradingMode === "LIVE" && process.env.LIVE_TRADING_ENABLED === "true",
+  LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "INVALID",
+  LIVE_EXECUTION_VARIANT_VALID: liveExecutionVariantValid,
   DEFAULT_UNITS: Number(process.env.DEFAULT_UNITS || 1000),
   XAUUSD_UNITS: Number(process.env.XAUUSD_UNITS || 1),
   NORMAL_STOP_LOSS_ACCOUNT: Number(process.env.NORMAL_STOP_LOSS_ACCOUNT || process.env.NORMAL_STOP_LOSS_USD || 1.2),

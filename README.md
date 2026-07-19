@@ -34,5 +34,6 @@ This setup lets you move the bot to a remote host or cloud VM so it can remain o
 
 - `TRADING_MODE=PAPER`: real OANDA market data, no OANDA orders.
 - `TRADING_MODE=LIVE` plus `LIVE_TRADING_ENABLED=true`: verified orders on OANDA Practice only.
+- `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one real execution lane. The other lane is an explicit paper shadow and never calls OANDA.
 
 There is no synthetic market-data fallback. If OANDA data is unavailable, the scanner reports it and does not invent prices or trades. See `RAILWAY_DEPLOYMENT.md` before enabling OANDA Practice execution.

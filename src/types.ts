@@ -5,6 +5,9 @@ export interface MarketData {
   bid: number;
   ask: number;
   spread: number;
+  priceTime?: string;
+  candleTime?: string;
+  tradeable?: boolean;
 
   highPrice: number;
   lowPrice: number;

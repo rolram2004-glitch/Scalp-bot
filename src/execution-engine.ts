@@ -7,6 +7,9 @@ export interface VerifiedOrderRequest {
   units: number;
   riskAmount: number;
   rewardAmount: number;
+  strategyVariant: "MAIN" | "INVERSE";
+  signalId: string;
+  signalAt: string;
 }
 
 export interface VerifiedOrderTrade {
@@ -24,11 +27,18 @@ export interface VerifiedOrderTrade {
   openedAt: string;
   oandaOrderId: string;
   oandaTradeId: string;
+  strategyVariant: "MAIN" | "INVERSE";
+  signalId: string;
+  signalAt: string;
+  clientTag: string;
 }
 
 export type VerifiedOrderResult =
   | { status: "OPENED"; trade: VerifiedOrderTrade }
   | { status: "SKIPPED" | "REJECTED"; reason: string };
+
+const instrumentsInFlight = new Set<string>();
+const verifiedSignalIds = new Set<string>();
 
 export function normalizeOandaSymbol(symbol: string) {
   const compact = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -103,11 +113,19 @@ function roundedUnits(units: number, precision: number) {
   return Math.round(Math.abs(units) * factor) / factor;
 }
 
+function clientTag(variant: "MAIN" | "INVERSE", signalId?: string) {
+  const suffix = String(signalId || "UNTRACKED").replace(/[^A-Za-z0-9._-]/g, "-");
+  return `GEMMO-${variant}-${suffix}`.slice(0, 128);
+}
+
 export async function executeVerifiedMarketOrder(
   request: VerifiedOrderRequest
 ): Promise<VerifiedOrderResult> {
   const { oanda, symbol, side, riskAmount, rewardAmount } = request;
   const instrument = normalizeOandaSymbol(symbol);
+  const strategyVariant = request.strategyVariant;
+  const signalId = String(request.signalId || "").trim();
+  const signalAt = String(request.signalAt || "").trim();
 
   if (!oanda || typeof oanda.createMarketOrder !== "function") {
     return { status: "REJECTED", reason: "OANDA_CLIENT_UNAVAILABLE" };
@@ -115,9 +133,26 @@ export async function executeVerifiedMarketOrder(
   if (side !== "BUY" && side !== "SELL") {
     return { status: "REJECTED", reason: "INVALID_ORDER_SIDE" };
   }
+  if (strategyVariant !== "MAIN" && strategyVariant !== "INVERSE") {
+    return { status: "REJECTED", reason: "INVALID_STRATEGY_VARIANT" };
+  }
+  if (!signalId) {
+    return { status: "REJECTED", reason: "SIGNAL_ID_REQUIRED" };
+  }
+  if (!signalAt || !Number.isFinite(Date.parse(signalAt))) {
+    return { status: "REJECTED", reason: "SIGNAL_TIMESTAMP_REQUIRED" };
+  }
   if (instrument.startsWith("XAU_")) {
     return { status: "SKIPPED", reason: "XAU_LIVE_EXECUTION_NOT_ENABLED" };
   }
+  if (signalId && verifiedSignalIds.has(signalId)) {
+    return { status: "SKIPPED", reason: "SIGNAL_ALREADY_EXECUTED" };
+  }
+  if (instrumentsInFlight.has(instrument)) {
+    return { status: "SKIPPED", reason: "ORDER_SUBMISSION_ALREADY_IN_PROGRESS" };
+  }
+
+  instrumentsInFlight.add(instrument);
 
   try {
     const [account, openTrades, openPositions, instrumentInfo, pricing] = await Promise.all([
@@ -182,12 +217,15 @@ export async function executeVerifiedMarketOrder(
     const stopLoss = stopLossNumber.toFixed(displayPrecision);
     const takeProfit = takeProfitNumber.toFixed(displayPrecision);
 
+    const expectedClientTag = clientTag(strategyVariant, signalId);
     const response = await oanda.createMarketOrder({
       instrument,
       side,
       units,
       stopLoss,
-      takeProfit
+      takeProfit,
+      clientTag: expectedClientTag,
+      strategyVariant
     });
 
     if (response?.orderRejectTransaction) {
@@ -218,12 +256,18 @@ export async function executeVerifiedMarketOrder(
       String(verified.state).toUpperCase() === "OPEN" &&
       normalizeOandaSymbol(verified.instrument) === instrument &&
       Number.isFinite(verifiedUnits) &&
-      Math.abs(verifiedUnits - expectedSignedUnits) < tolerance;
+      Math.abs(verifiedUnits - expectedSignedUnits) < tolerance &&
+      String(verified?.clientExtensions?.tag || "") === expectedClientTag;
     if (!matches) {
       return { status: "REJECTED", reason: "OANDA_TRADE_VERIFICATION_MISMATCH" };
     }
 
     const verifiedEntry = finitePositive(verified.price) || entry;
+    verifiedSignalIds.add(signalId);
+    if (verifiedSignalIds.size > 10000) {
+      const oldest = verifiedSignalIds.values().next().value;
+      if (oldest) verifiedSignalIds.delete(oldest);
+    }
     return {
       status: "OPENED",
       trade: {
@@ -240,15 +284,22 @@ export async function executeVerifiedMarketOrder(
         rewardAmount: reward,
         openedAt: verified.openTime || response?.orderFillTransaction?.time || new Date().toISOString(),
         oandaOrderId: String(orderId),
-        oandaTradeId: String(tradeId)
+        oandaTradeId: String(tradeId),
+        strategyVariant,
+        signalId,
+        signalAt,
+        clientTag: expectedClientTag
       }
     };
   } catch (error) {
     return { status: "REJECTED", reason: safeReason(error) };
+  } finally {
+    instrumentsInFlight.delete(instrument);
   }
 }
 
 export const executionTestUtils = {
   hasInstrumentExposure,
-  conversionFactors
+  conversionFactors,
+  clientTag
 };

@@ -11,6 +11,7 @@ import {
 } from "./smart-money";
 import { MarketData, TradingDecision } from "./types";
 import { executeVerifiedMarketOrder } from "./execution-engine";
+import { createPairedSignalSnapshot, PairedSignalSnapshot, StrategyVariant } from "./signal-pair";
 const oanda = require("./oanda");
 const config = require("./config");
 
@@ -64,13 +65,19 @@ interface BotTrade {
   reasoning?: string;
   closeReason?: "TP HIT" | "SL HIT" | "MANUAL" | "SIGNAL EXIT";
   status: "OPEN" | "CLOSED";
-  source: "PAPER" | "OANDA" | "LOCAL_ORPHAN";
+  source: "PAPER" | "PAPER_SHADOW" | "OANDA" | "LOCAL_ORPHAN";
   units: number;
   accountCurrency?: string;
   pnlCurrency?: string;
   oandaOrderId?: string;
   oandaTradeId?: string;
   verificationStatus?: "VERIFIED" | "NOT_VERIFIED";
+  strategyVariant?: StrategyVariant;
+  signalId?: string;
+  signalAt?: string;
+  priceTime?: string;
+  managedByBot?: boolean;
+  clientTag?: string;
 }
 
 export interface BotSnapshot {
@@ -84,6 +91,10 @@ export interface BotSnapshot {
   oandaConnected: boolean;
   oandaReason?: string;
   executionMode: string;
+  tradingMode: "PAPER" | "LIVE";
+  liveTradingEnabled: boolean;
+  liveExecutionVariant: StrategyVariant | "INVALID";
+  liveExecutionVariantValid: boolean;
   accountCurrency?: string;
   symbols: string[];
   dailyTarget: number;
@@ -107,12 +118,17 @@ export interface BotSnapshot {
   signalsDiscarded: number;
   openTrades: BotTrade[];
   closedTrades: BotTrade[];
+  shadowOpenTrades: BotTrade[];
+  shadowClosedTrades: BotTrade[];
+  shadowTradeCount: number;
   session: string;
   killzone: boolean;
   logs: string[];
   marketData?: Record<string, MarketData>;
   livePrices?: Record<string, { bid: number; ask: number; mid: number; time: string; tradeable: boolean; }>;
   lastSignals?: Record<string, TradingDecision & { scannedAt: string }>;
+  pairedSignals?: Record<string, PairedSignalSnapshot>;
+  latestPairedSignal?: PairedSignalSnapshot;
 }
 
 const botState: BotSnapshot = {
@@ -121,7 +137,17 @@ const botState: BotSnapshot = {
   dataSource: "OANDA_UNAVAILABLE",
   oandaConnected: false,
   priceFeedStatus: "DISCONNECTED",
-  executionMode: config.TRADING_MODE === "LIVE" && config.LIVE_TRADING_ENABLED ? "LIVE OANDA PRACTICE" : "PAPER",
+  executionMode: config.TRADING_MODE === "LIVE"
+    ? !config.LIVE_TRADING_ENABLED
+      ? "LIVE BLOCKED - ENABLE FLAG FALSE"
+      : config.LIVE_EXECUTION_VARIANT_VALID
+        ? `LIVE OANDA PRACTICE (${config.LIVE_EXECUTION_VARIANT})`
+        : "LIVE BLOCKED - INVALID VARIANT"
+    : "PAPER",
+  tradingMode: config.TRADING_MODE,
+  liveTradingEnabled: config.LIVE_TRADING_ENABLED,
+  liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
+  liveExecutionVariantValid: config.LIVE_EXECUTION_VARIANT_VALID,
   symbols: SYMBOLS,
   dailyTarget: DAILY_TARGET,
   maxDailyTrades: MAX_DAILY_TRADES,
@@ -133,12 +159,16 @@ const botState: BotSnapshot = {
   signalsDiscarded: 0,
   openTrades: [],
   closedTrades: [],
+  shadowOpenTrades: [],
+  shadowClosedTrades: [],
+  shadowTradeCount: 0,
   session: "OFF_HOURS",
   killzone: false,
   logs: []
   ,marketData: {},
   livePrices: {},
-  lastSignals: {}
+  lastSignals: {},
+  pairedSignals: {}
 };
 
 const listeners = new Set<(snapshot: BotSnapshot) => void>();
@@ -149,9 +179,20 @@ let scanInProgress = false;
 let runGeneration = 0;
 let priceRefreshInProgress = false;
 let lastPriceErrorLogAt = 0;
+let reconciliationPromise: Promise<void> | undefined;
 
 function liveExecutionActive() {
+  return config.TRADING_MODE === "LIVE" &&
+    config.LIVE_TRADING_ENABLED === true &&
+    config.LIVE_EXECUTION_VARIANT_VALID === true;
+}
+
+function liveExecutionRequested() {
   return config.TRADING_MODE === "LIVE" && config.LIVE_TRADING_ENABLED === true;
+}
+
+function liveModeConfigured() {
+  return config.TRADING_MODE === "LIVE";
 }
 
 function emitState() {
@@ -216,6 +257,58 @@ function paperExecutablePrice(side: "BUY" | "SELL" | "HOLD", marketData: MarketD
   return Number.isFinite(candidate) && candidate > 0 ? candidate : marketData.closePrice;
 }
 
+function parseGemmoClientTag(tag: unknown) {
+  const match = /^GEMMO-(MAIN|INVERSE)-(SIG-[A-Za-z0-9._-]+)$/.exec(String(tag || ""));
+  return match
+    ? { strategyVariant: match[1] as StrategyVariant, signalId: match[2], clientTag: match[0] }
+    : null;
+}
+
+function hasConflictingManagedVariant() {
+  return botState.openTrades.some((trade) =>
+    trade.source === "OANDA" &&
+    (trade.managedByBot !== true || trade.strategyVariant !== config.LIVE_EXECUTION_VARIANT)
+  );
+}
+
+function canAutoCloseOandaTrade(trade: Pick<BotTrade, "source" | "managedByBot" | "strategyVariant" | "clientTag" | "oandaTradeId">, variant: StrategyVariant) {
+  return trade.source === "OANDA" &&
+    trade.managedByBot === true &&
+    trade.strategyVariant === variant &&
+    Boolean(trade.clientTag) &&
+    Boolean(trade.oandaTradeId);
+}
+
+function updatePairExecution(
+  pair: PairedSignalSnapshot,
+  state: "SUBMITTING" | "SKIPPED" | "REJECTED" | "OPEN_VERIFIED",
+  reason?: string,
+  ids?: { orderId?: string; tradeId?: string }
+) {
+  const lane = config.LIVE_EXECUTION_VARIANT === "INVERSE" ? pair.inverse : pair.main;
+  if (!lane.selectedForExecution) return;
+  lane.executionState = state;
+  lane.executionReason = reason;
+  lane.oandaOrderId = ids?.orderId;
+  lane.oandaTradeId = ids?.tradeId;
+}
+
+function paperExitPrice(side: "BUY" | "SELL" | "HOLD", marketData: MarketData) {
+  const candidate = side === "BUY" ? Number(marketData.bid) : Number(marketData.ask);
+  return Number.isFinite(candidate) && candidate > 0 ? candidate : marketData.closePrice;
+}
+
+function isFreshTradeableQuote(quote: { bid?: unknown; ask?: unknown; time?: unknown; tradeable?: unknown }) {
+  const bid = Number(quote?.bid);
+  const ask = Number(quote?.ask);
+  const time = Date.parse(String(quote?.time || ""));
+  const age = Date.now() - time;
+  return Number.isFinite(bid) && bid > 0 &&
+    Number.isFinite(ask) && ask >= bid &&
+    Number.isFinite(time) && age >= -5000 && age <= 30000 &&
+    quote?.tradeable === true;
+}
+
 function hasOpenTradeForSymbol(symbol: string) {
   const normalized = cleanSymbol(symbol);
   return botState.openTrades.some((trade) => cleanSymbol(trade.symbol) === normalized);
@@ -224,7 +317,8 @@ function hasOpenTradeForSymbol(symbol: string) {
 function buildTrade(
   symbol: string,
   decision: TradingDecision,
-  marketData: MarketData
+  marketData: MarketData,
+  pairedSignal?: PairedSignalSnapshot
 ): BotTrade {
   const entryPrice = paperExecutablePrice(decision.action, marketData);
   const direction = decision.action === "SELL" ? -1 : 1;
@@ -252,7 +346,11 @@ function buildTrade(
     source: "PAPER",
     units: tradeUnits(symbol),
     pnlCurrency: quoteCurrency(symbol),
-    verificationStatus: "VERIFIED"
+    verificationStatus: "VERIFIED",
+    strategyVariant: "MAIN",
+    signalId: pairedSignal?.pairId,
+    signalAt: pairedSignal?.evaluatedAt,
+    priceTime: pairedSignal?.market.time
   };
 }
 
@@ -373,11 +471,13 @@ async function refreshLivePrices() {
         const multiplier = isGold(symbol) ? 10 : pipMultiplier(symbol);
         botState.marketData![symbol] = {
           ...existing,
-          bid,
-          ask,
-          closePrice: mid,
-          spread: Math.max(0, ask - bid) * multiplier
-        };
+           bid,
+           ask,
+           closePrice: mid,
+           spread: Math.max(0, ask - bid) * multiplier,
+           priceTime: time,
+           tradeable: item?.tradeable !== false && String(item?.status || "tradeable").toLowerCase() === "tradeable"
+         };
       }
 
       if (time && (!latestTime || time > latestTime)) latestTime = time;
@@ -413,6 +513,7 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
   const currentPrice = Number.isFinite(marketPrice) && marketPrice > 0
     ? marketPrice
     : previous?.currentPrice || entryPrice;
+  const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
 
   return {
     id: `OANDA-${remote.id}`,
@@ -428,15 +529,23 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
     pnl: Number(remote?.unrealizedPL || 0),
     pnlPips: previous?.pnlPips,
     openedAt: remote?.openTime || previous?.openedAt || new Date().toISOString(),
-    setupType: previous?.setupType || "OANDA_SYNC",
+    setupType: previous?.setupType || (ownership ? "GEMMO_SYNC" : "OANDA_EXTERNAL"),
     confidence: previous?.confidence,
-    reasoning: previous?.reasoning || "Posizione aperta verificata direttamente tramite OANDA Practice.",
+    reasoning: previous?.reasoning || (ownership
+      ? "Posizione GEMMO aperta e verificata direttamente tramite OANDA Practice."
+      : "Posizione OANDA verificata ma non gestita dal bot: nessuna chiusura automatica."),
     status: "OPEN",
     source: "OANDA",
     accountCurrency,
     oandaOrderId: previous?.oandaOrderId,
     oandaTradeId: String(remote.id),
-    verificationStatus: "VERIFIED"
+    verificationStatus: "VERIFIED",
+    strategyVariant: ownership?.strategyVariant,
+    signalId: ownership?.signalId,
+    signalAt: previous?.signalAt,
+    priceTime: previous?.priceTime,
+    managedByBot: Boolean(ownership),
+    clientTag: ownership?.clientTag
   };
 }
 
@@ -444,6 +553,7 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
   const signedUnits = Number(remote?.initialUnits || remote?.currentUnits || 0);
   const entryPrice = Number(remote?.price);
   const closePrice = Number(remote?.averageClosePrice);
+  const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
   return {
     id: `OANDA-${remote.id}`,
     symbol: cleanSymbol(remote?.instrument),
@@ -459,22 +569,43 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     pnlPips: previous?.pnlPips,
     openedAt: remote?.openTime || previous?.openedAt || new Date().toISOString(),
     closedAt: remote?.closeTime || previous?.closedAt,
-    setupType: previous?.setupType || "OANDA_SYNC",
+    setupType: previous?.setupType || (ownership ? "GEMMO_SYNC" : "OANDA_EXTERNAL"),
     confidence: previous?.confidence,
-    reasoning: previous?.reasoning || "Trade chiuso verificato direttamente tramite OANDA Practice.",
+    reasoning: previous?.reasoning || (ownership
+      ? "Trade GEMMO chiuso e verificato direttamente tramite OANDA Practice."
+      : "Trade OANDA chiuso verificato; origine bot non dimostrata."),
     closeReason: previous?.closeReason || "MANUAL",
     status: "CLOSED",
     source: "OANDA",
     accountCurrency,
     oandaOrderId: previous?.oandaOrderId,
     oandaTradeId: String(remote.id),
-    verificationStatus: "VERIFIED"
+    verificationStatus: "VERIFIED",
+    strategyVariant: ownership?.strategyVariant,
+    signalId: ownership?.signalId,
+    signalAt: previous?.signalAt,
+    priceTime: previous?.priceTime,
+    managedByBot: Boolean(ownership),
+    clientTag: ownership?.clientTag
   };
 }
 
 async function reconcileLiveTrades() {
-  if (!liveExecutionActive()) return;
+  if (!liveModeConfigured()) return;
+  if (reconciliationPromise) {
+    await reconciliationPromise;
+    return;
+  }
 
+  reconciliationPromise = reconcileLiveTradesOnce();
+  try {
+    await reconciliationPromise;
+  } finally {
+    reconciliationPromise = undefined;
+  }
+}
+
+async function reconcileLiveTradesOnce() {
   try {
     const [account, remoteOpenTrades, remoteClosedTrades] = await Promise.all([
       oanda.getAccount(),
@@ -550,7 +681,7 @@ async function reconcileLiveTrades() {
     if (newlyClosed.length > 0) {
       newlyClosed.forEach((trade) => pushLog(`[${trade.symbol}] chiusura verificata OANDA | P&L ${currency} ${trade.pnl.toFixed(2)}`));
     }
-    botState.openTrades = [...verifiedOpen, ...orphans].slice(0, MAX_OPEN_POSITIONS);
+    botState.openTrades = [...verifiedOpen, ...orphans];
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
     botState.lastUpdated = new Date().toISOString();
@@ -562,7 +693,86 @@ async function reconcileLiveTrades() {
   }
 }
 
+function buildShadowTrade(
+  symbol: string,
+  lane: PairedSignalSnapshot["main"],
+  marketData: MarketData,
+  pairedSignal: PairedSignalSnapshot
+): BotTrade {
+  const decision: TradingDecision = {
+    action: lane.action,
+    confidence: lane.confidence,
+    reasoning: lane.reasoning,
+    setupType: lane.setupType
+  };
+  const trade = buildTrade(symbol, decision, marketData, pairedSignal);
+  return {
+    ...trade,
+    id: `SHADOW-${lane.variant}-${symbol}-${pairedSignal.pairId}`,
+    source: "PAPER_SHADOW",
+    strategyVariant: lane.variant,
+    reasoning: `${lane.reasoning}. PAPER SHADOW: nessun ordine OANDA, prezzi bid/ask reali.`,
+    verificationStatus: "NOT_VERIFIED"
+  };
+}
+
+function shadowLaneForPair(pair: PairedSignalSnapshot) {
+  if (liveExecutionActive()) {
+    return config.LIVE_EXECUTION_VARIANT === "MAIN" ? pair.inverse : pair.main;
+  }
+  return pair.inverse;
+}
+
+function closeShadowTradeAtMarket(index: number, marketData: MarketData, reason: "SIGNAL EXIT" | "TP HIT" | "SL HIT") {
+  const trade = botState.shadowOpenTrades[index];
+  if (!trade) return;
+  const exitPrice = paperExitPrice(trade.side, marketData);
+  const multiplier = pipMultiplier(trade.symbol);
+  const closed: BotTrade = {
+    ...trade,
+    status: "CLOSED",
+    currentPrice: exitPrice,
+    pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, exitPrice),
+    pnlPips: trade.side === "BUY"
+      ? (exitPrice - trade.entryPrice) * multiplier
+      : (trade.entryPrice - exitPrice) * multiplier,
+    closedAt: new Date().toISOString(),
+    closeReason: reason
+  };
+  botState.shadowOpenTrades = botState.shadowOpenTrades.filter((_, itemIndex) => itemIndex !== index);
+  botState.shadowClosedTrades = [closed, ...botState.shadowClosedTrades].slice(0, 80);
+  pushLog(`[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${reason} | ${trade.pnlCurrency || "quote currency"} ${closed.pnl.toFixed(2)} | no OANDA order`);
+}
+
+function updateShadowFromSignal(
+  symbol: string,
+  pair: PairedSignalSnapshot,
+  marketData: MarketData,
+  cycle: { shadowOpened: number }
+) {
+  if (liveModeConfigured() && !liveExecutionActive()) return;
+  const lane = shadowLaneForPair(pair);
+  const existingIndex = botState.shadowOpenTrades.findIndex((trade) => cleanSymbol(trade.symbol) === cleanSymbol(symbol));
+
+  if (lane.action === "HOLD" || lane.confidence < 50) {
+    if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "SIGNAL EXIT");
+    return;
+  }
+  if (existingIndex >= 0) return;
+  if (cycle.shadowOpened >= MAX_NEW_TRADES_PER_CYCLE || botState.shadowOpenTrades.length >= MAX_OPEN_POSITIONS) return;
+
+  const shadow = buildShadowTrade(symbol, lane, marketData, pair);
+  botState.shadowOpenTrades = [shadow, ...botState.shadowOpenTrades].slice(0, MAX_OPEN_POSITIONS);
+  botState.shadowTradeCount += 1;
+  cycle.shadowOpened += 1;
+  pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} opened on OANDA quote ${pair.market.time} | no OANDA order`);
+}
+
 async function closeVerifiedOandaTrade(trade: BotTrade) {
+  if (!canAutoCloseOandaTrade(trade, config.LIVE_EXECUTION_VARIANT)) {
+    pushLog(`[${trade.symbol}] chiusura bloccata: trade OANDA non attribuito alla corsia GEMMO attiva`);
+    return false;
+  }
   if (!trade.oandaTradeId) {
     pushLog(`[${trade.symbol}] chiusura bloccata: OANDA trade ID assente`);
     return false;
@@ -596,7 +806,7 @@ async function closeVerifiedOandaTrade(trade: BotTrade) {
   }
 }
 
-async function scanSymbol(symbol: string, cycle: { opened: number }, generation: number) {
+async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened: number }, generation: number) {
   try {
     const analytics = getAnalytics();
     if (liveExecutionActive() && typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
@@ -624,6 +834,49 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
     const decision = await getScalpingSignal(enrichedMarketData);
     const rankedSignals = rankSignals([decision]);
     const rankedDecision = rankedSignals[0] ?? decision;
+    const evaluatedAt = new Date().toISOString();
+    const signalId = `SIG-${cleanSymbol(symbol)}-${evaluatedAt.replace(/[^0-9]/g, "")}`;
+    const bid = Number(enrichedMarketData.bid);
+    const ask = Number(enrichedMarketData.ask);
+    const pairedSignal = createPairedSignalSnapshot({
+      signalId,
+      symbol,
+      evaluatedAt,
+      market: {
+        source: "OANDA",
+        instrument: symbol,
+        time: String(enrichedMarketData.priceTime || ""),
+        bid,
+        ask,
+        mid: Number.isFinite(bid) && Number.isFinite(ask) ? (bid + ask) / 2 : Number(enrichedMarketData.closePrice),
+        tradeable: enrichedMarketData.tradeable === true
+      },
+      analysis: {
+        candleTime: String(enrichedMarketData.candleTime || ""),
+        timeframe: enrichedMarketData.timeframe,
+        ema20: Number(enrichedMarketData.ema20),
+        ema50: Number(enrichedMarketData.ema50),
+        ema200: Number(enrichedMarketData.ema200),
+        rsi: Number(enrichedMarketData.rsi),
+        spread: Number(enrichedMarketData.spread),
+        structureBias: enrichedMarketData.structureBias,
+        trend: enrichedMarketData.trend
+      },
+      mainDecision: rankedDecision,
+      tradingMode: liveExecutionActive() ? "LIVE" : liveModeConfigured() ? "BLOCKED" : "PAPER",
+      liveExecutionVariant: config.LIVE_EXECUTION_VARIANT
+    });
+    const selectedLane = config.LIVE_EXECUTION_VARIANT === "INVERSE"
+      ? pairedSignal.inverse
+      : pairedSignal.main;
+    const decisionForExecution: TradingDecision = liveExecutionActive()
+      ? {
+          ...rankedDecision,
+          action: selectedLane.action,
+          reasoning: selectedLane.reasoning,
+          setupType: selectedLane.setupType
+        }
+      : rankedDecision;
 
     botState.signalsAnalyzed += 1;
     botState.currentSymbol = symbol;
@@ -633,16 +886,19 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
     botState.lastSignals = botState.lastSignals || {};
     botState.lastSignals[symbol] = {
       ...rankedDecision,
-      scannedAt: new Date().toISOString()
+      scannedAt: evaluatedAt
     };
-    botState.currentPrice = enrichedMarketData.closePrice;
+    botState.pairedSignals = botState.pairedSignals || {};
+    botState.pairedSignals[symbol] = pairedSignal;
+    botState.latestPairedSignal = pairedSignal;
+    botState.currentPrice = pairedSignal.market.mid;
     botState.entryPrice = rankedDecision.entryPrice ?? enrichedMarketData.closePrice;
     const signalDirection = rankedDecision.action === "SELL" ? -1 : 1;
     const cash = cashRules(symbol);
-    botState.stopLoss = liveExecutionActive()
+    botState.stopLoss = liveModeConfigured()
       ? undefined
       : enrichedMarketData.closePrice - signalDirection * priceDistanceForCash(symbol, cash.riskAmount);
-    botState.takeProfit = liveExecutionActive()
+    botState.takeProfit = liveModeConfigured()
       ? undefined
       : enrichedMarketData.closePrice + signalDirection * priceDistanceForCash(symbol, cash.rewardAmount);
     botState.riskAmount = cash.riskAmount;
@@ -657,6 +913,14 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
       return;
     }
 
+    if (!pairedSignal.marketValid) {
+      botState.signalsDiscarded += 1;
+      pushLog(`[${symbol}] PAPER/LIVE signal blocked: ${pairedSignal.marketValidationReason}`);
+      return;
+    }
+
+    updateShadowFromSignal(symbol, pairedSignal, enrichedMarketData, cycle);
+
     if (rankedDecision.action === "HOLD" || rankedDecision.confidence < 50) {
       botState.signalsDiscarded += 1;
 
@@ -664,10 +928,14 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
       if (sameSymbolIndex >= 0) {
         const lastTrade = botState.openTrades[sameSymbolIndex];
         if (liveExecutionActive() && lastTrade.source === "OANDA") {
-          await closeVerifiedOandaTrade(lastTrade);
+          if (canAutoCloseOandaTrade(lastTrade, config.LIVE_EXECUTION_VARIANT)) {
+            await closeVerifiedOandaTrade(lastTrade);
+          } else {
+            pushLog(`[${symbol}] SIGNAL EXIT ignored: OANDA trade is external or belongs to another GEMMO lane`);
+          }
         } else if (!liveExecutionActive() && lastTrade.source === "PAPER") {
           const multiplier = pipMultiplier(lastTrade.symbol);
-          const exitPrice = paperExecutablePrice(lastTrade.side, enrichedMarketData);
+          const exitPrice = paperExitPrice(lastTrade.side, enrichedMarketData);
           lastTrade.status = "CLOSED";
           lastTrade.currentPrice = exitPrice;
           lastTrade.pnl = calculatePaperPnl(lastTrade.symbol, lastTrade.side, lastTrade.entryPrice, exitPrice);
@@ -685,25 +953,46 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
       pushLog(
         `[${symbol}] ${rankedDecision.action} | ${rankedDecision.confidence}% | ${rankedDecision.reasoning}`
       );
+    } else if (liveModeConfigured() && !liveExecutionActive()) {
+      botState.signalsDiscarded += 1;
+      const reason = !config.LIVE_TRADING_ENABLED
+        ? "LIVE_TRADING_ENABLED must be true"
+        : "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE";
+      pushLog(`[${symbol}] LIVE execution blocked: ${reason}`);
+    } else if (liveExecutionActive() && pairedSignal.executionBlockedReason) {
+      botState.signalsDiscarded += 1;
+      pushLog(`[${symbol}] LIVE execution blocked: ${pairedSignal.executionBlockedReason}`);
+    } else if (liveExecutionActive() && hasConflictingManagedVariant()) {
+      botState.signalsDiscarded += 1;
+      updatePairExecution(pairedSignal, "SKIPPED", "OANDA_EXTERNAL_OR_DIFFERENT_GEMMO_VARIANT_OPEN");
+      pushLog(`[${symbol}] LIVE execution skipped: an external/unknown OANDA trade or another GEMMO lane is still open`);
     } else if (hasOpenTradeForSymbol(symbol)) {
       botState.signalsDiscarded += 1;
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "POSITION_ALREADY_OPEN");
       pushLog(`[${symbol}] trade skipped: one open position per symbol is already active`);
     } else if (cycle.opened >= MAX_NEW_TRADES_PER_CYCLE) {
       botState.signalsDiscarded += 1;
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "CYCLE_CAP_REACHED");
       pushLog(`[${symbol}] valid signal queued: cycle cap ${MAX_NEW_TRADES_PER_CYCLE} reached`);
     } else if (canOpenTrade(botState.dailyTradeCount, botState.openTrades.length)) {
       if (liveExecutionActive()) {
         if (!botState.isRunning || generation !== runGeneration) {
+          updatePairExecution(pairedSignal, "SKIPPED", "BOT_STOPPED_BEFORE_SUBMISSION");
           pushLog(`[${symbol}] order skipped: bot stopped before submission`);
           return;
         }
+        updatePairExecution(pairedSignal, "SUBMITTING");
+        emitState();
         const result = await executeVerifiedMarketOrder({
           oanda,
           symbol,
-          side: rankedDecision.action as "BUY" | "SELL",
+          side: decisionForExecution.action as "BUY" | "SELL",
           units: tradeUnits(symbol),
           riskAmount: cash.riskAmount,
-          rewardAmount: cash.rewardAmount
+          rewardAmount: cash.rewardAmount,
+          strategyVariant: config.LIVE_EXECUTION_VARIANT,
+          signalId: pairedSignal.pairId,
+          signalAt: pairedSignal.evaluatedAt
         });
         if (result.status === "OPENED") {
           const trade: BotTrade = {
@@ -711,26 +1000,32 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
             ...result.trade,
             pnl: 0,
             pnlPips: 0,
-            setupType: rankedDecision.setupType || "EMA_STACK",
-            confidence: rankedDecision.confidence,
-            reasoning: `${rankedDecision.reasoning}. Ordine e trade verificati tramite OANDA Practice.`,
+            setupType: decisionForExecution.setupType || "EMA_STACK",
+            confidence: decisionForExecution.confidence,
+            reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} e trade verificati tramite OANDA Practice.`,
             status: "OPEN",
-            verificationStatus: "VERIFIED"
+            verificationStatus: "VERIFIED",
+            managedByBot: true
           };
           botState.dailyTradeCount += 1;
           cycle.opened += 1;
-          botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
+          botState.openTrades = [trade, ...botState.openTrades];
           botState.accountCurrency = trade.accountCurrency;
           botState.entryPrice = trade.entryPrice;
           botState.stopLoss = trade.stopLoss;
           botState.takeProfit = trade.takeProfit;
-          pushLog(`[${symbol}] OANDA OPEN VERIFIED | ${trade.side} ${trade.units} | trade ID ${trade.oandaTradeId}`);
+          updatePairExecution(pairedSignal, "OPEN_VERIFIED", undefined, {
+            orderId: trade.oandaOrderId,
+            tradeId: trade.oandaTradeId
+          });
+          pushLog(`[${symbol}] OANDA ${config.LIVE_EXECUTION_VARIANT} OPEN VERIFIED | ${trade.side} ${trade.units} | trade ID ${trade.oandaTradeId}`);
         } else {
           botState.signalsDiscarded += 1;
+          updatePairExecution(pairedSignal, result.status, result.reason);
           pushLog(`[${symbol}] ${result.status}: ${result.reason}`);
         }
       } else {
-        const trade = buildTrade(symbol, rankedDecision, enrichedMarketData);
+        const trade = buildTrade(symbol, rankedDecision, enrichedMarketData, pairedSignal);
         botState.dailyTradeCount += 1;
         cycle.opened += 1;
         botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
@@ -739,8 +1034,11 @@ async function scanSymbol(symbol: string, cycle: { opened: number }, generation:
         );
       }
     } else {
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "RISK_CAP_ACTIVE");
       pushLog(`[${symbol}] trade skipped due to risk caps`);
     }
+
+    pushLog(`[${symbol}] pair ${pairedSignal.pairId} | MAIN ${pairedSignal.main.action} | INVERSE ${pairedSignal.inverse.action} | same OANDA quote ${pairedSignal.market.time || "N/A"}`);
 
     emitState();
   } catch (error) {
@@ -761,11 +1059,11 @@ async function scanAllSymbols() {
 
   scanInProgress = true;
   const generation = runGeneration;
-  const cycle = { opened: 0, checked: 0 };
+  const cycle = { opened: 0, shadowOpened: 0, checked: 0 };
   pushLog(`Starting market scan: 15 FX + XAUUSD | maximum ${MAX_NEW_TRADES_PER_CYCLE} valid new entries`);
 
   try {
-    if (liveExecutionActive()) {
+    if (liveModeConfigured()) {
       await reconcileLiveTrades();
     }
     for (const symbol of SYMBOLS) {
@@ -776,30 +1074,87 @@ async function scanAllSymbols() {
       await scanSymbol(symbol, cycle, generation);
       cycle.checked += 1;
     }
-    pushLog(`Market scan complete: ${cycle.checked}/${SYMBOLS.length} instruments checked, ${cycle.opened} new ${liveExecutionActive() ? "OANDA" : "PAPER"} trades`);
+    const executionLabel = liveExecutionActive() ? "OANDA" : liveModeConfigured() ? "BLOCKED" : "PAPER";
+    pushLog(`Market scan complete: ${cycle.checked}/${SYMBOLS.length} instruments checked, ${cycle.opened} new ${executionLabel} trades, ${cycle.shadowOpened} PAPER SHADOW trades`);
   } finally {
     scanInProgress = false;
   }
 }
 
-async function monitorTrades() {
-  if (liveExecutionActive()) {
-    await reconcileLiveTrades();
-    return;
+async function monitorShadowTrades() {
+  if (botState.shadowOpenTrades.length === 0) return;
+  const stillOpen: BotTrade[] = [];
+  const justClosed: BotTrade[] = [];
+
+  for (const trade of botState.shadowOpenTrades) {
+    const quote = botState.livePrices?.[cleanSymbol(trade.symbol)];
+    const currentPrice = Number(trade.side === "SELL" ? quote?.ask : quote?.bid);
+    if (botState.priceFeedStatus !== "CONNECTED" || !quote || !isFreshTradeableQuote(quote) || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+      stillOpen.push(trade);
+      continue;
+    }
+
+    const hitTakeProfit = trade.takeProfit
+      ? trade.side === "BUY" ? currentPrice >= trade.takeProfit : currentPrice <= trade.takeProfit
+      : false;
+    const hitStopLoss = trade.stopLoss
+      ? trade.side === "BUY" ? currentPrice <= trade.stopLoss : currentPrice >= trade.stopLoss
+      : false;
+    const multiplier = pipMultiplier(trade.symbol);
+    const updated: BotTrade = {
+      ...trade,
+      currentPrice,
+      priceTime: quote.time,
+      pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, currentPrice),
+      pnlPips: trade.side === "BUY"
+        ? (currentPrice - trade.entryPrice) * multiplier
+        : (trade.entryPrice - currentPrice) * multiplier
+    };
+
+    if (hitTakeProfit || hitStopLoss) {
+      justClosed.push({
+        ...updated,
+        status: "CLOSED",
+        closedAt: new Date().toISOString(),
+        closeReason: hitTakeProfit ? "TP HIT" : "SL HIT"
+      });
+    } else {
+      stillOpen.push(updated);
+    }
   }
 
-  if (botState.openTrades.length > 0) {
+  botState.shadowOpenTrades = stillOpen;
+  if (justClosed.length > 0) {
+    botState.shadowClosedTrades = [...justClosed.reverse(), ...botState.shadowClosedTrades].slice(0, 80);
+    justClosed.forEach((trade) => pushLog(
+      `[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${trade.closeReason} | ${trade.pnlCurrency || "quote currency"} ${trade.pnl.toFixed(2)} | no OANDA order`
+    ));
+  }
+}
+
+async function monitorTrades() {
+  if (liveModeConfigured()) {
+    await reconcileLiveTrades();
+  }
+
+  if (!liveModeConfigured() && botState.openTrades.length > 0) {
     const stillOpen: BotTrade[] = [];
     const justClosed: BotTrade[] = [];
 
     for (const trade of botState.openTrades) {
       const multiplier = pipMultiplier(trade.symbol);
       const priceData = await oanda.getPrice(trade.symbol);
+      const quote = {
+        bid: priceData?.bids?.[0]?.price ?? priceData?.closeoutBid,
+        ask: priceData?.asks?.[0]?.price ?? priceData?.closeoutAsk,
+        time: priceData?.time,
+        tradeable: priceData?.tradeable !== false && String(priceData?.status || "tradeable").toLowerCase() === "tradeable"
+      };
       const currentPrice = Number(trade.side === "SELL"
-        ? priceData?.asks?.[0]?.price ?? priceData?.closeoutAsk
-        : priceData?.bids?.[0]?.price ?? priceData?.closeoutBid);
+        ? quote.ask
+        : quote.bid);
 
-      if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+      if (!isFreshTradeableQuote(quote) || !Number.isFinite(currentPrice) || currentPrice <= 0) {
         stillOpen.push(trade);
         pushLog(`[${trade.symbol}] open trade not updated: OANDA price unavailable`);
         continue;
@@ -854,6 +1209,10 @@ async function monitorTrades() {
     botState.lastUpdated = new Date().toISOString();
     emitState();
   }
+
+  await monitorShadowTrades();
+  botState.lastUpdated = new Date().toISOString();
+  emitState();
 }
 
 export function startAutonomousBot() {
@@ -880,7 +1239,7 @@ export function startAutonomousBot() {
       if (status.connected) {
         await refreshLivePrices();
       }
-      if (status.connected && liveExecutionActive()) {
+      if (status.connected && liveModeConfigured()) {
         await reconcileLiveTrades();
       }
       emitState();
@@ -902,8 +1261,10 @@ export function startAutonomousBot() {
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
   pushLog(`Max New Trades Per Cycle: ${MAX_NEW_TRADES_PER_CYCLE}`);
   pushLog(liveExecutionActive()
-    ? "Execution: LIVE OANDA PRACTICE. Every trade requires OANDA order ID and verified trade ID."
-    : "Execution: PAPER TRADING ONLY. OANDA orders disabled.");
+    ? `Execution: LIVE OANDA PRACTICE (${config.LIVE_EXECUTION_VARIANT}). Every trade requires OANDA order ID and verified trade ID.`
+    : liveModeConfigured()
+      ? `Execution: LIVE BLOCKED. ${config.LIVE_TRADING_ENABLED ? "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE." : "LIVE_TRADING_ENABLED must be true."}`
+      : "Execution: PAPER TRADING ONLY. OANDA orders disabled; MAIN and INVERSE comparison is shadow-only.");
   pushLog("=================================");
 
   if (signalTimer) clearInterval(signalTimer);
@@ -938,3 +1299,11 @@ export function stopAutonomousBot() {
   pushLog("AUTONOMOUS BOT STOPPED");
   emitState();
 }
+
+export const autonomousTestUtils = {
+  parseGemmoClientTag,
+  canAutoCloseOandaTrade,
+  paperExecutablePrice,
+  paperExitPrice,
+  isFreshTradeableQuote
+};

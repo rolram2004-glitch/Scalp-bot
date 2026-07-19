@@ -54,6 +54,9 @@ function buildMarketDataFromOanda(
     bid,
     ask,
     spread: Math.max(0, ask - bid) * (/JPY$/i.test(symbol) ? 100 : /XAU/i.test(symbol) ? 10 : 10000),
+    priceTime: String(priceData?.time || lastCandle?.time || ""),
+    candleTime: String(lastCandle?.time || ""),
+    tradeable: priceData?.tradeable !== false && String(priceData?.status || "tradeable").toLowerCase() === "tradeable",
 
     highPrice,
     lowPrice,
