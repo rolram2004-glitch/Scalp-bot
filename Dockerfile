@@ -7,7 +7,6 @@ RUN npm install --omit=dev --ignore-scripts
 
 COPY server.js tsconfig.json ecosystem.config.js ./
 COPY src ./src
-COPY public ./public
 COPY frontend ./frontend
 
 RUN cd frontend && npm ci --include=dev && npm run build

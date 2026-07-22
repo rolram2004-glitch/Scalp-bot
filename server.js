@@ -12,10 +12,13 @@ const {
 } = require("./src/autonomous-bot");
 const oanda = require("./src/oanda");
 const config = require("./src/config");
+const { loadMultiTimeframeIntelligence } = require("./src/multi-timeframe");
 
-function pipSizeForSymbol(symbol) {
-  if (/XAU/i.test(String(symbol))) return 0.1;
-  return /JPY$/i.test(String(symbol).replace(/[^A-Z]/gi, "")) ? 0.01 : 0.0001;
+const intelligenceCache = new Map();
+
+function maskedAccountId(value) {
+  const accountId = String(value || "");
+  return accountId ? `***${accountId.slice(-4)}` : undefined;
 }
 
 function createApp() {
@@ -24,16 +27,19 @@ function createApp() {
   const hasFrontend = fs.existsSync(frontendDist);
 
   app.use(express.json());
+  app.use("/api", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
   if (hasFrontend) {
     app.use(express.static(frontendDist));
   }
-  app.use(express.static(path.join(__dirname, "public")));
 
   app.get("/", (req, res) => {
     if (hasFrontend) {
       return res.sendFile(path.join(frontendDist, "index.html"));
     }
-    return res.sendFile(path.join(__dirname, "public", "dashboard.html"));
+    return res.status(503).type("text/plain").send("Dashboard non disponibile: eseguire la build del frontend.");
   });
 
   app.get("/health", (req, res) => {
@@ -50,9 +56,19 @@ function createApp() {
 
   app.get("/api/oanda/status", async (req, res) => {
     try {
-      res.json(await oanda.getConnectionStatus());
+      const status = await oanda.getConnectionStatus();
+      res.json({
+        ...status,
+        accountId: maskedAccountId(status?.accountId),
+        checkedAt: new Date().toISOString()
+      });
     } catch (err) {
-      res.json({ connected: false, reason: "status_error", mode: "practice" });
+      res.json({
+        connected: false,
+        reason: "status_error",
+        mode: "practice",
+        checkedAt: new Date().toISOString()
+      });
     }
   });
 
@@ -108,6 +124,34 @@ function createApp() {
       return res.status(503).json({ error: "oanda_candles_unavailable", dataSource: "OANDA_UNAVAILABLE" });
     } catch (err) {
       return res.status(503).json({ error: "oanda_candles_unavailable", dataSource: "OANDA_UNAVAILABLE" });
+    }
+  });
+
+  app.get("/api/intelligence", async (req, res) => {
+    const symbol = normalizeOandaSymbol(req.query.symbol || "");
+    const configured = new Set((config.SYMBOLS || []).map(normalizeOandaSymbol));
+    if (!symbol || !configured.has(symbol)) {
+      return res.status(400).json({ error: "unsupported_symbol" });
+    }
+
+    const cached = intelligenceCache.get(symbol);
+    if (cached && Date.now() - cached.savedAt < 30000) {
+      return res.json(cached.data);
+    }
+
+    try {
+      const data = await loadMultiTimeframeIntelligence(oanda, symbol);
+      intelligenceCache.set(symbol, { savedAt: Date.now(), data });
+      return res.status(data.availableFrames > 0 ? 200 : 503).json(data);
+    } catch (_error) {
+      return res.status(503).json({
+        symbol: symbol.replace("_", ""),
+        source: "OANDA",
+        availableFrames: 0,
+        consensus: "HOLD",
+        reasoning: "Dati multi-timeframe OANDA non disponibili.",
+        frames: []
+      });
     }
   });
 
@@ -167,7 +211,7 @@ function createApp() {
     if (hasFrontend) {
       return res.sendFile(path.join(frontendDist, 'index.html'));
     }
-    return res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+    return res.status(503).type('text/plain').send('Dashboard non disponibile: eseguire la build del frontend.');
   });
 
   return app;

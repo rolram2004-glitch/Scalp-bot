@@ -1,73 +1,96 @@
-# SCALP BOT — Requisiti vincolanti
+# GEMMO REMONDATA BOT - REQUISITI VINCOLANTI
 
 Questo file deve essere letto integralmente prima di ogni modifica futura al progetto.
 
 ## Regola fondamentale
 
-Una posizione mostrata come LIVE deve esistere realmente su OANDA con lo stesso simbolo, direzione, unità, trade ID e stato. Prezzo reale OANDA non significa ordine reale OANDA. Non inventare trade, P&L, statistiche, storico, calendario, grafici o stati di connessione.
+Una posizione mostrata come LIVE deve esistere realmente su OANDA con lo stesso simbolo, direzione, unita, trade ID e stato. Prezzo reale OANDA non significa ordine reale OANDA. Non inventare trade, P&L, statistiche, storico, calendario, grafici, livelli o stati di connessione.
 
-## Sicurezza e modalità
+## Sicurezza e modalita
 
 - Non inviare ordini reali durante sviluppo o test.
-- Modalità esplicite: `TRADING_MODE=PAPER` e `TRADING_MODE=LIVE`; default e primo deploy Railway: PAPER.
-- PAPER usa prezzi/candele reali OANDA ma non invia ordini ed è marcato chiaramente PAPER.
-- LIVE invia ordini solo quando esplicitamente attivato; senza connessione OANDA blocca nuove aperture.
-- Nessun fallback simulato nascosto in LIVE.
+- Modalita esplicite: `TRADING_MODE=PAPER` e `TRADING_MODE=LIVE`; default e primo deploy Railway: PAPER.
+- PAPER usa prezzi e candele reali OANDA, non invia ordini ed e marcato chiaramente PAPER.
+- LIVE invia ordini OANDA Practice solo quando e esplicitamente attivato e tutti i gate sono verificati.
+- Se account, feed, strumento, size, protezioni o sincronizzazione non sono verificati, bloccare l'esecuzione.
+- Nessun fallback simulato nascosto.
 - Segreti solo in `.env` locale o Railway Variables; mai codice, Git, dashboard, log o chat.
+- Un token incollato in chat deve essere considerato esposto, revocato e sostituito direttamente dal proprietario.
 
-## Fonte della verità LIVE
+## Fonte della verita LIVE
 
-OANDA è fonte della verità per posizioni, ordini, trade aperti/chiusi, prezzi di entrata/uscita, SL, TP, stato e P&L. Il flusso LIVE obbligatorio è: segnale → rischio → controllo posizione locale e OANDA → richiesta ordine → risposta OANDA → verifica order/trade ID → rilettura da OANDA → solo allora visualizzazione come aperto. Un rifiuto non crea trade locale; registra il vero motivo come `ORDER REJECTED` senza P&L inventato.
+OANDA e fonte della verita per posizioni, ordini, trade aperti e chiusi, prezzi di entrata e uscita, SL, TP, stato e P&L. Flusso obbligatorio:
 
-Ogni sync deve leggere posizioni e trade OANDA, riconciliare il locale e aggiornare la dashboard. Record locali assenti su OANDA: `LOCAL ORPHAN / NOT VERIFIED`, esclusi dal P&L live.
+`segnale -> controlli rischio -> controllo locale e OANDA -> richiesta ordine -> risposta OANDA -> verifica order/trade ID -> rilettura OPEN da OANDA -> visualizzazione`.
 
-Ogni trade LIVE salva: OANDA order ID e trade ID, instrument, BUY/SELL, units, entry, SL, TP, open/close time, close reason, realized P&L, strategy/setup, confidence e reasoning. Il trade ID OANDA deve essere visibile.
+Un rifiuto non crea un trade locale. Ogni sincronizzazione legge trade e posizioni OANDA e riconcilia il locale. Record locali assenti su OANDA sono `LOCAL ORPHAN / NOT VERIFIED` ed esclusi dal P&L LIVE.
+
+Ogni trade LIVE conserva OANDA order ID e trade ID, strumento, direzione, unita, entry, SL, TP, orari, motivo chiusura, P&L realizzato, setup, confidence e reasoning. Il trade ID deve essere visibile in dashboard.
 
 ## Dati e dashboard
 
-- Se la fonte reale manca mostrare `DATI NON DISPONIBILI` o `N/A`, non zero inventati.
-- Se OANDA non è connesso mostrare `OANDA DISCONNECTED` e non `OANDA LIVE`.
-- `TP HIT` e P&L LIVE solo con chiusura verificabile OANDA.
-- Storico separato con filtri `LIVE OANDA` e `PAPER`; eliminare storico falso.
-- Calendario senza fonte reale: `ECONOMIC CALENDAR NOT CONFIGURED`.
-- Grafici esclusivamente con candele reali; layer ordinati per entry, SL, TP1/2/3, trade, segnali, swing, BOS, CHoCH e FVG, con timestamp/ID e controlli di visibilità.
-- Sezioni: Overview, Live OANDA, Open Positions, Closed Trades, Chart, XAUUSD, Strategy Log, Errors, Connection Status, Deployment Status.
-- Overview: connessione, modalità, valuta conto, balance, NAV, unrealized P&L, posizioni, ultimo sync/prezzo/ordine/errore; solo valori reali.
+- Dato reale assente: `DATI NON DISPONIBILI` oppure `N/A`, mai zero inventato.
+- OANDA scollegato: `OANDA DISCONNECTED`, nuovi ordini bloccati.
+- `TP HIT` e P&L LIVE solo dopo verifica OANDA.
+- Storici LIVE OANDA, PAPER e PAPER SHADOW sempre separati.
+- Calendario senza fonte configurata: `ECONOMIC CALENDAR NOT CONFIGURED`.
+- Grafici solo con candele OANDA e timestamp originali; nessun marker riposizionato.
+- Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
+- Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
+- Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
 
-## Rischio e posizioni
+## Strategia e qualita segnali
 
-- Forex: rischio/stop economico 1.20 e target previsto 2.40, senza alterare la strategia salvo bug reale.
-- Distinguere target previsto dal P&L reale OANDA. Non etichettare in USD dati registrati in CHF.
-- Leggere valuta conto via API e gestire correttamente conversione, pip value, spread, slippage e unità.
-- Massimo una posizione aperta per simbolo, verificata sia localmente sia su trade/posizioni OANDA. Se già presente: `SKIP <SYMBOL> — POSITION ALREADY OPEN`.
+- Non forzare un numero di trade. Se manca un setup completo, usare `HOLD`.
+- Forex: mantenere la logica esistente salvo bug reali; rischio economico previsto 1.20 e target previsto 2.40 nella valuta correttamente dichiarata.
+- Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
+- Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.
+- MAIN e INVERSE derivano dallo stesso identico snapshot OANDA. BUY diventa SELL, SELL diventa BUY, HOLD resta HOLD.
+- Una sola corsia puo essere selezionata per l'esecuzione LIVE; l'altra resta PAPER SHADOW e non invia ordini.
+- Confidence e reasoning devono derivare da evidenze reali visibili, non da dati di riempimento.
 
 ## XAUUSD dedicato
 
-Modulo separato dalla strategia forex, originale e non derivato da codice proprietario. Considerare swing high/low, struttura, BOS, CHoCH, liquidity sweep/zones, equal highs/lows, FVG, breakout/retest, trend/EMA, volatilità, spread, sessione e momentum.
+XAUUSD usa un modulo distinto e originale basato su candele OANDA: swing, struttura, BOS, CHoCH, liquidity sweep, equal high/low, FVG, trend/EMA, volatilita, spread, sessione e momentum.
 
-Prima dell’uso verificare supporto `XAU_USD` sul conto, precisione, size minima, units, spread, conversione P&L e partial close. Rischio massimo equivalente a 7.5 EUR; target complessivo fino a 15 USD secondo gestione reale. TP1/2/3 devono derivare dalla struttura reale e comparire solo se realmente gestiti da OANDA; partial close reale o ordini separati documentati.
+Prima dell'esecuzione verificare supporto `XAU_USD`, precisione, size minima, unita, spread, conversione P&L e partial close. Rischio massimo equivalente a 7.5 EUR e target complessivo fino a 15 USD solo con conversione reale. TP1/TP2/TP3 devono essere livelli strutturali reali e non possono essere mostrati come gestiti se OANDA non li gestisce. Fino alla verifica completa XAUUSD resta `ANALYSIS ONLY` per l'esecuzione.
 
 ## Railway
 
-Verificare repository/branch, start command, `process.env.PORT`, health endpoint, variabili, persistenza e restart policy. Primo deploy sempre PAPER; verificare connessione, prezzi, dashboard, database, restart e sync prima di preparare LIVE.
+Verificare repository e branch, `npm start`, `process.env.PORT`, health endpoint, variabili, persistenza e restart policy `ALWAYS`. Primo deploy sempre PAPER. Non passare a LIVE finche connessione, account, valuta, prezzi, candele, dashboard, riconciliazione e protezioni non sono verificati.
 
 ## Ordine di lavoro
 
-1. Audit completo repository e ricerca di paper/simulated/mock/fake/fallback/synthetic/random/demo/generated/seed/trade/P&L/history.
+1. Audit completo e ricerca di dati simulati/falsi.
 2. Backup Git non distruttivo.
-3. Rimozione/disattivazione dati falsi.
-4. Correzione esecuzione e sincronizzazione OANDA PAPER/LIVE.
+3. Rimozione dei dati falsi.
+4. Correzione PAPER/LIVE e sincronizzazione OANDA.
 5. Test obbligatori.
-6. Dashboard.
+6. Dashboard e Setup professionale.
 7. Strategia XAUUSD separata.
-8. Railway.
-
-Fermarsi solo per credenziale indispensabile, conferma di sicurezza, rischio ordine reale, rischio cancellazione dati importanti o ambiguità con possibile perdita economica.
+8. Railway in PAPER.
 
 ## Test obbligatori
 
-1. Autenticazione OANDA reale; 2. account ID corretto; 3. valuta conto via API; 4. prezzo reale; 5. candele reali; 6. nessun `Math.random` nei dati finanziari; 7. nessun trade falso; 8. PAPER non appare LIVE; 9. funzione ordine LIVE con error handling; 10. rifiuto non crea trade locale; 11. unicità per simbolo anche OANDA; 12. trade ID salvato; 13. sync dopo riavvio; 14. dashboard legge posizioni OANDA; 15. XAUUSD separato; 16. TP strutturali non inventati; 17. Railway usa `process.env.PORT`; 18. nessun segreto nel repository.
+1. Autenticazione OANDA reale.
+2. Account ID corretto senza esporlo.
+3. Valuta conto letta via API.
+4. Prezzo reale ricevuto.
+5. Candele reali ricevute.
+6. Nessun `Math.random` nei dati finanziari.
+7. Nessun trade falso.
+8. PAPER non appare LIVE.
+9. Funzione ordine LIVE con error handling.
+10. Rifiuto non crea trade locale.
+11. Unicita per simbolo verificata anche su OANDA.
+12. Trade ID OANDA salvato.
+13. Riavvio e riconciliazione.
+14. Dashboard legge posizioni OANDA.
+15. XAUUSD separato.
+16. TP strutturali non inventati.
+17. Railway usa `process.env.PORT`.
+18. Nessun segreto nel repository o nella cronologia aggiunta dal progetto.
 
 ## Report finale unico
 
-Riportare: errori trovati, file modificati, dati falsi rimossi, stato OANDA, PAPER, LIVE, XAUUSD, grafici, Railway e azioni utente, con endpoint/test/dati verificati e conferma che nessun ordine reale è stato inviato.
+Riportare errori trovati, file modificati, dati falsi rimossi, stato OANDA, PAPER, LIVE, XAUUSD, grafici, Railway e azioni utente. Includere endpoint e test verificati e confermare che durante sviluppo e test non e stato inviato alcun ordine reale.

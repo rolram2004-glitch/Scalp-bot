@@ -15,9 +15,15 @@ Dashboard corrente: https://scalp-bot-production-1bc7.up.railway.app/
    - `LIVE_TRADING_ENABLED=false`;
    - `LIVE_EXECUTION_VARIANT=MAIN` (unico valore alternativo valido: `INVERSE`);
    - `MAX_NEW_TRADES_PER_CYCLE=6`;
+   - `MAX_DAILY_TRADES=50`;
+   - `MIN_SIGNAL_CONFIDENCE=65`;
    - `DEFAULT_UNITS=1000` o il valore approvato dall'utente.
 6. Health check: `/health`.
-7. Verificare `/api/oanda/status`, `/api/status` e `/api/candles?symbol=EURUSD&timeframe=M5&count=2`.
+7. Verificare `/api/oanda/status`, `/api/status`, `/api/candles?symbol=EURUSD&timeframe=M5&count=2` e `/api/intelligence?symbol=EURUSD`.
+
+La pagina `/setup` e il centro di controllo. Account autenticato, feed prezzi,
+copertura candele ed esecuzione sono gate distinti: un processo Railway sano non
+implica automaticamente che OANDA sia connesso.
 
 ## Attivazione OANDA Practice
 

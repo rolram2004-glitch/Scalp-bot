@@ -23,6 +23,20 @@ export interface SignalAnalysisSnapshot {
   spread: number;
   structureBias?: string;
   trend?: string;
+  macdHistogram?: number;
+  atr?: number;
+  volatility?: string;
+  volumeRatio?: number;
+  breakOfStructure?: "BULLISH" | "BEARISH" | "NONE";
+  changeOfCharacter?: "BULLISH" | "BEARISH" | "NONE";
+  liquiditySweep?: "BULLISH" | "BEARISH" | "NONE";
+  fairValueGap?: string;
+  equalHigh?: number;
+  equalLow?: number;
+  supportLevels?: number[];
+  resistanceLevels?: number[];
+  structureSource?: "OANDA_CANDLES";
+  candleCount?: number;
 }
 
 export type LaneExecutionState =
@@ -72,6 +86,7 @@ interface PairedSignalInput {
   mainDecision: TradingDecision;
   tradingMode: string;
   liveExecutionVariant: unknown;
+  minimumConfidence?: number;
 }
 
 function isSignalAction(action: unknown): action is SignalAction {
@@ -108,8 +123,12 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const mainSelected = liveAllowed && variant === "MAIN";
   const inverseSelected = liveAllowed && variant === "INVERSE";
   const confidence = Number(input.mainDecision?.confidence) || 0;
-  const mainEligible = mainAction !== "HOLD" && confidence >= 50;
-  const inverseEligible = inverseAction !== "HOLD" && confidence >= 50;
+  const requestedThreshold = Number(input.minimumConfidence);
+  const minimumConfidence = Number.isFinite(requestedThreshold)
+    ? Math.min(100, Math.max(0, requestedThreshold))
+    : 65;
+  const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence;
+  const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence;
   const baseReasoning = String(input.mainDecision?.reasoning || "Decisione MAIN non disponibile.");
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";

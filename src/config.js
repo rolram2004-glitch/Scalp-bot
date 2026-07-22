@@ -28,11 +28,11 @@ module.exports = {
   MAX_OPEN_TRADES: 15,
   MAX_NEW_TRADES_PER_CYCLE: Math.min(6, Math.max(1, Number(process.env.MAX_NEW_TRADES_PER_CYCLE || 6))),
   MAX_TRADES_PER_SYMBOL: 1,
-  MAX_DAILY_TRADES: 50,
+  MAX_DAILY_TRADES: Math.max(1, Number(process.env.MAX_DAILY_TRADES || 50)),
 
-  MIN_CONFIDENCE: 0.65,
+  MIN_CONFIDENCE: Math.min(100, Math.max(0, Number(process.env.MIN_SIGNAL_CONFIDENCE || 65))),
 
-  SCAN_INTERVAL: 60000,
+  SCAN_INTERVAL: 2 * 60 * 1000,
 
   RISK_PERCENT: Number(process.env.MAX_RISK_PERCENT || 0.25),
   DEFAULT_LOT_SIZE: Number(process.env.DEFAULT_LOT_SIZE || 0.01),

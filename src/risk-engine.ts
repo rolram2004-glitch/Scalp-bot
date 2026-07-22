@@ -1,10 +1,10 @@
-export const MAX_DAILY_TRADES = 1000;
+const config = require("./config");
 
-export const DAILY_TARGET = 800;
+export const MAX_DAILY_TRADES = Number(config.MAX_DAILY_TRADES);
 
-export const MAX_OPEN_POSITIONS = 15;
+export const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES);
 
-export const MAX_TRADES_PER_CYCLE = 8;
+export const MAX_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE);
 
 export function canOpenTrade(
   todayTrades: number,

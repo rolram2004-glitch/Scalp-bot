@@ -1,16 +1,17 @@
 import { MarketData } from "./types";
-import {
-  detectFVG,
-  detectLiquidity,
-  detectOrderBlock,
-  detectStructure
-} from "./smart-money";
 import { getSession, isKillzone } from "./session-engine";
+import { analyzeMarketStructure } from "./market-structure";
 
 require("dotenv").config();
 
 const oanda = require("./oanda");
-const { calculateEMA, calculateRSI, calculateATR } = require("./indicators");
+const {
+  calculateEMA,
+  calculateRSI,
+  calculateATR,
+  calculateMACD,
+  calculateBollinger
+} = require("./indicators");
 
 function normalizeInstrumentSymbol(symbol: string): string {
   const cleaned = symbol.toUpperCase().replace(/[^A-Z]/g, "");
@@ -27,11 +28,18 @@ function buildMarketDataFromOanda(
   priceData: any,
   candles: any[]
 ): MarketData {
-  const closes = candles
-    .filter((candle) => candle && candle.mid)
+  const validCandles = candles.filter((candle) => {
+    const prices = [candle?.mid?.o, candle?.mid?.h, candle?.mid?.l, candle?.mid?.c].map(Number);
+    return Boolean(candle?.time) && prices.every((value) => Number.isFinite(value) && value > 0);
+  });
+  const closes = validCandles
     .map((candle) => parseFloat(candle.mid.c));
 
-  const lastCandle = candles[candles.length - 1];
+  if (closes.length < 200) {
+    throw new Error(`OANDA candle history incomplete for ${symbol}: ${closes.length}/200`);
+  }
+
+  const lastCandle = validCandles[validCandles.length - 1];
   const bid = parseFloat(
     priceData?.closeoutBid ?? priceData?.bids?.[0]?.price ?? lastCandle?.mid?.c ?? 0
   );
@@ -45,7 +53,23 @@ function buildMarketDataFromOanda(
   const ema50 = calculateEMA(closes, 50);
   const ema200 = calculateEMA(closes, 200);
   const rsi = calculateRSI(closes, 14);
-  const atr = calculateATR(candles, 14);
+  const atr = calculateATR(validCandles, 14);
+  const macd = calculateMACD(closes);
+  const bollinger = calculateBollinger(closes);
+  const structure = analyzeMarketStructure(validCandles);
+  const trend = closePrice > ema20 && ema20 > ema50 && ema50 > ema200
+    ? "BULLISH"
+    : closePrice < ema20 && ema20 < ema50 && ema50 < ema200
+      ? "BEARISH"
+      : "RANGE";
+  const relativeAtr = closePrice > 0 ? atr / closePrice : 0;
+  const liquidityLevel = structure.liquiditySweep !== "NONE"
+    ? `${structure.liquiditySweep}_SWEEP`
+    : structure.equalHigh !== undefined
+      ? "EQUAL_HIGH"
+      : structure.equalLow !== undefined
+        ? "EQUAL_LOW"
+        : undefined;
 
   return {
     symbol,
@@ -56,7 +80,7 @@ function buildMarketDataFromOanda(
     spread: Math.max(0, ask - bid) * (/JPY$/i.test(symbol) ? 100 : /XAU/i.test(symbol) ? 10 : 10000),
     priceTime: String(priceData?.time || lastCandle?.time || ""),
     candleTime: String(lastCandle?.time || ""),
-    tradeable: priceData?.tradeable !== false && String(priceData?.status || "tradeable").toLowerCase() === "tradeable",
+    tradeable: priceData?.tradeable === true && String(priceData?.status || "tradeable").toLowerCase() === "tradeable",
 
     highPrice,
     lowPrice,
@@ -68,38 +92,43 @@ function buildMarketDataFromOanda(
 
     rsi,
 
-    macdMain: ema20 - ema50,
-    macdSignal: ema50 - ema200,
-    macdHistogram: (ema20 - ema50) - (ema50 - ema200),
+    macdMain: macd?.main,
+    macdSignal: macd?.signal,
+    macdHistogram: macd?.histogram,
 
-    bollingerUpper: closePrice + atr * 2,
-    bollingerMid: closePrice,
-    bollingerLower: closePrice - atr * 2,
+    bollingerUpper: bollinger?.upper,
+    bollingerMid: bollinger?.middle,
+    bollingerLower: bollinger?.lower,
 
-    volume: lastCandle?.volume ?? 0,
-    volumeRatio: 0,
+    volume: Number.isFinite(Number(lastCandle?.volume)) ? Number(lastCandle.volume) : undefined,
+    volumeRatio: structure.volumeRatio,
 
     atr,
 
-    swingHigh: highPrice,
-    swingLow: lowPrice,
+    swingHigh: structure.swingHighs[0]?.price,
+    swingLow: structure.swingLows[0]?.price,
+    swingHighs: structure.swingHighs.map(({ time, price }) => ({ time, price })),
+    swingLows: structure.swingLows.map(({ time, price }) => ({ time, price })),
+    supportLevels: structure.supportLevels,
+    resistanceLevels: structure.resistanceLevels,
 
-    structureBias: closePrice > ema50 ? "BULLISH" : closePrice < ema50 ? "BEARISH" : "RANGE",
-    nearOrderBlock: false,
-    fairValueGap: "NOT_DETECTED",
-    liquidityLevel: "UNKNOWN",
+    structureBias: structure.structure,
+    fairValueGap: structure.fvg?.direction,
+    fairValueGapZone: structure.fvg,
+    liquidityLevel,
+    breakOfStructure: structure.bos,
+    changeOfCharacter: structure.choch,
+    liquiditySweep: structure.liquiditySweep,
+    equalHigh: structure.equalHigh,
+    equalLow: structure.equalLow,
+    structureSource: structure.source,
+    candleCount: structure.candleCount,
 
     session: getSession(),
     killzone: isKillzone(),
 
-    trend: closePrice >= ema20 ? "BULLISH" : "BEARISH",
-    volatility: atr > 0.001 ? "HIGH" : "NORMAL",
-
-    accountBalance: undefined,
-    accountEquity: undefined,
-
-    openPositions: 0,
-    todayTradeCount: 0
+    trend,
+    volatility: relativeAtr >= 0.0015 ? "HIGH" : relativeAtr <= 0.0004 ? "LOW" : "NORMAL"
   };
 }
 
@@ -109,10 +138,10 @@ export async function generateMarketData(symbol: string): Promise<MarketData> {
   try {
     const [priceData, candles] = await Promise.all([
       oanda.getPrice(normalizedSymbol),
-      oanda.getCandles(normalizedSymbol, 200)
+      oanda.getCandles(normalizedSymbol, 250)
     ]);
 
-    if (priceData && candles && candles.length >= 20) {
+    if (priceData && candles && candles.length >= 200) {
       return buildMarketDataFromOanda(symbol, priceData, candles);
     }
   } catch (error) {

@@ -2,12 +2,17 @@ import {
   MarketData,
   TradingDecision
 } from "./types";
+import { getXauusdSignal } from "./xauusd-strategy";
 
 export async function getScalpingSignal(
   data: MarketData
 ): Promise<TradingDecision> {
   const isGold = /XAU/i.test(data.symbol);
-  const maxSpread = isGold ? 80 : 25;
+  if (isGold) {
+    return getXauusdSignal(data);
+  }
+
+  const maxSpread = 25;
   const bullishStructure = data.structureBias === "BULLISH";
   const bearishStructure = data.structureBias === "BEARISH";
   // Preserve the original Forex entry logic: EMA stack + RSI. MACD remains

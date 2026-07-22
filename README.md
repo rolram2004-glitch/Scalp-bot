@@ -1,6 +1,6 @@
-# SCALP.BOT
+# GEMMO REMONDATA BOT
 
-This repository contains a lightweight scalping bot prototype with a local dashboard and deployment support for always-on execution.
+Cockpit di analisi e trading OANDA Practice con due corsie esclusive, MAIN e INVERSE. La dashboard distingue account, feed, analisi, shadow trading ed esecuzione verificata: un prezzo OANDA non viene mai presentato come un ordine OANDA.
 
 ## Run locally
 
@@ -28,12 +28,14 @@ PM2 keeps the bot running and restarts it automatically if it crashes.
 2. Run the container:
    - `docker run -d -p 3000:3000 --name scalp-bot scalp-bot`
 
-This setup lets you move the bot to a remote host or cloud VM so it can remain online even when your local PC is turned off.
+Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` indica soltanto che il processo di scansione e attivo: la disponibilita di account, prezzi ed esecuzione e mostrata separatamente.
 
 ## Execution modes
 
 - `TRADING_MODE=PAPER`: real OANDA market data, no OANDA orders.
 - `TRADING_MODE=LIVE` plus `LIVE_TRADING_ENABLED=true`: verified orders on OANDA Practice only.
 - `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one real execution lane. The other lane is an explicit paper shadow and never calls OANDA.
+
+XAUUSD usa analisi strutturale dedicata ed e `ANALYSIS ONLY` finche size, conversione conto, protezioni e gestione delle uscite non sono verificate integralmente.
 
 There is no synthetic market-data fallback. If OANDA data is unavailable, the scanner reports it and does not invent prices or trades. See `RAILWAY_DEPLOYMENT.md` before enabling OANDA Practice execution.

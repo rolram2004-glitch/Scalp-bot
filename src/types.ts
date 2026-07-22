@@ -39,10 +39,23 @@ export interface MarketData {
   swingHigh?: number;
   swingLow?: number;
 
+  swingHighs?: Array<{ time: string; price: number }>;
+  swingLows?: Array<{ time: string; price: number }>;
+  supportLevels?: number[];
+  resistanceLevels?: number[];
+
   structureBias?: string;
   nearOrderBlock?: boolean;
   fairValueGap?: string;
+  fairValueGapZone?: { direction: "BULLISH" | "BEARISH"; low: number; high: number; time: string };
   liquidityLevel?: string;
+  breakOfStructure?: "BULLISH" | "BEARISH" | "NONE";
+  changeOfCharacter?: "BULLISH" | "BEARISH" | "NONE";
+  liquiditySweep?: "BULLISH" | "BEARISH" | "NONE";
+  equalHigh?: number;
+  equalLow?: number;
+  structureSource?: "OANDA_CANDLES";
+  candleCount?: number;
 
   session: string;
   killzone?: boolean;
@@ -50,11 +63,11 @@ export interface MarketData {
   trend: string;
   volatility: string;
 
-  accountBalance: number;
-  accountEquity: number;
+  accountBalance?: number;
+  accountEquity?: number;
 
-  openPositions: number;
-  todayTradeCount: number;
+  openPositions?: number;
+  todayTradeCount?: number;
 }
 
 export interface TradingDecision {
@@ -73,4 +86,8 @@ export interface TradingDecision {
   riskRewardRatio?: number;
 
   setupType?: string;
+
+  evidence?: Array<{ label: string; direction: "BUY" | "SELL" | "NEUTRAL"; value: string }>;
+  stopLossPrice?: number;
+  structuralTargets?: number[];
 }
