@@ -55,7 +55,7 @@ export interface SignalLaneSnapshot {
   confidence: number;
   reasoning: string;
   setupType?: string;
-  mode: "LIVE OANDA PRACTICE" | "PAPER" | "PAPER SHADOW";
+  mode: "OANDA DEMO" | "OANDA LIVE" | "PAPER" | "PAPER SHADOW";
   selectedForExecution: boolean;
   executionState: LaneExecutionState;
   executionReason?: string;
@@ -86,6 +86,7 @@ interface PairedSignalInput {
   mainDecision: TradingDecision;
   tradingMode: string;
   liveExecutionVariant: unknown;
+  executionGateVerified: boolean;
   minimumConfidence?: number;
 }
 
@@ -117,9 +118,12 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
     Number.isFinite(input.market.ask) && input.market.ask > 0 &&
     input.market.ask >= input.market.bid &&
     input.market.tradeable === true;
-  const liveRequested = String(input.tradingMode || "").toUpperCase() === "LIVE";
+  const requestedMode = String(input.tradingMode || "").toUpperCase();
+  const liveRequested = requestedMode === "OANDA_DEMO" || requestedMode === "OANDA_LIVE";
   const paperMode = String(input.tradingMode || "").toUpperCase() === "PAPER";
-  const liveAllowed = liveRequested && validAction && validVariant && realMarketSnapshot;
+  const liveAllowed = liveRequested && input.executionGateVerified === true &&
+    validAction && validVariant && realMarketSnapshot;
+  const oandaLaneMode = requestedMode === "OANDA_LIVE" ? "OANDA LIVE" : "OANDA DEMO";
   const mainSelected = liveAllowed && variant === "MAIN";
   const inverseSelected = liveAllowed && variant === "INVERSE";
   const confidence = Number(input.mainDecision?.confidence) || 0;
@@ -135,6 +139,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
 
   if (!validAction) executionBlockedReason = "INVALID_MAIN_ACTION";
   else if (liveRequested && !validVariant) executionBlockedReason = "INVALID_LIVE_EXECUTION_VARIANT";
+  else if (liveRequested && input.executionGateVerified !== true) executionBlockedReason = "OANDA_SAFETY_GATES_NOT_VERIFIED";
   else if (liveRequested && !realMarketSnapshot) executionBlockedReason = marketValidationReason;
 
   return {
@@ -151,7 +156,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       confidence,
       reasoning: baseReasoning,
       setupType: input.mainDecision?.setupType,
-      mode: mainSelected ? "LIVE OANDA PRACTICE" : paperMode ? "PAPER" : "PAPER SHADOW",
+      mode: mainSelected ? oandaLaneMode : paperMode ? "PAPER" : "PAPER SHADOW",
       selectedForExecution: mainSelected,
       executionState: mainSelected ? (mainEligible ? "READY" : "NOT_ELIGIBLE") : paperMode ? "PAPER" : "SHADOW",
       executionReason: mainSelected && !mainEligible ? (mainAction === "HOLD" ? "HOLD" : "CONFIDENCE_BELOW_THRESHOLD") : undefined
@@ -162,7 +167,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       confidence,
       reasoning: `Derivato dalla decisione MAIN ${mainAction}: azione opposta ${inverseAction}. ${baseReasoning}`,
       setupType: input.mainDecision?.setupType ? `INVERSE_${input.mainDecision.setupType}` : "INVERSE",
-      mode: inverseSelected ? "LIVE OANDA PRACTICE" : "PAPER SHADOW",
+      mode: inverseSelected ? oandaLaneMode : "PAPER SHADOW",
       selectedForExecution: inverseSelected,
       executionState: inverseSelected ? (inverseEligible ? "READY" : "NOT_ELIGIBLE") : "SHADOW",
       executionReason: inverseSelected && !inverseEligible ? (inverseAction === "HOLD" ? "HOLD" : "CONFIDENCE_BELOW_THRESHOLD") : undefined,

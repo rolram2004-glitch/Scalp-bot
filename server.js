@@ -1,11 +1,13 @@
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const express = require("express");
 require("dotenv").config();
 require("ts-node/register/transpile-only");
 
 const {
   startAutonomousBot,
+  stopAutonomousBot,
   getBotSnapshot,
   subscribeToBotUpdates,
   getAnalytics
@@ -13,12 +15,38 @@ const {
 const oanda = require("./src/oanda");
 const config = require("./src/config");
 const { loadMultiTimeframeIntelligence } = require("./src/multi-timeframe");
+const { executeVerifiedMarketOrder } = require("./src/execution-engine");
 
 const intelligenceCache = new Map();
 
 function maskedAccountId(value) {
   const accountId = String(value || "");
   return accountId ? `***${accountId.slice(-4)}` : undefined;
+}
+
+function safeTokenMatch(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual || ""));
+  const expectedBuffer = Buffer.from(String(expected || ""));
+  return actualBuffer.length === expectedBuffer.length &&
+    actualBuffer.length > 0 &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function requireControlAccess(req, res, next) {
+  const expected = String(process.env.CONTROL_PANEL_TOKEN || "");
+  if (!expected) {
+    if (config.TRADING_MODE === "PAPER") return next();
+    return res.status(503).json({
+      error: "control_panel_token_not_configured",
+      message: "Mutating OANDA controls are disabled until CONTROL_PANEL_TOKEN is configured."
+    });
+  }
+  const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  const provided = req.headers["x-control-token"] || bearer;
+  if (!safeTokenMatch(provided, expected)) {
+    return res.status(401).json({ error: "control_panel_authorization_required" });
+  }
+  next();
 }
 
 function createApp() {
@@ -45,6 +73,9 @@ function createApp() {
   app.get("/health", (req, res) => {
     res.json({
       status: "ok",
+      service: "gemmo-remondata-bot",
+      tradingMode: config.TRADING_MODE,
+      oandaEnvironment: config.OANDA_ENVIRONMENT,
       timestamp: new Date().toISOString(),
       uptime: process.uptime()
     });
@@ -66,7 +97,8 @@ function createApp() {
       res.json({
         connected: false,
         reason: "status_error",
-        mode: "practice",
+        mode: config.OANDA_ENVIRONMENT === "LIVE" ? "live" : "practice",
+        tradingMode: config.TRADING_MODE,
         checkedAt: new Date().toISOString()
       });
     }
@@ -80,15 +112,50 @@ function createApp() {
     });
   });
 
-  app.post("/api/bot/start", (req, res) => {
+  app.post("/api/bot/start", requireControlAccess, (req, res) => {
     startAutonomousBot();
     res.json(getBotSnapshot());
   });
 
-  app.post("/api/bot/stop", (req, res) => {
-    res.status(403).json({
-      error: "bot_stop_disabled",
-      message: "Always-on execution is enabled. Restart the Railway service for maintenance."
+  app.post("/api/bot/stop", requireControlAccess, (req, res) => {
+    stopAutonomousBot();
+    res.json(getBotSnapshot());
+  });
+
+  app.post("/api/admin/test-oanda-demo", requireControlAccess, async (req, res) => {
+    if (process.env.ENABLE_OANDA_DEMO_TEST !== "true") {
+      return res.status(403).json({ error: "oanda_demo_test_disabled" });
+    }
+    if (config.TRADING_MODE !== "OANDA_DEMO" || config.OANDA_ENVIRONMENT !== "PRACTICE") {
+      return res.status(409).json({ error: "oanda_demo_mode_required" });
+    }
+    if (req.body?.confirmation !== "CONFIRM OANDA DEMO TEST") {
+      return res.status(400).json({ error: "manual_confirmation_required" });
+    }
+    const symbol = normalizeOandaSymbol(req.body?.symbol || "EUR_USD");
+    const configured = new Set((config.SYMBOLS || []).map(normalizeOandaSymbol));
+    const side = String(req.body?.side || "BUY").toUpperCase();
+    const units = Number(req.body?.units || 1);
+    if (!configured.has(symbol) || symbol === "XAU_USD" || !["BUY", "SELL"].includes(side) ||
+        !Number.isFinite(units) || units <= 0 || units > Number(process.env.DEMO_TEST_MAX_UNITS || 1)) {
+      return res.status(400).json({ error: "invalid_demo_test_order" });
+    }
+    const signalAt = new Date().toISOString();
+    const result = await executeVerifiedMarketOrder({
+      oanda,
+      symbol,
+      side,
+      units,
+      riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT),
+      rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT),
+      strategyVariant: config.LIVE_EXECUTION_VARIANT,
+      signalId: `SIG-DEMO-TEST-${signalAt.replace(/[^0-9]/g, "")}`,
+      signalAt
+    });
+    return res.status(result.status === "OPENED" ? 201 : 409).json({
+      environment: "PRACTICE",
+      accountId: maskedAccountId(config.OANDA_ACCOUNT_ID),
+      result
     });
   });
 

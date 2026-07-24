@@ -9,23 +9,26 @@ Una posizione mostrata come LIVE deve esistere realmente su OANDA con lo stesso 
 ## Sicurezza e modalita
 
 - Non inviare ordini reali durante sviluppo o test.
-- Modalita esplicite: `TRADING_MODE=PAPER` e `TRADING_MODE=LIVE`; default e primo deploy Railway: PAPER.
+- Modalita esplicite ammesse: `TRADING_MODE=PAPER`, `TRADING_MODE=OANDA_DEMO` e `TRADING_MODE=OANDA_LIVE`; default e primo deploy Railway: PAPER.
 - PAPER usa prezzi e candele reali OANDA, non invia ordini ed e marcato chiaramente PAPER.
-- LIVE invia ordini OANDA Practice solo quando e esplicitamente attivato e tutti i gate sono verificati.
+- OANDA_DEMO invia ordini reali soltanto al conto OANDA Practice, dopo attivazione esplicita e verifica di tutti i gate.
+- OANDA_LIVE usa l'endpoint reale e non puo essere attivato senza conferma finale esplicita dell'utente.
 - Se account, feed, strumento, size, protezioni o sincronizzazione non sono verificati, bloccare l'esecuzione.
 - Nessun fallback simulato nascosto.
 - Segreti solo in `.env` locale o Railway Variables; mai codice, Git, dashboard, log o chat.
 - Un token incollato in chat deve essere considerato esposto, revocato e sostituito direttamente dal proprietario.
 
-## Fonte della verita LIVE
+## Fonte della verita OANDA
 
-OANDA e fonte della verita per posizioni, ordini, trade aperti e chiusi, prezzi di entrata e uscita, SL, TP, stato e P&L. Flusso obbligatorio:
+In OANDA_DEMO e OANDA_LIVE, OANDA e fonte della verita per posizioni, ordini, trade aperti e chiusi, prezzi di entrata e uscita, SL, TP, stato e P&L. Flusso obbligatorio:
 
 `segnale -> controlli rischio -> controllo locale e OANDA -> richiesta ordine -> risposta OANDA -> verifica order/trade ID -> rilettura OPEN da OANDA -> visualizzazione`.
 
 Un rifiuto non crea un trade locale. Ogni sincronizzazione legge trade e posizioni OANDA e riconcilia il locale. Record locali assenti su OANDA sono `LOCAL ORPHAN / NOT VERIFIED` ed esclusi dal P&L LIVE.
 
-Ogni trade LIVE conserva OANDA order ID e trade ID, strumento, direzione, unita, entry, SL, TP, orari, motivo chiusura, P&L realizzato, setup, confidence e reasoning. Il trade ID deve essere visibile in dashboard.
+Ogni trade OANDA conserva OANDA order ID e trade ID, strumento, direzione, unita, entry, SL, TP, orari, motivo chiusura, P&L realizzato, setup, setup score e reasoning. Il trade ID deve essere visibile in dashboard.
+
+Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, mostrare prima ambiente, account mascherato, simbolo, side, unita, SL e TP, e richiedere conferma manuale. Non deve mai partire dal ciclo normale o dai test automatici. Dopo l'invio mostra la ricevuta reale e la rilettura OANDA; un rifiuto non crea stato locale.
 
 ## Dati e dashboard
 
@@ -38,6 +41,9 @@ Ogni trade LIVE conserva OANDA order ID e trade ID, strumento, direzione, unita,
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
 - Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
+- Il riferimento visivo definitivo unisce le due immagini fornite: il contenuto dashboard denso con sidebar diventa la pagina principale; il contenuto chart/control-room diventa Grafico/Setup. Griglia dark navy coerente, proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
+- La dashboard principale include soltanto metriche derivabili da dati reali: P&L, win rate, trade oggi, posizioni, balance, equity/NAV, profit factor, drawdown, rischio, ultimo segnale e timestamp; quando non calcolabili mostra N/A.
+- Grafico/Setup include Market Scanner, grafico OANDA, layer attivabili, scenari speculari BUY/SELL dallo stesso snapshot e decisione finale BUY/SELL/HOLD motivata.
 
 ## Strategia e qualita segnali
 
@@ -45,9 +51,9 @@ Ogni trade LIVE conserva OANDA order ID e trade ID, strumento, direzione, unita,
 - Forex: mantenere la logica esistente salvo bug reali; rischio economico previsto 1.20 e target previsto 2.40 nella valuta correttamente dichiarata.
 - Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
 - Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.
-- MAIN e INVERSE derivano dallo stesso identico snapshot OANDA. BUY diventa SELL, SELL diventa BUY, HOLD resta HOLD.
-- Una sola corsia puo essere selezionata per l'esecuzione LIVE; l'altra resta PAPER SHADOW e non invia ordini.
-- Confidence e reasoning devono derivare da evidenze reali visibili, non da dati di riempimento.
+- Gli scenari BUY e SELL derivano dallo stesso identico snapshot OANDA e dallo stesso timestamp; non effettuano due richieste e non aprono automaticamente trade opposti.
+- Una sola decisione finale puo essere selezionata per l'esecuzione OANDA; lo scenario scartato resta analisi e non invia ordini.
+- Non presentare il punteggio euristico come probabilita: usare `SETUP SCORE`, derivato in modo ripetibile da trend, momentum, struttura, liquidita, volatilita, spread, sessione, rischio e conferma AI.
 
 ## XAUUSD dedicato
 
@@ -57,7 +63,15 @@ Prima dell'esecuzione verificare supporto `XAU_USD`, precisione, size minima, un
 
 ## Railway
 
-Verificare repository e branch, `npm start`, `process.env.PORT`, health endpoint, variabili, persistenza e restart policy `ALWAYS`. Primo deploy sempre PAPER. Non passare a LIVE finche connessione, account, valuta, prezzi, candele, dashboard, riconciliazione e protezioni non sono verificati.
+Verificare repository e branch, `npm start`, `process.env.PORT`, health endpoint, variabili, persistenza e restart policy `ALWAYS`. Primo deploy sempre PAPER. Non passare a OANDA_DEMO finche connessione, account, valuta, prezzi, candele, dashboard, riconciliazione e protezioni non sono verificati; non passare mai a OANDA_LIVE senza conferma finale esplicita.
+
+Documentare: `TRADING_MODE`, `OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, `OANDA_ENVIRONMENT`, `GEMINI_API_KEY`, `AI_PROVIDER`, `AI_CONFIRMATION_REQUIRED`, `AI_MIN_CONFIDENCE`, `ACCOUNT_TARGET_CURRENCY`, `MAX_OPEN_POSITIONS`, `MAX_DAILY_TRADES`. Segreti esclusivamente in Railway Variables o `.env` locale non tracciato.
+
+## Control panel e AI
+
+Il Control Panel mostra e valida modalita, bot ON/OFF, simboli, sessioni, limiti giornalieri, massimo posizioni, unicita per simbolo, setup score minimo, rischio, target, timeframe e XAUUSD. Le modifiche pericolose richiedono conferma e OANDA_LIVE non puo essere attivato dalla sola interfaccia senza un gate server-side esplicito.
+
+Gemini, se configurato, puo soltanto APPROVE/REJECT dopo analisi tecnica e rischio. Deve restituire JSON validato; non puo creare prezzi, cambiare rischio, rimuovere SL, inviare ordini, cambiare modalita o aggirare gate. Se `AI_CONFIRMATION_REQUIRED=true` e Gemini fallisce, l'esito e SKIP TRADE.
 
 ## Ordine di lavoro
 

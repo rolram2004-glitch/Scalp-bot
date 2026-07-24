@@ -42,6 +42,7 @@ function snapshot(overrides = {}) {
     },
     tradingMode: "PAPER",
     liveExecutionVariant: "MAIN",
+    executionGateVerified: false,
     ...overrides
   });
 }
@@ -88,27 +89,32 @@ test("PAPER keeps MAIN local and INVERSE shadow-only", () => {
   assert.equal(result.inverse.mode, "PAPER SHADOW");
 });
 
-test("LIVE selects exactly MAIN or exactly INVERSE", () => {
-  const main = snapshot({ tradingMode: "LIVE", liveExecutionVariant: "MAIN" });
+test("OANDA_DEMO selects exactly MAIN or exactly INVERSE only after every gate", () => {
+  const main = snapshot({ tradingMode: "OANDA_DEMO", liveExecutionVariant: "MAIN", executionGateVerified: true });
   assert.equal(main.main.selectedForExecution, true);
   assert.equal(main.main.executionState, "READY");
   assert.equal(main.inverse.selectedForExecution, false);
 
-  const inverse = snapshot({ tradingMode: "LIVE", liveExecutionVariant: "INVERSE" });
+  const inverse = snapshot({ tradingMode: "OANDA_DEMO", liveExecutionVariant: "INVERSE", executionGateVerified: true });
   assert.equal(inverse.main.selectedForExecution, false);
   assert.equal(inverse.inverse.selectedForExecution, true);
   assert.equal(inverse.inverse.executionState, "READY");
   assert.equal(inverse.inverse.action, "SELL");
 });
 
-test("invalid selector, invalid action, or untradeable quote blocks LIVE", () => {
-  const invalidSelector = snapshot({ tradingMode: "LIVE", liveExecutionVariant: "BOTH" });
+test("invalid selector, missing safety gate, invalid action, or untradeable quote blocks OANDA", () => {
+  const invalidSelector = snapshot({ tradingMode: "OANDA_DEMO", liveExecutionVariant: "BOTH", executionGateVerified: true });
   assert.equal(invalidSelector.main.selectedForExecution, false);
   assert.equal(invalidSelector.inverse.selectedForExecution, false);
   assert.equal(invalidSelector.executionBlockedReason, "INVALID_LIVE_EXECUTION_VARIANT");
 
+  const missingGate = snapshot({ tradingMode: "OANDA_DEMO", executionGateVerified: false });
+  assert.equal(missingGate.main.selectedForExecution, false);
+  assert.equal(missingGate.executionBlockedReason, "OANDA_SAFETY_GATES_NOT_VERIFIED");
+
   const invalidAction = snapshot({
-    tradingMode: "LIVE",
+    tradingMode: "OANDA_DEMO",
+    executionGateVerified: true,
     mainDecision: { action: "UNKNOWN", confidence: 99, reasoning: "bad" }
   });
   assert.equal(invalidAction.main.action, "HOLD");
@@ -116,7 +122,8 @@ test("invalid selector, invalid action, or untradeable quote blocks LIVE", () =>
   assert.equal(invalidAction.executionBlockedReason, "INVALID_MAIN_ACTION");
 
   const stale = snapshot({
-    tradingMode: "LIVE",
+    tradingMode: "OANDA_DEMO",
+    executionGateVerified: true,
     market: { ...market, time: "", tradeable: false }
   });
   assert.equal(stale.main.selectedForExecution, false);
@@ -124,7 +131,8 @@ test("invalid selector, invalid action, or untradeable quote blocks LIVE", () =>
   assert.equal(stale.executionBlockedReason, "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH");
 
   const wrongInstrument = snapshot({
-    tradingMode: "LIVE",
+    tradingMode: "OANDA_DEMO",
+    executionGateVerified: true,
     market: { ...market, instrument: "GBPUSD" }
   });
   assert.equal(wrongInstrument.main.selectedForExecution, false);

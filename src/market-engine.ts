@@ -40,13 +40,18 @@ function buildMarketDataFromOanda(
   }
 
   const lastCandle = validCandles[validCandles.length - 1];
-  const bid = parseFloat(
-    priceData?.closeoutBid ?? priceData?.bids?.[0]?.price ?? lastCandle?.mid?.c ?? 0
-  );
-  const ask = parseFloat(
-    priceData?.closeoutAsk ?? priceData?.asks?.[0]?.price ?? lastCandle?.mid?.c ?? 0
-  );
-  const closePrice = parseFloat(lastCandle?.mid?.c ?? priceData?.closeoutAsk ?? 0);
+  const bid = parseFloat(priceData?.closeoutBid ?? priceData?.bids?.[0]?.price ?? "");
+  const ask = parseFloat(priceData?.closeoutAsk ?? priceData?.asks?.[0]?.price ?? "");
+  const priceTime = String(priceData?.time || "");
+  const priceTimestamp = Date.parse(priceTime);
+  const priceAge = Date.now() - priceTimestamp;
+  const priceTradeable = priceData?.tradeable === true &&
+    String(priceData?.status || "").toLowerCase() === "tradeable";
+  if (!Number.isFinite(bid) || bid <= 0 || !Number.isFinite(ask) || ask < bid ||
+      !Number.isFinite(priceTimestamp) || priceAge < -5000 || priceAge > 30000 || !priceTradeable) {
+    throw new Error(`OANDA executable quote unavailable for ${symbol}`);
+  }
+  const closePrice = parseFloat(lastCandle?.mid?.c ?? "");
   const highPrice = parseFloat(lastCandle?.mid?.h ?? closePrice);
   const lowPrice = parseFloat(lastCandle?.mid?.l ?? closePrice);
   const ema20 = calculateEMA(closes, 20);
@@ -78,9 +83,9 @@ function buildMarketDataFromOanda(
     bid,
     ask,
     spread: Math.max(0, ask - bid) * (/JPY$/i.test(symbol) ? 100 : /XAU/i.test(symbol) ? 10 : 10000),
-    priceTime: String(priceData?.time || lastCandle?.time || ""),
+    priceTime,
     candleTime: String(lastCandle?.time || ""),
-    tradeable: priceData?.tradeable === true && String(priceData?.status || "tradeable").toLowerCase() === "tradeable",
+    tradeable: true,
 
     highPrice,
     lowPrice,

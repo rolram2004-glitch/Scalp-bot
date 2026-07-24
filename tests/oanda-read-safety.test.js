@@ -69,6 +69,11 @@ test('malformed OANDA reconciliation responses fail closed', async () => {
       assert.equal(error.scope, 'open_trades');
       return true;
     });
+    await assert.rejects(() => oanda.getPendingOrders(), (error) => {
+      assert.equal(error.name, 'OandaAPIError');
+      assert.equal(error.scope, 'pending_orders');
+      return true;
+    });
   } finally {
     axios.get = originalGet;
   }

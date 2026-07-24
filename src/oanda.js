@@ -2,7 +2,31 @@ const axios = require("axios");
 const config = require("./config");
 
 const PRACTICE_BASE_URL = "https://api-fxpractice.oanda.com/v3";
+const LIVE_BASE_URL = "https://api-fxtrade.oanda.com/v3";
 const REQUEST_TIMEOUT_MS = 8000;
+
+function configuredBaseUrl() {
+  return config.OANDA_ENVIRONMENT === "LIVE" ? LIVE_BASE_URL : PRACTICE_BASE_URL;
+}
+
+function assertOrderExecutionConfigured() {
+  if (config.TRADING_MODE !== "OANDA_DEMO" && config.TRADING_MODE !== "OANDA_LIVE") {
+    throw new Error("OANDA_ORDER_BLOCKED_IN_PAPER");
+  }
+  if (!config.OANDA_ORDER_EXECUTION_ENABLED || !config.LIVE_TRADING_ENABLED) {
+    throw new Error("OANDA_ORDER_EXECUTION_NOT_ENABLED");
+  }
+  if (!config.OANDA_ENVIRONMENT_VALID) {
+    throw new Error("OANDA_ENVIRONMENT_MODE_MISMATCH");
+  }
+  if (config.TRADING_MODE === "OANDA_DEMO" && config.OANDA_ENVIRONMENT !== "PRACTICE") {
+    throw new Error("OANDA_DEMO_REQUIRES_PRACTICE_ENDPOINT");
+  }
+  if (config.TRADING_MODE === "OANDA_LIVE" &&
+      (config.OANDA_ENVIRONMENT !== "LIVE" || !config.OANDA_LIVE_CONFIRMED)) {
+    throw new Error("OANDA_LIVE_REQUIRES_EXPLICIT_REAL_MONEY_CONFIRMATION");
+  }
+}
 
 function normalizeOandaSymbol(symbol) {
   let normalized = String(symbol).toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/__+/g, '_').trim();
@@ -62,7 +86,7 @@ function normalizeOrderUnits(units, side) {
 
 class OandaAPI {
   constructor() {
-    this.baseURL = PRACTICE_BASE_URL;
+    this.baseURL = configuredBaseUrl();
 
     this.headers = {
       Authorization: `Bearer ${config.OANDA_API_KEY}`,
@@ -345,6 +369,17 @@ class OandaAPI {
     }
   }
 
+  async getPendingOrders() {
+    try {
+      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/pendingOrders`, this.requestOptions());
+      if (!Array.isArray(response.data?.orders)) throw new Error("OANDA_PENDING_ORDERS_RESPONSE_INVALID");
+      this.rememberSuccess();
+      return response.data.orders;
+    } catch (error) {
+      throw this.safeError("pending_orders", error);
+    }
+  }
+
   async getTrade(tradeId) {
     try {
       const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}`, this.requestOptions());
@@ -357,9 +392,7 @@ class OandaAPI {
   }
 
   async createMarketOrder({ instrument, side, units, stopLoss, takeProfit, clientTag, strategyVariant }) {
-    if (config.TRADING_MODE !== "LIVE" || !config.LIVE_TRADING_ENABLED) {
-      throw new Error("LIVE_ORDER_BLOCKED_BY_CONFIGURATION");
-    }
+    assertOrderExecutionConfigured();
     if (!config.LIVE_EXECUTION_VARIANT_VALID || strategyVariant !== config.LIVE_EXECUTION_VARIANT) {
       throw new Error("LIVE_EXECUTION_VARIANT_BLOCKED_BY_CONFIGURATION");
     }
@@ -411,7 +444,7 @@ class OandaAPI {
   }
 
   async closeTrade(tradeId, units = "ALL") {
-    if (config.TRADING_MODE !== "LIVE" || !config.LIVE_TRADING_ENABLED) throw new Error("LIVE_ORDER_BLOCKED_BY_CONFIGURATION");
+    assertOrderExecutionConfigured();
     try {
       const response = await axios.put(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}/close`, { units: String(units) }, this.requestOptions());
       this.rememberSuccess();
@@ -423,13 +456,16 @@ class OandaAPI {
 
   async getConnectionStatus() {
     const hasCredentials = Boolean(config.OANDA_API_KEY && config.OANDA_ACCOUNT_ID);
+    const mode = config.OANDA_ENVIRONMENT === "LIVE" ? "live" : "practice";
+    const endpoint = this.baseURL;
 
     if (!hasCredentials) {
       return {
         connected: false,
         reason: "missing_credentials",
-        mode: "practice",
-        endpoint: PRACTICE_BASE_URL
+        mode,
+        tradingMode: config.TRADING_MODE,
+        endpoint
       };
     }
 
@@ -443,24 +479,27 @@ class OandaAPI {
         errorStatus: this.lastError?.status || null,
         errorCode: this.lastError?.code || null,
         errorMessage: this.lastError?.message || null,
-        mode: "practice",
-        endpoint: PRACTICE_BASE_URL
+        mode,
+        tradingMode: config.TRADING_MODE,
+        endpoint
       };
     }
     if (String(returnedAccountId) !== String(config.OANDA_ACCOUNT_ID)) {
       return {
         connected: false,
         reason: "account_id_mismatch",
-        mode: "practice",
-        endpoint: PRACTICE_BASE_URL
+        mode,
+        tradingMode: config.TRADING_MODE,
+        endpoint
       };
     }
     if (!account.currency) {
       return {
         connected: false,
         reason: "account_currency_unavailable",
-        mode: "practice",
-        endpoint: PRACTICE_BASE_URL
+        mode,
+        tradingMode: config.TRADING_MODE,
+        endpoint
       };
     }
 
@@ -475,8 +514,9 @@ class OandaAPI {
       openPositionCount: account.openPositionCount,
       marginAvailable: account.marginAvailable,
       state: account.state,
-      mode: "practice",
-      endpoint: PRACTICE_BASE_URL,
+      mode,
+      tradingMode: config.TRADING_MODE,
+      endpoint,
       checkedAt: this.lastSuccessAt
     };
   }

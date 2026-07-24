@@ -13,7 +13,7 @@ const SYMBOLS = (config.SYMBOLS || []).map((symbol: string) => String(symbol).re
 
 // Market data uses M5 candles; evaluate the latest real OANDA data every two minutes.
 const SIGNAL_INTERVAL = Number(config.SCAN_INTERVAL || 2 * 60 * 1000);
-const CLOSE_INTERVAL = 5000;
+const CLOSE_INTERVAL = 15000;
 const PRICE_INTERVAL = 1000;
 
 const MAX_DAILY_TRADES = Number(config.MAX_DAILY_TRADES);
@@ -47,7 +47,7 @@ interface BotTrade {
   pnlCurrency?: string;
   oandaOrderId?: string;
   oandaTradeId?: string;
-  verificationStatus?: "VERIFIED" | "NOT_VERIFIED";
+  verificationStatus?: "VERIFIED" | "NOT_VERIFIED" | "PAPER_RECORDED";
   strategyVariant?: StrategyVariant;
   signalId?: string;
   signalAt?: string;
@@ -62,12 +62,19 @@ export interface BotSnapshot {
   startedAt?: string;
   lastUpdated?: string;
   lastPriceAt?: string;
-  priceFeedStatus: "CONNECTED" | "DISCONNECTED";
+  priceFeedStatus: "CONNECTED" | "PARTIAL" | "DISCONNECTED";
   dataSource: string;
   oandaConnected: boolean;
   oandaReason?: string;
   executionMode: string;
-  tradingMode: "PAPER" | "LIVE";
+  tradingMode: "PAPER" | "OANDA_DEMO" | "OANDA_LIVE";
+  effectiveExecutionState:
+    | "UNAVAILABLE"
+    | "PAPER"
+    | "OANDA_DEMO_BLOCKED"
+    | "OANDA_DEMO_READY"
+    | "OANDA_LIVE_BLOCKED"
+    | "OANDA_LIVE_READY";
   liveTradingEnabled: boolean;
   liveExecutionVariant: StrategyVariant | "INVALID";
   liveExecutionVariantValid: boolean;
@@ -92,6 +99,17 @@ export interface BotSnapshot {
   signalsAnalyzed: number;
   signalsDiscarded: number;
   openTrades: BotTrade[];
+  orphanTrades: BotTrade[];
+  pendingOrders: Array<{
+    id: string;
+    type: string;
+    instrument?: string;
+    units?: number;
+    price?: number;
+    state?: string;
+    createTime?: string;
+    clientTag?: string;
+  }>;
   closedTrades: BotTrade[];
   shadowOpenTrades: BotTrade[];
   shadowClosedTrades: BotTrade[];
@@ -113,6 +131,15 @@ export interface BotSnapshot {
   lastOrderReason?: string;
   lastOandaOrderId?: string;
   lastOandaTradeId?: string;
+  dailyRiskStatus: {
+    dateUTC: string;
+    tradeCount: number;
+    maxTrades: number;
+    pnl: number | null;
+    currency?: string;
+    complete: boolean;
+    reason?: string;
+  };
 }
 
 const botState: BotSnapshot = {
@@ -121,14 +148,12 @@ const botState: BotSnapshot = {
   dataSource: "OANDA_UNAVAILABLE",
   oandaConnected: false,
   priceFeedStatus: "DISCONNECTED",
-  executionMode: config.TRADING_MODE === "LIVE"
-    ? !config.LIVE_TRADING_ENABLED
-      ? "LIVE BLOCKED - ENABLE FLAG FALSE"
-      : config.LIVE_EXECUTION_VARIANT_VALID
-        ? `LIVE OANDA PRACTICE (${config.LIVE_EXECUTION_VARIANT})`
-        : "LIVE BLOCKED - INVALID VARIANT"
-    : "PAPER",
+  executionMode: config.TRADING_MODE === "PAPER"
+    ? "PAPER"
+    : `${config.TRADING_MODE} BLOCKED UNTIL SAFETY GATES PASS`,
   tradingMode: config.TRADING_MODE,
+  effectiveExecutionState: config.TRADING_MODE === "PAPER" ? "PAPER" :
+    config.TRADING_MODE === "OANDA_DEMO" ? "OANDA_DEMO_BLOCKED" : "OANDA_LIVE_BLOCKED",
   liveTradingEnabled: config.LIVE_TRADING_ENABLED,
   liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
   liveExecutionVariantValid: config.LIVE_EXECUTION_VARIANT_VALID,
@@ -141,6 +166,8 @@ const botState: BotSnapshot = {
   signalsAnalyzed: 0,
   signalsDiscarded: 0,
   openTrades: [],
+  orphanTrades: [],
+  pendingOrders: [],
   closedTrades: [],
   shadowOpenTrades: [],
   shadowClosedTrades: [],
@@ -154,7 +181,15 @@ const botState: BotSnapshot = {
   pairedSignals: {},
   priceCoverage: 0,
   priceExpected: SYMBOLS.length,
-  reconciliationStatus: "NOT_RUN"
+  reconciliationStatus: "NOT_RUN",
+  dailyRiskStatus: {
+    dateUTC: new Date().toISOString().slice(0, 10),
+    tradeCount: 0,
+    maxTrades: MAX_DAILY_TRADES,
+    pnl: null,
+    complete: config.TRADING_MODE === "PAPER",
+    reason: config.TRADING_MODE === "PAPER" ? undefined : "OANDA_RECONCILIATION_NOT_RUN"
+  }
 };
 
 const listeners = new Set<(snapshot: BotSnapshot) => void>();
@@ -166,22 +201,81 @@ let runGeneration = 0;
 let priceRefreshInProgress = false;
 let lastPriceErrorLogAt = 0;
 let reconciliationPromise: Promise<void> | undefined;
+let dailyCounterDate = new Date().toISOString().slice(0, 10);
+let dailyRiskDataComplete = config.TRADING_MODE === "PAPER";
+let dailyRiskReason: string | undefined = config.TRADING_MODE === "PAPER"
+  ? undefined
+  : "OANDA_RECONCILIATION_NOT_RUN";
 
 function liveExecutionActive() {
-  return config.TRADING_MODE === "LIVE" &&
+  const priceTime = Date.parse(String(botState.lastPriceAt || ""));
+  const priceFresh = Number.isFinite(priceTime) && Date.now() - priceTime >= -5000 && Date.now() - priceTime <= 30000;
+  const modeReady = config.TRADING_MODE === "OANDA_DEMO" ||
+    (config.TRADING_MODE === "OANDA_LIVE" && config.OANDA_LIVE_CONFIRMED === true);
+  return modeReady &&
+    config.OANDA_ORDER_EXECUTION_ENABLED === true &&
     config.LIVE_TRADING_ENABLED === true &&
-    config.LIVE_EXECUTION_VARIANT_VALID === true;
-}
-
-function liveExecutionRequested() {
-  return config.TRADING_MODE === "LIVE" && config.LIVE_TRADING_ENABLED === true;
+    config.LIVE_EXECUTION_VARIANT_VALID === true &&
+    config.OANDA_ENVIRONMENT_VALID === true &&
+    botState.oandaConnected === true &&
+    botState.reconciliationStatus === "VERIFIED" &&
+    botState.priceFeedStatus === "CONNECTED" &&
+    botState.priceCoverage === botState.priceExpected &&
+    priceFresh &&
+    dailyRiskDataComplete;
 }
 
 function liveModeConfigured() {
-  return config.TRADING_MODE === "LIVE";
+  return config.TRADING_MODE === "OANDA_DEMO" || config.TRADING_MODE === "OANDA_LIVE";
+}
+
+function effectiveExecutionState(): BotSnapshot["effectiveExecutionState"] {
+  if (config.TRADING_MODE === "PAPER") return "PAPER";
+  if (config.TRADING_MODE === "OANDA_DEMO") {
+    return liveExecutionActive() ? "OANDA_DEMO_READY" : "OANDA_DEMO_BLOCKED";
+  }
+  return liveExecutionActive() ? "OANDA_LIVE_READY" : "OANDA_LIVE_BLOCKED";
+}
+
+function ensureDailyCounterDate() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (today === dailyCounterDate) return;
+  dailyCounterDate = today;
+  botState.dailyTradeCount = 0;
+  if (liveModeConfigured()) {
+    botState.reconciliationStatus = "NOT_RUN";
+    dailyRiskDataComplete = false;
+    dailyRiskReason = "OANDA_DAILY_RECONCILIATION_REQUIRED";
+  }
+}
+
+function refreshDerivedState() {
+  ensureDailyCounterDate();
+  const analytics = getAnalytics();
+  const state = effectiveExecutionState();
+  botState.effectiveExecutionState = state;
+  botState.executionMode = state === "PAPER"
+    ? "PAPER"
+    : state.endsWith("_READY")
+      ? `${config.TRADING_MODE} (${config.LIVE_EXECUTION_VARIANT})`
+      : `${config.TRADING_MODE} BLOCKED`;
+  botState.dailyRiskStatus = {
+    dateUTC: dailyCounterDate,
+    tradeCount: botState.dailyTradeCount,
+    maxTrades: MAX_DAILY_TRADES,
+    pnl: analytics.pnlToday,
+    currency: analytics.pnlCurrency || botState.accountCurrency,
+    complete: config.TRADING_MODE === "PAPER" ? true : dailyRiskDataComplete && analytics.pnlComplete,
+    reason: config.TRADING_MODE === "PAPER"
+      ? undefined
+      : dailyRiskDataComplete && analytics.pnlComplete
+        ? undefined
+        : dailyRiskReason || "OANDA_DAILY_RISK_DATA_INCOMPLETE"
+  };
 }
 
 function emitState() {
+  refreshDerivedState();
   const snapshot = {
     ...botState,
     logs: [...botState.logs].slice(-50)
@@ -246,7 +340,10 @@ function quoteCurrency(symbol: string) {
 
 function paperExecutablePrice(side: "BUY" | "SELL" | "HOLD", marketData: MarketData) {
   const candidate = side === "SELL" ? Number(marketData.bid) : Number(marketData.ask);
-  return Number.isFinite(candidate) && candidate > 0 ? candidate : marketData.closePrice;
+  if (!Number.isFinite(candidate) || candidate <= 0) {
+    throw new Error("OANDA_EXECUTABLE_ENTRY_PRICE_UNAVAILABLE");
+  }
+  return candidate;
 }
 
 function parseGemmoClientTag(tag: unknown) {
@@ -287,7 +384,10 @@ function updatePairExecution(
 
 function paperExitPrice(side: "BUY" | "SELL" | "HOLD", marketData: MarketData) {
   const candidate = side === "BUY" ? Number(marketData.bid) : Number(marketData.ask);
-  return Number.isFinite(candidate) && candidate > 0 ? candidate : marketData.closePrice;
+  if (!Number.isFinite(candidate) || candidate <= 0) {
+    throw new Error("OANDA_EXECUTABLE_EXIT_PRICE_UNAVAILABLE");
+  }
+  return candidate;
 }
 
 function isFreshTradeableQuote(quote: { bid?: unknown; ask?: unknown; time?: unknown; tradeable?: unknown }) {
@@ -341,7 +441,7 @@ function buildTrade(
     source: "PAPER",
     units: tradeUnits(symbol),
     pnlCurrency: quoteCurrency(symbol),
-    verificationStatus: "VERIFIED",
+    verificationStatus: "PAPER_RECORDED",
     strategyVariant: "MAIN",
     signalId: pairedSignal?.pairId,
     signalAt: pairedSignal?.evaluatedAt,
@@ -350,6 +450,7 @@ function buildTrade(
 }
 
 export function getBotSnapshot(): BotSnapshot {
+  refreshDerivedState();
   return {
     ...botState,
     logs: [...botState.logs].slice(-50)
@@ -383,7 +484,8 @@ function isToday(dateIso?: string) {
 }
 
 export function getAnalytics() {
-  const eligible = (trade: BotTrade) => config.TRADING_MODE === "LIVE"
+  ensureDailyCounterDate();
+  const eligible = (trade: BotTrade) => liveModeConfigured()
     ? trade.source === "OANDA" && trade.verificationStatus === "VERIFIED"
     : trade.source === "PAPER";
   const closed = (botState.closedTrades || []).filter(eligible);
@@ -398,8 +500,9 @@ export function getAnalytics() {
       .filter((currency): currency is string => Boolean(currency))
   );
   const pnlCurrency = pnlCurrencies.size === 1 ? [...pnlCurrencies][0] : null;
-  const pnlComplete = relevantPnlTrades.length > 0 && pnlTrades.length === relevantPnlTrades.length;
-  const pnlToday = pnlComplete && pnlCurrency
+  const pnlComplete = relevantPnlTrades.length === 0 ||
+    (pnlTrades.length === relevantPnlTrades.length && Boolean(pnlCurrency));
+  const pnlToday = relevantPnlTrades.length > 0 && pnlComplete && pnlCurrency
     ? pnlTrades.reduce((sum, trade) => sum + Number(trade.pnl), 0)
     : null;
 
@@ -427,6 +530,7 @@ export function getAnalytics() {
   return {
     pnlToday,
     pnlCurrency,
+    pnlComplete,
     winRate,
     wins,
     losses,
@@ -499,7 +603,7 @@ async function refreshLivePrices() {
     botState.livePrices = nextPrices;
     botState.priceCoverage = updated;
     botState.lastPriceAt = latestTime;
-    botState.priceFeedStatus = "CONNECTED";
+    botState.priceFeedStatus = updated === botState.priceExpected ? "CONNECTED" : "PARTIAL";
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
     botState.dataSource = "OANDA MARKET DATA";
@@ -524,10 +628,13 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
   const signedUnits = optionalFinite(remote?.currentUnits ?? remote?.initialUnits);
   const symbol = cleanSymbol(remote?.instrument);
   const entryPrice = optionalFinite(remote?.price) ?? previous?.entryPrice;
-  const marketPrice = optionalFinite(botState.marketData?.[symbol]?.closePrice);
-  const currentPrice = marketPrice && marketPrice > 0
-    ? marketPrice
-    : previous?.currentPrice;
+  const quote = botState.livePrices?.[symbol];
+  const quotePrice = signedUnits && signedUnits < 0
+    ? optionalFinite(quote?.ask)
+    : optionalFinite(quote?.bid);
+  const currentPrice = quote && isFreshTradeableQuote(quote) && quotePrice
+    ? quotePrice
+    : undefined;
   const openedAt = String(remote?.openTime || previous?.openedAt || "");
   if (!signedUnits || !symbol || !entryPrice || !Number.isFinite(Date.parse(openedAt))) {
     throw new Error("OANDA_OPEN_TRADE_FIELDS_INCOMPLETE");
@@ -631,26 +738,53 @@ async function reconcileLiveTrades() {
 
 async function reconcileLiveTradesOnce() {
   try {
-    const [account, remoteOpenTrades, remoteOpenPositions, remoteClosedTrades] = await Promise.all([
+    const [account, remoteOpenTrades, remoteOpenPositions, remoteClosedTrades, remotePendingOrders] = await Promise.all([
       oanda.getAccount(),
       oanda.getOpenTrades(),
       oanda.getOpenPositions(),
-      oanda.getClosedTrades(80)
+      oanda.getClosedTrades(100),
+      oanda.getPendingOrders()
     ]);
-    if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteOpenPositions) || !Array.isArray(remoteClosedTrades)) {
+    if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteOpenPositions) ||
+        !Array.isArray(remoteClosedTrades) || !Array.isArray(remotePendingOrders)) {
       throw new Error("OANDA_RECONCILIATION_UNAVAILABLE");
     }
-    const tradeInstruments = new Set(remoteOpenTrades.map((trade: any) => cleanSymbol(trade?.instrument)));
-    const unmatchedPosition = remoteOpenPositions.find((position: any) => {
-      const hasUnits = Number(position?.long?.units || 0) !== 0 || Number(position?.short?.units || 0) !== 0;
-      return hasUnits && !tradeInstruments.has(cleanSymbol(position?.instrument));
-    });
-    if (unmatchedPosition) throw new Error("OANDA_POSITION_TRADE_MISMATCH");
+    const tradeUnitsByInstrument = new Map<string, number>();
+    for (const trade of remoteOpenTrades) {
+      const instrument = cleanSymbol(trade?.instrument);
+      const units = Number(trade?.currentUnits);
+      if (!instrument || !Number.isFinite(units) || units === 0) {
+        throw new Error("OANDA_OPEN_TRADE_UNITS_INVALID");
+      }
+      tradeUnitsByInstrument.set(instrument, (tradeUnitsByInstrument.get(instrument) || 0) + units);
+    }
+    const positionUnitsByInstrument = new Map<string, number>();
+    for (const position of remoteOpenPositions) {
+      const instrument = cleanSymbol(position?.instrument);
+      const longUnits = Number(position?.long?.units || 0);
+      const shortUnits = Number(position?.short?.units || 0);
+      if (!instrument || !Number.isFinite(longUnits) || !Number.isFinite(shortUnits)) {
+        throw new Error("OANDA_OPEN_POSITION_UNITS_INVALID");
+      }
+      const netUnits = longUnits + shortUnits;
+      if (netUnits !== 0) positionUnitsByInstrument.set(instrument, netUnits);
+    }
+    const reconciliationInstruments = new Set([
+      ...tradeUnitsByInstrument.keys(),
+      ...positionUnitsByInstrument.keys()
+    ]);
+    for (const instrument of reconciliationInstruments) {
+      const tradeUnits = tradeUnitsByInstrument.get(instrument);
+      const positionUnits = positionUnitsByInstrument.get(instrument);
+      if (tradeUnits === undefined || positionUnits === undefined || Math.abs(tradeUnits - positionUnits) > 1e-9) {
+        throw new Error("OANDA_POSITION_TRADE_MISMATCH");
+      }
+    }
 
     const currency = String(account.currency).toUpperCase();
     botState.accountCurrency = currency;
     const previousById = new Map(
-      [...botState.openTrades, ...botState.closedTrades]
+      [...botState.openTrades, ...botState.orphanTrades, ...botState.closedTrades]
         .filter((trade) => trade.oandaTradeId)
         .map((trade) => [String(trade.oandaTradeId), trade])
     );
@@ -661,7 +795,8 @@ async function reconcileLiveTradesOnce() {
     const newlyClosed: BotTrade[] = [];
     const orphans: BotTrade[] = [];
 
-    for (const local of botState.openTrades.filter((trade) => trade.oandaTradeId && !remoteIds.has(String(trade.oandaTradeId)))) {
+    const locallyTracked = [...botState.openTrades, ...botState.orphanTrades];
+    for (const local of locallyTracked.filter((trade) => trade.oandaTradeId && !remoteIds.has(String(trade.oandaTradeId)))) {
       try {
         const verified = await oanda.getTrade(String(local.oandaTradeId));
         if (String(verified?.state || "").toUpperCase() === "CLOSED") {
@@ -719,7 +854,35 @@ async function reconcileLiveTradesOnce() {
         `[${trade.symbol}] chiusura verificata OANDA | P&L ${Number.isFinite(trade.pnl) ? `${currency} ${Number(trade.pnl).toFixed(2)}` : "N/A"}`
       ));
     }
-    botState.openTrades = [...verifiedOpen, ...orphans];
+    botState.openTrades = verifiedOpen;
+    botState.orphanTrades = orphans;
+    botState.pendingOrders = remotePendingOrders.map((order: any) => {
+      if (!order?.id || !order?.type) throw new Error("OANDA_PENDING_ORDER_FIELDS_INCOMPLETE");
+      return {
+        id: String(order.id),
+        type: String(order.type),
+        instrument: order.instrument ? cleanSymbol(order.instrument) : undefined,
+        units: optionalFinite(order.units),
+        price: optionalFinite(order.price),
+        state: order.state ? String(order.state) : undefined,
+        createTime: typeof order.createTime === "string" ? order.createTime : undefined,
+        clientTag: order?.clientExtensions?.tag ? String(order.clientExtensions.tag) : undefined
+      };
+    });
+    dailyCounterDate = new Date().toISOString().slice(0, 10);
+    const todayRemoteTrades = [...remoteOpenTrades, ...remoteClosedTrades].filter((trade: any) =>
+      isToday(trade?.openTime) || isToday(trade?.closeTime)
+    );
+    botState.dailyTradeCount = new Set(
+      todayRemoteTrades.map((trade: any) => String(trade?.id || "")).filter(Boolean)
+    ).size;
+    const todayVerified = [...verifiedOpen, ...botState.closedTrades].filter((trade) =>
+      isToday(trade.openedAt) || isToday(trade.closedAt)
+    );
+    dailyRiskDataComplete = todayVerified.every((trade) =>
+      Number.isFinite(trade.pnl) && trade.accountCurrency === currency
+    );
+    dailyRiskReason = dailyRiskDataComplete ? undefined : "OANDA_DAILY_PNL_INCOMPLETE";
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
     botState.reconciliationStatus = "VERIFIED";
@@ -727,10 +890,27 @@ async function reconcileLiveTradesOnce() {
     botState.lastUpdated = new Date().toISOString();
     emitState();
   } catch (error) {
+    const staleOanda = botState.openTrades
+      .filter((trade) => trade.source === "OANDA")
+      .map((trade): BotTrade => ({
+        ...trade,
+        source: "LOCAL_ORPHAN",
+        verificationStatus: "NOT_VERIFIED",
+        pnl: undefined,
+        reasoning: "LOCAL ORPHAN / NOT VERIFIED: riconciliazione OANDA fallita."
+      }));
+    const existingOrphans = botState.orphanTrades.filter((trade) =>
+      !staleOanda.some((stale) => stale.oandaTradeId === trade.oandaTradeId)
+    );
+    botState.orphanTrades = [...staleOanda, ...existingOrphans];
+    botState.openTrades = botState.openTrades.filter((trade) => trade.source !== "OANDA");
+    botState.pendingOrders = [];
     botState.oandaConnected = false;
     botState.oandaReason = "reconciliation_failed";
     botState.reconciliationStatus = "FAILED";
-    pushLog("OANDA reconciliation failed: le posizioni esistenti non sono state alterate");
+    dailyRiskDataComplete = false;
+    dailyRiskReason = "OANDA_RECONCILIATION_FAILED";
+    pushLog("OANDA reconciliation failed: trade locali spostati in LOCAL ORPHAN / NOT VERIFIED");
   }
 }
 
@@ -855,6 +1035,10 @@ async function closeVerifiedOandaTrade(trade: BotTrade) {
 async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened: number }, generation: number) {
   try {
     const analytics = getAnalytics();
+    if (liveModeConfigured() && (!dailyRiskDataComplete || analytics.pnlComplete !== true)) {
+      pushLog(`[${symbol}] skipped: OANDA daily risk data incomplete`);
+      return;
+    }
     if (liveExecutionActive() && typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
       pushLog(`[${symbol}] skipped: daily loss guard active`);
       return;
@@ -923,8 +1107,9 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
         candleCount: enrichedMarketData.candleCount
       },
       mainDecision: rankedDecision,
-      tradingMode: liveExecutionActive() ? "LIVE" : liveModeConfigured() ? "BLOCKED" : "PAPER",
+      tradingMode: config.TRADING_MODE,
       liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
+      executionGateVerified: liveExecutionActive(),
       minimumConfidence: MIN_CONFIDENCE
     });
     if (isGold(symbol)) {
@@ -993,7 +1178,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
 
     if (!pairedSignal.marketValid) {
       botState.signalsDiscarded += 1;
-      pushLog(`[${symbol}] PAPER/LIVE signal blocked: ${pairedSignal.marketValidationReason}`);
+      pushLog(`[${symbol}] PAPER/OANDA signal blocked: ${pairedSignal.marketValidationReason}`);
       return;
     }
 
@@ -1041,16 +1226,20 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     } else if (liveModeConfigured() && !liveExecutionActive()) {
       botState.signalsDiscarded += 1;
       const reason = !config.LIVE_TRADING_ENABLED
-        ? "LIVE_TRADING_ENABLED must be true"
-        : "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE";
-      pushLog(`[${symbol}] LIVE execution blocked: ${reason}`);
+        ? "OANDA_ORDER_EXECUTION_ENABLED must be true"
+        : !config.OANDA_ENVIRONMENT_VALID
+          ? "OANDA_ENVIRONMENT does not match TRADING_MODE"
+          : !config.LIVE_EXECUTION_VARIANT_VALID
+            ? "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE"
+            : "OANDA safety gates are not verified";
+      pushLog(`[${symbol}] OANDA execution blocked: ${reason}`);
     } else if (liveExecutionActive() && pairedSignal.executionBlockedReason) {
       botState.signalsDiscarded += 1;
-      pushLog(`[${symbol}] LIVE execution blocked: ${pairedSignal.executionBlockedReason}`);
+      pushLog(`[${symbol}] OANDA execution blocked: ${pairedSignal.executionBlockedReason}`);
     } else if (liveExecutionActive() && hasConflictingManagedVariant()) {
       botState.signalsDiscarded += 1;
       updatePairExecution(pairedSignal, "SKIPPED", "OANDA_EXTERNAL_OR_DIFFERENT_GEMMO_VARIANT_OPEN");
-      pushLog(`[${symbol}] LIVE execution skipped: an external/unknown OANDA trade or another GEMMO lane is still open`);
+      pushLog(`[${symbol}] OANDA execution skipped: an external/unknown OANDA trade or another GEMMO lane is still open`);
     } else if (hasOpenTradeForSymbol(symbol)) {
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "POSITION_ALREADY_OPEN");
@@ -1085,21 +1274,35 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           signalAt: pairedSignal.evaluatedAt
         });
         if (result.status === "OPENED") {
-          const trade: BotTrade = {
+          const provisionalTrade: BotTrade = {
             id: `OANDA-${result.trade.oandaTradeId}`,
             ...result.trade,
             pnl: undefined,
             pnlPips: undefined,
             setupType: decisionForExecution.setupType,
             confidence: decisionForExecution.confidence,
-            reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} e trade verificati tramite OANDA Practice.`,
+            reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} verificato tramite OANDA ${config.OANDA_ENVIRONMENT}.`,
             status: "OPEN",
             verificationStatus: "VERIFIED",
             managedByBot: true
           };
-          botState.dailyTradeCount += 1;
+          botState.openTrades = [provisionalTrade, ...botState.openTrades];
+          await reconcileLiveTrades();
+          const trade = botState.openTrades.find((item) =>
+            item.source === "OANDA" &&
+            item.verificationStatus === "VERIFIED" &&
+            item.oandaTradeId === provisionalTrade.oandaTradeId
+          );
+          if (!trade) {
+            const reason = "OANDA_POST_FILL_RECONCILIATION_FAILED";
+            botState.signalsDiscarded += 1;
+            updatePairExecution(pairedSignal, "REJECTED", reason);
+            botState.lastOrderStatus = "REJECTED";
+            botState.lastOrderReason = reason;
+            pushLog(`[${symbol}] ${reason}: posizione non mostrata come OANDA aperta`);
+            return;
+          }
           cycle.opened += 1;
-          botState.openTrades = [trade, ...botState.openTrades];
           botState.accountCurrency = trade.accountCurrency;
           botState.entryPrice = trade.entryPrice;
           botState.stopLoss = trade.stopLoss;
@@ -1172,6 +1375,11 @@ async function scanAllSymbols() {
     }
     if (liveModeConfigured()) {
       await reconcileLiveTrades();
+      if (botState.reconciliationStatus !== "VERIFIED" || !botState.oandaConnected || !dailyRiskDataComplete) {
+        pushLog("Market scan blocked: OANDA reconciliation or daily risk state is not verified");
+        emitState();
+        return;
+      }
     }
     for (const symbol of SYMBOLS) {
       if (!botState.isRunning || generation !== runGeneration) {
@@ -1364,9 +1572,9 @@ export function startAutonomousBot() {
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
   pushLog(`Max New Trades Per Cycle: ${MAX_NEW_TRADES_PER_CYCLE}`);
   pushLog(liveExecutionActive()
-    ? `Execution: LIVE OANDA PRACTICE (${config.LIVE_EXECUTION_VARIANT}). Every trade requires OANDA order ID and verified trade ID.`
+    ? `Execution: ${config.TRADING_MODE} (${config.LIVE_EXECUTION_VARIANT}). Every trade requires OANDA order ID, trade ID, position and protections.`
     : liveModeConfigured()
-      ? `Execution: LIVE BLOCKED. ${config.LIVE_TRADING_ENABLED ? "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE." : "LIVE_TRADING_ENABLED must be true."}`
+      ? `Execution: ${config.TRADING_MODE} BLOCKED until every account, feed, reconciliation, risk and confirmation gate passes.`
       : "Execution: PAPER TRADING ONLY. OANDA orders disabled; MAIN and INVERSE comparison is shadow-only.");
   pushLog("=================================");
 
