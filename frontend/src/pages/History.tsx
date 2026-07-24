@@ -1,80 +1,115 @@
-function price(value?: number) {
-  return typeof value === 'number' ? value.toFixed(5) : '-';
+import { useState } from 'react';
+import { BotTrade, StatusSnapshot } from '../types';
+
+type HistoryFilter = 'LIVE' | 'PAPER' | 'SHADOW';
+
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
-function money(value = 0) {
-  return `${value >= 0 ? '+' : '-'}$${Math.abs(value).toFixed(2)}`;
+function compactSymbol(value?: string) {
+  return String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
 }
 
-function duration(openedAt?: string, closedAt?: string) {
-  if (!openedAt) return '-';
-  const end = closedAt ? new Date(closedAt).getTime() : Date.now();
-  const seconds = Math.max(0, Math.floor((end - new Date(openedAt).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)} min`;
+function quoteCurrency(symbol?: string) {
+  const normalized = compactSymbol(symbol);
+  return normalized.length === 6 ? normalized.slice(-3) : undefined;
 }
 
-export function HistoryPage({ status }: { status: any }) {
-  const trades = [...(status?.closedTrades || []), ...(status?.openTrades || [])].slice(0, 80);
+function price(value: unknown, symbol?: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 'N/A';
+  const normalized = compactSymbol(symbol);
+  return parsed.toFixed(normalized.includes('JPY') || normalized.includes('XAU') ? 3 : 5);
+}
+
+function dateTime(value?: string) {
+  if (!value) return { date: 'N/A', time: 'N/A' };
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return { date: 'N/A', time: 'N/A' };
+  return { date: parsed.toLocaleDateString(), time: parsed.toLocaleTimeString() };
+}
+
+function money(trade: BotTrade, filter: HistoryFilter) {
+  if (!finite(trade.pnl)) return 'N/A';
+  const currency = filter === 'LIVE'
+    ? trade.accountCurrency
+    : trade.pnlCurrency || quoteCurrency(trade.symbol);
+  if (!currency) return 'N/A';
+  return `${trade.pnl >= 0 ? '+' : '-'}${Math.abs(trade.pnl).toFixed(2)} ${currency}`;
+}
+
+function duration(trade: BotTrade) {
+  if (!trade.openedAt) return 'N/A';
+  if (!trade.closedAt) return trade.status === 'OPEN' ? 'OPEN' : 'N/A';
+  const start = Date.parse(trade.openedAt);
+  const end = Date.parse(trade.closedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return 'N/A';
+  const seconds = Math.floor((end - start) / 1000);
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)} min`;
+}
+
+function identifier(trade: BotTrade) {
+  return trade.oandaTradeId || trade.oandaTradeID || trade.tradeId || trade.tradeID;
+}
+
+export function HistoryPage({ status }: { status: StatusSnapshot | null }) {
+  const [filter, setFilter] = useState<HistoryFilter>('LIVE');
+  const live = [...(status?.closedTrades || []), ...(status?.openTrades || [])]
+    .filter((trade) => trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED');
+  const paper = [...(status?.closedTrades || []), ...(status?.openTrades || [])]
+    .filter((trade) => trade.source === 'PAPER');
+  const shadow = [...(status?.shadowClosedTrades || []), ...(status?.shadowOpenTrades || [])]
+    .filter((trade) => trade.source === 'PAPER_SHADOW');
+  const selected = (filter === 'LIVE' ? live : filter === 'PAPER' ? paper : shadow)
+    .sort((left, right) => Date.parse(right.closedAt || right.openedAt || '') - Date.parse(left.closedAt || left.openedAt || ''))
+    .slice(0, 80);
 
   return (
     <div className="history-page">
       <section className="page-hero">
-        <div>
-          <p className="eyebrow">History</p>
-          <h1>Operazioni, setup e risultato per ogni trade.</h1>
-        </div>
+        <div><p className="eyebrow">History</p><h1>Ledger separati: OANDA verificato, PAPER e PAPER SHADOW.</h1></div>
+        <div className="system-warning">NESSUNA FONTE MISTA</div>
       </section>
 
-      <section className="panel history-panel">
-        <div className="history-head">
-          <span>Ora / Coppia</span>
-          <span>Tipo</span>
-          <span>Setup</span>
-          <span>Entrata - Uscita</span>
-          <span>P&L</span>
-        </div>
+      <div className="time-tabs">
+        {(['LIVE', 'PAPER', 'SHADOW'] as HistoryFilter[]).map((item) => (
+          <button key={item} className={filter === item ? 'time-chip active' : 'time-chip'} onClick={() => setFilter(item)}>
+            {item === 'LIVE' ? 'LIVE OANDA' : item === 'PAPER' ? 'PAPER' : 'PAPER SHADOW'} · {item === 'LIVE' ? live.length : item === 'PAPER' ? paper.length : shadow.length}
+          </button>
+        ))}
+      </div>
 
+      <section className="panel history-panel">
+        <div className="history-head"><span>Ora / Strumento</span><span>Direzione / Unita</span><span>Setup / Stato</span><span>Entrata / Uscita</span><span>P&amp;L</span></div>
         <div className="history-list">
-          {trades.length > 0 ? trades.map((trade: any) => (
-            <article key={trade.id} className="history-item">
-              <div>
-                <strong>{trade.symbol}</strong>
-                <span>{trade.openedAt ? new Date(trade.openedAt).toLocaleDateString() : '-'}</span>
-                <span>{trade.openedAt ? new Date(trade.openedAt).toLocaleTimeString() : '-'}</span>
-              </div>
-              <div>
-                <strong className={trade.side === 'BUY' ? 'win' : 'loss'}>{trade.side}</strong>
-                <span>0.01 lot</span>
-              </div>
-              <div>
-                <strong>{trade.setupType || 'EMA_STACK'}</strong>
-                <span>{trade.closeReason || trade.status}</span>
-              </div>
-              <div>
-                <strong>{price(trade.entryPrice)}</strong>
-                <span>to {price(trade.currentPrice || trade.exitPrice)}</span>
-              </div>
-              <div className="history-result">
-                <strong className={(trade.pnl || 0) >= 0 ? 'win' : 'loss'}>{money(trade.pnl || 0)}</strong>
-                <span>{(trade.pnlPips || trade.pnl || 0).toFixed(1)} pip</span>
-              </div>
-              <div className="history-detail">
-                <div>
-                  <span>Ragionamento</span>
-                  <p>{trade.reasoning || 'EMA, RSI, momentum e filtri rischio allineati.'}</p>
+          {selected.length > 0 ? selected.map((trade) => {
+            const opened = dateTime(trade.openedAt);
+            const tradeId = identifier(trade);
+            const pnl = money(trade, filter);
+            return (
+              <article key={`${filter}-${trade.id}`} className="history-item">
+                <div><strong>{trade.symbol || 'N/A'}</strong><span>{opened.date}</span><span>{opened.time}</span></div>
+                <div><strong className={trade.side === 'BUY' ? 'win' : trade.side === 'SELL' ? 'loss' : ''}>{trade.side || 'N/A'}</strong><span>{finite(Number(trade.units)) ? `${trade.units} units` : 'Units N/A'}</span></div>
+                <div><strong>{trade.setupType || 'N/A'}</strong><span>{trade.status || 'N/A'} · {trade.closeReason || 'reason N/A'}</span></div>
+                <div><strong>{price(trade.entryPrice, trade.symbol)}</strong><span>to {price(trade.currentPrice, trade.symbol)}</span></div>
+                <div className="history-result"><strong className={finite(trade.pnl) ? trade.pnl < 0 ? 'loss' : 'win' : ''}>{pnl}</strong><span>{finite(trade.pnlPips) ? `${trade.pnlPips >= 0 ? '+' : ''}${trade.pnlPips.toFixed(1)} pips` : 'Pips N/A'}</span></div>
+                <div className="history-detail">
+                  <div><span>Ragionamento</span><p>{trade.reasoning || 'N/A'}</p></div>
+                  <div className="detail-grid">
+                    <div><span>Fonte</span><strong>{trade.source || 'N/A'}</strong></div>
+                    <div><span>Verifica</span><strong>{trade.verificationStatus || 'N/A'}</strong></div>
+                    <div><span>OANDA trade ID</span><strong>{tradeId || 'N/A'}</strong></div>
+                    <div><span>OANDA order ID</span><strong>{trade.oandaOrderId || trade.oandaOrderID || trade.orderId || trade.orderID || 'N/A'}</strong></div>
+                    <div><span>Stop loss</span><strong className="loss">{price(trade.stopLoss, trade.symbol)}</strong></div>
+                    <div><span>Take profit</span><strong className="win">{price(trade.takeProfit, trade.symbol)}</strong></div>
+                    <div><span>Confidence</span><strong>{finite(trade.confidence) ? `${trade.confidence}%` : 'N/A'}</strong></div>
+                    <div><span>Durata</span><strong>{duration(trade)}</strong></div>
+                  </div>
                 </div>
-                <div className="detail-grid">
-                  <div><span>Entrata</span><strong>{price(trade.entryPrice)}</strong></div>
-                  <div><span>Uscita</span><strong>{price(trade.currentPrice || trade.exitPrice)}</strong></div>
-                  <div><span>Stop loss</span><strong className="loss">{price(trade.stopLoss)}</strong></div>
-                  <div><span>Take profit</span><strong className="win">{price(trade.takeProfit)}</strong></div>
-                  <div><span>Confidence</span><strong>{trade.confidence || status?.currentConfidence || 72}%</strong></div>
-                  <div><span>Durata</span><strong>{duration(trade.openedAt, trade.closedAt)}</strong></div>
-                </div>
-              </div>
-            </article>
-          )) : <div className="empty-state">Nessuno storico disponibile. Premi START e lascia lavorare il paper trading.</div>}
+              </article>
+            );
+          }) : <div className="empty-state">{status ? `Nessun trade ${filter === 'LIVE' ? 'OANDA verificato' : filter} disponibile.` : 'DATI NON DISPONIBILI'}</div>}
         </div>
       </section>
     </div>

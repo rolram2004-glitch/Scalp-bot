@@ -38,7 +38,6 @@ export async function getScalpingSignal(
     return {
       action: "BUY",
       confidence: data.killzone ? 78 : 72,
-      lotSize: 0.01,
       riskRewardRatio: 2,
       setupType: bullishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
       reasoning: `BUY accepted: real OANDA price above EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`
@@ -54,7 +53,6 @@ export async function getScalpingSignal(
     return {
       action: "SELL",
       confidence: data.killzone ? 78 : 72,
-      lotSize: 0.01,
       riskRewardRatio: 2,
       setupType: bearishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
       reasoning: `SELL accepted: real OANDA price below EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}`

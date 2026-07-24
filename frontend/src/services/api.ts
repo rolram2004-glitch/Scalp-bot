@@ -1,42 +1,56 @@
-export async function fetchStatus() {
-  const res = await fetch('/api/status');
-  return res.ok ? res.json() : null;
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    cache: 'no-store',
+    ...init,
+    headers: {
+      Accept: 'application/json',
+      ...(init?.headers || {})
+    }
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const reason = payload?.error || payload?.reason || `HTTP_${response.status}`;
+    throw new Error(String(reason));
+  }
+  return payload as T;
 }
 
-export async function fetchAnalytics() {
-  const res = await fetch('/api/analytics');
-  return res.ok ? res.json() : null;
+export function fetchStatus() {
+  return fetchJson<any>('/api/status');
 }
 
-export async function fetchMarketData(all = false) {
+export function fetchAnalytics() {
+  return fetchJson<any>('/api/analytics');
+}
+
+export function fetchMarketData(all = false) {
   const url = all ? '/api/marketdata?all=true' : '/api/marketdata';
-  const res = await fetch(url);
-  return res.ok ? res.json() : {};
+  return fetchJson<Record<string, any>>(url);
 }
 
-export async function fetchCandles(symbol: string, timeframe = 'M5', count = 200) {
-  const res = await fetch(`/api/candles?symbol=${symbol}&timeframe=${timeframe}&count=${count}`);
-  return res.ok ? res.json() : [];
+export function fetchCandles(symbol: string, timeframe = 'M5', count = 200) {
+  const query = new URLSearchParams({ symbol, timeframe, count: String(count) });
+  return fetchJson<any[]>(`/api/candles?${query.toString()}`);
 }
 
-export async function startBot() {
-  const res = await fetch('/api/bot/start', { method: 'POST' });
-  return res.ok ? res.json() : null;
+export function fetchIntelligence(symbol: string) {
+  const query = new URLSearchParams({ symbol });
+  return fetchJson<any>(`/api/intelligence?${query.toString()}`);
 }
 
-export async function stopBot() {
-  const res = await fetch('/api/bot/stop', { method: 'POST' });
-  return res.ok ? res.json() : null;
+export function startBot() {
+  return fetchJson<any>('/api/bot/start', { method: 'POST' });
+}
+
+export function stopBot() {
+  return fetchJson<any>('/api/bot/stop', { method: 'POST' });
 }
 
 export async function fetchNews() {
-  const res = await fetch('/api/news');
-  if (!res.ok) return [];
-  const data = await res.json();
-  return Array.isArray(data) ? data : data.events || [];
+  const data = await fetchJson<any>('/api/news');
+  return Array.isArray(data) ? data : Array.isArray(data?.events) ? data.events : [];
 }
 
-export async function fetchOandaStatus() {
-  const res = await fetch('/api/oanda/status');
-  return res.ok ? res.json() : { connected: false };
+export function fetchOandaStatus() {
+  return fetchJson<any>('/api/oanda/status');
 }

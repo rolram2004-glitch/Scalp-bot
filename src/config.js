@@ -35,7 +35,6 @@ module.exports = {
   SCAN_INTERVAL: 2 * 60 * 1000,
 
   RISK_PERCENT: Number(process.env.MAX_RISK_PERCENT || 0.25),
-  DEFAULT_LOT_SIZE: Number(process.env.DEFAULT_LOT_SIZE || 0.01),
   MAX_DAILY_LOSS: Number(process.env.MAX_DAILY_LOSS || 50),
   TRADING_MODE: tradingMode,
   LIVE_TRADING_ENABLED: tradingMode === "LIVE" && process.env.LIVE_TRADING_ENABLED === "true",

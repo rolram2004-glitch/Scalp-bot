@@ -94,7 +94,13 @@ function buildOandaMock(overrides = {}) {
         ...values.verifiedTrade,
         clientExtensions: Object.hasOwn(values.verifiedTrade || {}, "clientExtensions")
           ? values.verifiedTrade.clientExtensions
-          : { tag: calls.lastOrder?.clientTag }
+          : { tag: calls.lastOrder?.clientTag },
+        stopLossOrder: Object.hasOwn(values.verifiedTrade || {}, "stopLossOrder")
+          ? values.verifiedTrade.stopLossOrder
+          : { id: "300", state: "PENDING", price: calls.lastOrder?.stopLoss },
+        takeProfitOrder: Object.hasOwn(values.verifiedTrade || {}, "takeProfitOrder")
+          ? values.verifiedTrade.takeProfitOrder
+          : { id: "301", state: "PENDING", price: calls.lastOrder?.takeProfit }
       };
     }
   };
@@ -170,6 +176,27 @@ test("LIVE result is OPENED only after order ID, trade ID and OPEN trade re-read
   assert.equal(calls.lastOrder.instrument, "EUR_USD");
   assert.equal(calls.lastOrder.stopLoss, "1.09877");
   assert.equal(calls.lastOrder.takeProfit, "1.10274");
+});
+
+test("missing verified protective orders never returns OPENED", async () => {
+  const { oanda, calls } = buildOandaMock({
+    verifiedTrade: {
+      id: "200",
+      state: "OPEN",
+      instrument: "EUR_USD",
+      currentUnits: "1000",
+      price: "1.10012",
+      openTime: "2026-07-14T12:00:00.000Z",
+      stopLossOrder: null
+    }
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, { status: "REJECTED", reason: "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED" });
+  assert.equal(calls.createMarketOrder, 1);
+  assert.equal(calls.getTrade, 1);
+  assert.equal(Object.hasOwn(result, "trade"), false);
 });
 
 test("OANDA wrapper blocks a strategy variant that differs from configuration", async () => {

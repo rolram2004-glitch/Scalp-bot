@@ -13,11 +13,20 @@ function pips(value?: number) {
 }
 
 function price(value?: number) {
-  return typeof value === 'number' ? value.toFixed(5) : '-';
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value.toFixed(5) : 'N/A';
 }
 
 function time(value?: string) {
-  return value ? new Date(value).toLocaleTimeString() : '-';
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleTimeString();
+}
+
+function fresh(value?: string, maxAgeMs = 15000) {
+  if (!value) return false;
+  const parsed = Date.parse(value);
+  const age = Date.now() - parsed;
+  return Number.isFinite(parsed) && age >= -5000 && age <= maxAgeMs;
 }
 
 function confidenceClass(value: number) {
@@ -27,9 +36,9 @@ function confidenceClass(value: number) {
 }
 
 function sourceLabel(status: StatusSnapshot | null, oandaStatus?: OandaStatus) {
-  return oandaStatus?.connected && status?.priceFeedStatus === 'CONNECTED'
+  return oandaStatus?.connected && status?.priceFeedStatus === 'CONNECTED' && fresh(status.lastPriceAt)
     ? 'OANDA 1S MARKET DATA'
-    : 'OANDA DISCONNECTED';
+    : oandaStatus?.connected ? 'OANDA FEED STALE / UNAVAILABLE' : 'OANDA DISCONNECTED';
 }
 
 function textValue(value: unknown) {
@@ -105,7 +114,7 @@ function TradeFeedCard({
             {trade.status && <span className={`badge ${isOpen ? 'open' : 'closed'}`}>{trade.status}</span>}
             {trade.setupType && <span className="badge setup">{trade.setupType}</span>}
           </div>
-          <div className={typeof trade.pnl === 'number' && trade.pnl < 0 ? 'money loss' : 'money win'}>
+          <div className={typeof trade.pnl === 'number' ? trade.pnl < 0 ? 'money loss' : 'money win' : 'money'}>
             {formattedPnl}{formattedPnl !== 'N/A' && paperTrade ? ' PAPER' : ''}
           </div>
         </div>
@@ -144,14 +153,19 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
   ];
   const accountCurrency = textValue(oandaStatus?.currency ?? status?.accountCurrency);
   const paperExecution = isPaperMode(status?.executionMode);
-  const pnlValues = [...openTrades, ...closedTrades]
-    .filter((trade) => trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED')
+  const eligibleTrades = [...openTrades, ...closedTrades].filter((trade) => paperExecution
+    ? trade.source === 'PAPER'
+    : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED');
+  const pnlValues = eligibleTrades
     .map((trade) => trade.pnl)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   const pnlToday = !paperExecution && pnlValues.length > 0
     ? pnlValues.reduce((sum, value) => sum + value, 0)
     : undefined;
   const closedPnl = closedTrades
+    .filter((trade) => paperExecution
+      ? trade.source === 'PAPER'
+      : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED')
     .map((trade) => trade.pnl)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
   const wins = closedPnl.filter((value) => value > 0).length;
@@ -180,23 +194,23 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
       <section className="metric-grid">
         <div className="metric-card">
           <span>P&L oggi</span>
-          <strong className={typeof pnlToday === 'number' && pnlToday < 0 ? 'loss' : 'win'}>{money(pnlToday, accountCurrency)}</strong>
+          <strong className={typeof pnlToday === 'number' ? pnlToday < 0 ? 'loss' : 'win' : ''}>{money(pnlToday, accountCurrency)}</strong>
           <small>{paperExecution ? 'P&L aggregato PAPER: N/A (conversione conto non verificata)' : `Valuta conto: ${accountCurrency || 'N/A'}`}</small>
         </div>
         <div className="metric-card">
           <span>Win rate</span>
           <strong>{winRate === undefined ? 'N/A' : `${winRate.toFixed(1)}%`}</strong>
-          <small><b className="win">{wins}W</b> - <b className="loss">{losses}L</b></small>
+          <small>{decidedTrades > 0 ? <><b className="win">{wins}W</b> - <b className="loss">{losses}L</b></> : 'Nessun esito disponibile'}</small>
         </div>
         <div className="metric-card">
           <span>Trade oggi</span>
-          <strong>{status?.dailyTradeCount || 0} <em>/ {status?.maxDailyTrades || 0}</em></strong>
-          <div className="mini-track"><div style={{ width: `${Math.min(((status?.dailyTradeCount || 0) / Math.max(status?.maxDailyTrades || 1, 1)) * 100, 100)}%` }} /></div>
+          <strong>{status ? status.dailyTradeCount : 'N/A'} {status ? <em>/ {status.maxDailyTrades}</em> : null}</strong>
+          {status && <div className="mini-track"><div style={{ width: `${Math.min((status.dailyTradeCount / Math.max(status.maxDailyTrades, 1)) * 100, 100)}%` }} /></div>}
         </div>
         <div className="metric-card">
           <span>Posizioni aperte</span>
-          <strong className="accent">{openTrades.length}</strong>
-          <small>Ultimo segnale: {status?.currentAction || 'HOLD'}</small>
+          <strong className="accent">{status ? openTrades.length : 'N/A'}</strong>
+          <small>Ultimo segnale: {status?.currentAction || 'N/A'}</small>
         </div>
       </section>
 
@@ -231,15 +245,17 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
               {marketRows.map(([symbol, item]) => {
                 const signal = status?.lastSignals?.[symbol];
                 const livePrice = status?.livePrices?.[symbol];
+                const livePriceFresh = fresh(livePrice?.time);
+                const trendClass = item?.trend === 'BULLISH' ? 'win' : item?.trend === 'BEARISH' ? 'loss' : '';
                 return (
                   <tr key={symbol}>
                     <td>{symbol}</td>
                     <td>{price(livePrice?.mid ?? item?.closePrice)}</td>
-                    <td>{item?.trend ? <span className={item.trend === 'BULLISH' ? 'win' : 'loss'}>{item.trend}</span> : 'N/A'}</td>
+                    <td>{item?.trend ? <span className={trendClass}>{item.trend}</span> : 'N/A'}</td>
                     <td>{signal?.action || 'N/A'}</td>
                     <td>{typeof signal?.confidence === 'number' ? `${signal.confidence}%` : 'N/A'}</td>
                     <td>{livePrice?.time ? time(livePrice.time) : 'N/A'}</td>
-                    <td>{livePrice ? 'OANDA 1S' : typeof item?.closePrice === 'number' && Number.isFinite(item.closePrice) ? 'OANDA M5' : 'NON DISP.'}</td>
+                    <td>{livePriceFresh ? 'OANDA 1S' : livePrice ? 'OANDA STALE' : typeof item?.closePrice === 'number' && Number.isFinite(item.closePrice) ? 'OANDA M5' : 'NON DISP.'}</td>
                   </tr>
                 );
               })}
@@ -251,7 +267,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
       <section className="panel log-panel">
         <div className="panel-title"><h2>Decision stream</h2><span>{status?.session || 'SESSION'}</span></div>
         <div className="log-list">
-          <div className="log-entry strong">Current: {status?.currentSymbol || '-'} {status?.currentAction || '-'} {status?.currentConfidence ?? '-'}%</div>
+          <div className="log-entry strong">Current: {status?.currentSymbol || 'N/A'} {status?.currentAction || 'N/A'} {typeof status?.currentConfidence === 'number' ? `${status.currentConfidence}%` : 'N/A'}</div>
           {(status?.logs || []).slice(-14).reverse().map((line, index) => (
             <div key={`${line}-${index}`} className="log-entry">{line}</div>
           ))}

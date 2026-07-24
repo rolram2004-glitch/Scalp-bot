@@ -2,6 +2,7 @@ const axios = require("axios");
 const config = require("./config");
 
 const PRACTICE_BASE_URL = "https://api-fxpractice.oanda.com/v3";
+const REQUEST_TIMEOUT_MS = 8000;
 
 function normalizeOandaSymbol(symbol) {
   let normalized = String(symbol).toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/__+/g, '_').trim();
@@ -69,6 +70,22 @@ class OandaAPI {
     };
 
     this.lastError = null;
+    this.lastSuccessAt = null;
+  }
+
+  requestOptions(options = {}) {
+    return {
+      ...options,
+      headers: this.headers,
+      timeout: REQUEST_TIMEOUT_MS,
+      // OANDA is contacted directly; ambient proxy variables must not silently reroute credentials.
+      proxy: false
+    };
+  }
+
+  rememberSuccess() {
+    this.lastError = null;
+    this.lastSuccessAt = new Date().toISOString();
   }
 
   parseError(scope, error) {
@@ -169,15 +186,16 @@ class OandaAPI {
     try {
       const response = await axios.get(
         `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/pricing`,
-        {
-          headers: this.headers,
+        this.requestOptions({
           params: {
             instruments: normalizeOandaSymbol(symbol)
           }
-        }
+        })
       );
-
-      return response.data.prices[0];
+      const price = response.data?.prices?.[0] || null;
+      if (!price) throw new Error("OANDA_PRICE_RESPONSE_EMPTY");
+      this.rememberSuccess();
+      return price;
     } catch (error) {
       this.rememberError("price", error);
       console.error("OANDA Price Error:", this.lastError.message);
@@ -193,13 +211,11 @@ class OandaAPI {
     try {
       const response = await axios.get(
         `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/pricing`,
-        {
-          headers: this.headers,
-          params: { instruments: instruments.join(",") },
-          timeout: 8000
-        }
+        this.requestOptions({ params: { instruments: instruments.join(",") } })
       );
-      return Array.isArray(response.data?.prices) ? response.data.prices : [];
+      if (!Array.isArray(response.data?.prices)) throw new Error("OANDA_PRICES_RESPONSE_INVALID");
+      this.rememberSuccess();
+      return response.data.prices;
     } catch (error) {
       this.rememberError("prices", error);
       return [];
@@ -210,17 +226,19 @@ class OandaAPI {
     try {
       const response = await axios.get(
         `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/pricing`,
-        {
-          headers: this.headers,
+        this.requestOptions({
           params: {
             instruments: normalizeOandaSymbol(symbol),
             includeHomeConversions: true
           }
-        }
+        })
       );
-
+      if (!Array.isArray(response.data?.prices) || !response.data.prices[0]) {
+        throw new Error("OANDA_PRICING_CONTEXT_EMPTY");
+      }
+      this.rememberSuccess();
       return {
-        price: response.data?.prices?.[0] || null,
+        price: response.data.prices[0],
         homeConversions: Array.isArray(response.data?.homeConversions)
           ? response.data.homeConversions
           : []
@@ -236,15 +254,15 @@ class OandaAPI {
     try {
       const response = await axios.get(
         `${this.baseURL}/instruments/${normalizeOandaSymbol(symbol)}/candles`,
-        {
-          headers: this.headers,
+        this.requestOptions({
           params: {
             granularity,
             count
           }
-        }
+        })
       );
-
+      if (!Array.isArray(response.data?.candles)) throw new Error("OANDA_CANDLES_RESPONSE_INVALID");
+      this.rememberSuccess();
       return response.data.candles;
     } catch (error) {
       this.rememberError("candles", error);
@@ -257,11 +275,10 @@ class OandaAPI {
     try {
       const response = await axios.get(
         `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}`,
-        {
-          headers: this.headers
-        }
+        this.requestOptions()
       );
-
+      if (!response.data?.account) throw new Error("OANDA_ACCOUNT_RESPONSE_EMPTY");
+      this.rememberSuccess();
       return response.data.account;
     } catch (error) {
       this.rememberError("account", error);
@@ -275,16 +292,16 @@ class OandaAPI {
       const normalizedSymbol = normalizeOandaSymbol(symbol);
       const response = await axios.get(
         `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/instruments`,
-        {
-          headers: this.headers,
-          params: { instruments: normalizedSymbol }
-        }
+        this.requestOptions({ params: { instruments: normalizedSymbol } })
       );
       const instruments = Array.isArray(response.data?.instruments)
         ? response.data.instruments
         : [];
 
-      return instruments.find((instrument) => instrument?.name === normalizedSymbol) || null;
+      const instrument = instruments.find((item) => item?.name === normalizedSymbol) || null;
+      if (!instrument) throw new Error("OANDA_ACCOUNT_INSTRUMENT_UNAVAILABLE");
+      this.rememberSuccess();
+      return instrument;
     } catch (error) {
       this.rememberError("account_instrument", error);
       console.error("OANDA Account Instrument Error:", this.lastError.message);
@@ -294,8 +311,10 @@ class OandaAPI {
 
   async getOpenTrades() {
     try {
-      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/openTrades`, { headers: this.headers });
-      return response.data.trades || [];
+      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/openTrades`, this.requestOptions());
+      if (!Array.isArray(response.data?.trades)) throw new Error("OANDA_OPEN_TRADES_RESPONSE_INVALID");
+      this.rememberSuccess();
+      return response.data.trades;
     } catch (error) {
       throw this.safeError("open_trades", error);
     }
@@ -304,10 +323,12 @@ class OandaAPI {
   async getClosedTrades(count = 50) {
     try {
       const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades`, {
-        headers: this.headers,
+        ...this.requestOptions(),
         params: { state: "CLOSED", count: Math.min(100, Math.max(1, Number(count) || 50)) }
       });
-      return response.data.trades || [];
+      if (!Array.isArray(response.data?.trades)) throw new Error("OANDA_CLOSED_TRADES_RESPONSE_INVALID");
+      this.rememberSuccess();
+      return response.data.trades;
     } catch (error) {
       throw this.safeError("closed_trades", error);
     }
@@ -315,8 +336,10 @@ class OandaAPI {
 
   async getOpenPositions() {
     try {
-      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/openPositions`, { headers: this.headers });
-      return response.data.positions || [];
+      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/openPositions`, this.requestOptions());
+      if (!Array.isArray(response.data?.positions)) throw new Error("OANDA_OPEN_POSITIONS_RESPONSE_INVALID");
+      this.rememberSuccess();
+      return response.data.positions;
     } catch (error) {
       throw this.safeError("open_positions", error);
     }
@@ -324,8 +347,10 @@ class OandaAPI {
 
   async getTrade(tradeId) {
     try {
-      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}`, { headers: this.headers });
-      return response.data.trade || null;
+      const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}`, this.requestOptions());
+      if (!response.data?.trade) throw new Error("OANDA_TRADE_RESPONSE_EMPTY");
+      this.rememberSuccess();
+      return response.data.trade;
     } catch (error) {
       throw this.safeError("trade", error);
     }
@@ -349,6 +374,9 @@ class OandaAPI {
     const signedUnits = normalizeOrderUnits(units, normalizedSide);
     const normalizedStopLoss = normalizeOptionalPrice(stopLoss, "STOP_LOSS");
     const normalizedTakeProfit = normalizeOptionalPrice(takeProfit, "TAKE_PROFIT");
+    if (!normalizedStopLoss || !normalizedTakeProfit) {
+      throw new TypeError("PROTECTIVE_ORDERS_REQUIRED");
+    }
     const order = {
       type: "MARKET", instrument: normalizedInstrument, units: signedUnits,
       timeInForce: "FOK", positionFill: "DEFAULT",
@@ -358,8 +386,9 @@ class OandaAPI {
       takeProfitOnFill: normalizedTakeProfit ? { price: normalizedTakeProfit, timeInForce: "GTC" } : undefined
     };
     try {
-      const response = await axios.post(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/orders`, { order }, { headers: this.headers });
+      const response = await axios.post(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/orders`, { order }, this.requestOptions());
       const result = this.parseOrderResponse(response.data);
+      this.lastSuccessAt = new Date().toISOString();
 
       if (!result.accepted) {
         this.lastError = {
@@ -384,7 +413,8 @@ class OandaAPI {
   async closeTrade(tradeId, units = "ALL") {
     if (config.TRADING_MODE !== "LIVE" || !config.LIVE_TRADING_ENABLED) throw new Error("LIVE_ORDER_BLOCKED_BY_CONFIGURATION");
     try {
-      const response = await axios.put(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}/close`, { units: String(units) }, { headers: this.headers });
+      const response = await axios.put(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${tradeId}/close`, { units: String(units) }, this.requestOptions());
+      this.rememberSuccess();
       return response.data;
     } catch (error) {
       throw this.safeError("close_trade", error);
@@ -398,26 +428,45 @@ class OandaAPI {
       return {
         connected: false,
         reason: "missing_credentials",
-        mode: "practice"
+        mode: "practice",
+        endpoint: PRACTICE_BASE_URL
       };
     }
 
     const account = await this.getAccount();
 
-    if (!account || !(account.id || account.accountID || account.accountId)) {
+    const returnedAccountId = account?.id || account?.accountID || account?.accountId;
+    if (!account || !returnedAccountId) {
       return {
         connected: false,
         reason: "account_unavailable",
         errorStatus: this.lastError?.status || null,
         errorCode: this.lastError?.code || null,
         errorMessage: this.lastError?.message || null,
-        mode: "practice"
+        mode: "practice",
+        endpoint: PRACTICE_BASE_URL
+      };
+    }
+    if (String(returnedAccountId) !== String(config.OANDA_ACCOUNT_ID)) {
+      return {
+        connected: false,
+        reason: "account_id_mismatch",
+        mode: "practice",
+        endpoint: PRACTICE_BASE_URL
+      };
+    }
+    if (!account.currency) {
+      return {
+        connected: false,
+        reason: "account_currency_unavailable",
+        mode: "practice",
+        endpoint: PRACTICE_BASE_URL
       };
     }
 
     return {
       connected: true,
-      accountId: account.id || account.accountID || account.accountId,
+      accountId: returnedAccountId,
       currency: account.currency,
       balance: account.balance,
       nav: account.NAV,
@@ -426,7 +475,9 @@ class OandaAPI {
       openPositionCount: account.openPositionCount,
       marginAvailable: account.marginAvailable,
       state: account.state,
-      mode: "practice"
+      mode: "practice",
+      endpoint: PRACTICE_BASE_URL,
+      checkedAt: this.lastSuccessAt
     };
   }
 }

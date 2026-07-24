@@ -14,6 +14,7 @@ export interface BotTrade {
   setupType?: string;
   confidence?: number;
   reasoning?: string;
+  closeReason?: string;
   riskRewardRatio?: number;
   units?: number | string;
   initialUnits?: number | string;
@@ -63,6 +64,11 @@ export interface OandaStatus {
   accountId?: string;
   mode?: string;
   reason?: string;
+  endpoint?: string;
+  checkedAt?: string;
+  errorStatus?: string | number | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 }
 
 export interface SignalLaneSnapshot {
@@ -103,6 +109,20 @@ export interface PairedSignalSnapshot {
     spread: number;
     structureBias?: string;
     trend?: string;
+    macdHistogram?: number;
+    atr?: number;
+    volatility?: string;
+    volumeRatio?: number;
+    breakOfStructure?: 'BULLISH' | 'BEARISH' | 'NONE';
+    changeOfCharacter?: 'BULLISH' | 'BEARISH' | 'NONE';
+    liquiditySweep?: 'BULLISH' | 'BEARISH' | 'NONE';
+    fairValueGap?: string;
+    equalHigh?: number;
+    equalLow?: number;
+    supportLevels?: number[];
+    resistanceLevels?: number[];
+    structureSource?: 'OANDA_CANDLES';
+    candleCount?: number;
   };
   marketValid: boolean;
   marketValidationReason?: string;
@@ -128,10 +148,9 @@ export interface StatusSnapshot {
   liveExecutionVariantValid: boolean;
   accountCurrency?: string;
   symbols: string[];
-  dailyTarget: number;
   maxDailyTrades: number;
+  minimumConfidence?: number;
   maxOpenPositions: number;
-  defaultLotSize?: number;
   maxDailyLoss?: number;
   currentSymbol?: string;
   currentAction?: string;
@@ -160,4 +179,13 @@ export interface StatusSnapshot {
   lastSignals?: Record<string, TradingDecisionSnapshot>;
   pairedSignals?: Record<string, PairedSignalSnapshot>;
   latestPairedSignal?: PairedSignalSnapshot;
+  priceCoverage?: number;
+  priceExpected?: number;
+  reconciliationStatus?: 'NOT_RUN' | 'VERIFIED' | 'FAILED';
+  lastReconciledAt?: string;
+  lastOrderAttemptAt?: string;
+  lastOrderStatus?: 'SUBMITTING' | 'OPEN_VERIFIED' | 'REJECTED' | 'SKIPPED';
+  lastOrderReason?: string;
+  lastOandaOrderId?: string;
+  lastOandaTradeId?: string;
 }

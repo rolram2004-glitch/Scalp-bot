@@ -181,7 +181,7 @@ export async function executeVerifiedMarketOrder(
     }
 
     const price = pricing?.price;
-    if (!price || price.tradeable === false || String(price.status || "tradeable").toLowerCase() !== "tradeable") {
+    if (!price || price.tradeable !== true || String(price.status || "").toLowerCase() !== "tradeable") {
       return { status: "REJECTED", reason: "INSTRUMENT_NOT_TRADEABLE" };
     }
     const entry = executablePrice(price, side);
@@ -262,7 +262,26 @@ export async function executeVerifiedMarketOrder(
       return { status: "REJECTED", reason: "OANDA_TRADE_VERIFICATION_MISMATCH" };
     }
 
-    const verifiedEntry = finitePositive(verified.price) || entry;
+    const verifiedEntry = finitePositive(verified.price);
+    const verifiedStopLoss = finitePositive(verified?.stopLossOrder?.price);
+    const verifiedTakeProfit = finitePositive(verified?.takeProfitOrder?.price);
+    const verifiedOpenedAt = String(verified?.openTime || response?.orderFillTransaction?.time || "");
+    if (!verifiedEntry || !Number.isFinite(Date.parse(verifiedOpenedAt))) {
+      return { status: "REJECTED", reason: "OANDA_TRADE_DETAILS_INCOMPLETE" };
+    }
+    const priceTolerance = 0.5 / 10 ** displayPrecision;
+    const protectiveOrdersVerified =
+      Boolean(verified?.stopLossOrder?.id) &&
+      Boolean(verified?.takeProfitOrder?.id) &&
+      String(verified?.stopLossOrder?.state || "").toUpperCase() === "PENDING" &&
+      String(verified?.takeProfitOrder?.state || "").toUpperCase() === "PENDING" &&
+      verifiedStopLoss !== null &&
+      verifiedTakeProfit !== null &&
+      Math.abs(verifiedStopLoss - Number(stopLoss)) <= priceTolerance &&
+      Math.abs(verifiedTakeProfit - Number(takeProfit)) <= priceTolerance;
+    if (!protectiveOrdersVerified) {
+      return { status: "REJECTED", reason: "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED" };
+    }
     verifiedSignalIds.add(signalId);
     if (verifiedSignalIds.size > 10000) {
       const oldest = verifiedSignalIds.values().next().value;
@@ -278,11 +297,11 @@ export async function executeVerifiedMarketOrder(
         accountCurrency: String(account.currency).toUpperCase(),
         entryPrice: verifiedEntry,
         currentPrice: verifiedEntry,
-        stopLoss: finitePositive(verified?.stopLossOrder?.price) || Number(stopLoss),
-        takeProfit: finitePositive(verified?.takeProfitOrder?.price) || Number(takeProfit),
+        stopLoss: verifiedStopLoss,
+        takeProfit: verifiedTakeProfit,
         riskAmount: risk,
         rewardAmount: reward,
-        openedAt: verified.openTime || response?.orderFillTransaction?.time || new Date().toISOString(),
+        openedAt: verifiedOpenedAt,
         oandaOrderId: String(orderId),
         oandaTradeId: String(tradeId),
         strategyVariant,

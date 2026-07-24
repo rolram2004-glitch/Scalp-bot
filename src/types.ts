@@ -45,7 +45,6 @@ export interface MarketData {
   resistanceLevels?: number[];
 
   structureBias?: string;
-  nearOrderBlock?: boolean;
   fairValueGap?: string;
   fairValueGapZone?: { direction: "BULLISH" | "BEARISH"; low: number; high: number; time: string };
   liquidityLevel?: string;

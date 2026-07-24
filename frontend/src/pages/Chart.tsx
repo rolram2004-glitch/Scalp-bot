@@ -1,219 +1,313 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CrosshairMode, LineStyle, ISeriesApi, CandlestickData, LineData, UTCTimestamp } from 'lightweight-charts';
-import { fetchCandles } from '../services/api';
+import { fetchCandles, fetchIntelligence } from '../services/api';
 
-const SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'GBPJPY', 'AUDUSD', 'EURJPY', 'USDCAD'];
-const TIMEFRAMES = [
-  ['M1', '1m'],
-  ['M5', '5m'],
-  ['M15', '15m'],
-  ['H1', '1h']
-];
+const DEFAULT_SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCAD', 'AUDUSD', 'USDCHF', 'NZDUSD', 'GBPJPY', 'EURJPY', 'AUDJPY', 'NZDJPY', 'EURGBP', 'EURAUD', 'EURCAD', 'GBPAUD'];
+const TIMEFRAMES = [['M1', '1m'], ['M5', '5m'], ['M15', '15m'], ['H1', '1h']];
 
-function normalizeDisplaySymbol(symbol: string) {
-  const cleaned = symbol.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return cleaned.length === 6 ? `${cleaned.slice(0, 3)}_${cleaned.slice(3)}` : symbol;
+function compactSymbol(symbol: unknown) {
+  return String(symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-function price(value?: number) {
-  return typeof value === 'number' ? value.toFixed(5) : '-';
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
-function tradingViewSymbol(symbol: string) {
-  if (symbol === 'XAUUSD') return 'OANDA%3AXAUUSD';
-  return `OANDA%3A${symbol}`;
+function price(value: unknown, symbol: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 'N/A';
+  return parsed.toFixed(symbol.includes('JPY') || symbol.includes('XAU') ? 3 : 5);
 }
 
-export function ChartPage({ status, marketData }: { status: any; marketData: Record<string, any>; }) {
+function dateTime(value?: string) {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleString();
+}
+
+function quoteCurrency(symbol?: string) {
+  const normalized = compactSymbol(symbol);
+  return normalized.length === 6 ? normalized.slice(-3) : undefined;
+}
+
+function tradePnl(trade: any) {
+  if (!finite(trade?.pnl)) return 'N/A';
+  const verifiedLive = trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED';
+  const paper = String(trade.source || '').startsWith('PAPER');
+  if (!verifiedLive && !paper) return 'N/A';
+  const currency = verifiedLive ? trade.accountCurrency : trade.pnlCurrency || quoteCurrency(trade.symbol);
+  if (!currency) return 'N/A';
+  return `${trade.pnl >= 0 ? '+' : '-'}${Math.abs(trade.pnl).toFixed(2)} ${currency}`;
+}
+
+function containingCandleTime(candles: CandlestickData<UTCTimestamp>[], eventTime: unknown) {
+  const timestamp = Date.parse(String(eventTime || '')) / 1000;
+  if (!Number.isFinite(timestamp) || candles.length === 0) return undefined;
+  const first = candles[0].time as number;
+  const last = candles[candles.length - 1].time as number;
+  if (timestamp < first || timestamp > last + 3600) return undefined;
+
+  for (let index = candles.length - 1; index >= 0; index -= 1) {
+    if ((candles[index].time as number) <= timestamp) return candles[index].time;
+  }
+  return undefined;
+}
+
+function emaSeries(data: CandlestickData<UTCTimestamp>[], period: number): LineData<UTCTimestamp>[] {
+  if (data.length < period) return [];
+  const multiplier = 2 / (period + 1);
+  let ema = data.slice(0, period).reduce((sum, candle) => sum + candle.close, 0) / period;
+  const result: LineData<UTCTimestamp>[] = [{ time: data[period - 1].time, value: ema }];
+  for (let index = period; index < data.length; index += 1) {
+    ema = (data[index].close - ema) * multiplier + ema;
+    result.push({ time: data[index].time, value: ema });
+  }
+  return result;
+}
+
+export function ChartPage({ status, marketData }: { status: any; marketData: Record<string, any> }) {
+  const configuredSymbols = Array.isArray(status?.symbols) && status.symbols.length > 0
+    ? status.symbols.map(compactSymbol)
+    : DEFAULT_SYMBOLS;
   const [symbol, setSymbol] = useState('XAUUSD');
   const [timeframe, setTimeframe] = useState('M5');
   const [candles, setCandles] = useState<any[]>([]);
   const [chartError, setChartError] = useState('');
+  const [intelligence, setIntelligence] = useState<any>(null);
+  const [intelligenceError, setIntelligenceError] = useState('');
+  const [layers, setLayers] = useState({ trades: true, structure: true, levels: true });
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const smaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const priceLinesRef = useRef<any[]>([]);
+  const displaySymbol = compactSymbol(symbol);
+  const selectedMarket = marketData?.[displaySymbol] || marketData?.[`${displaySymbol.slice(0, 3)}_${displaySymbol.slice(3)}`];
+  const selectedOpenTrades = (status?.openTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol);
+  const selectedClosedTrades = (status?.closedTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol);
+  const selectedHistory = [...selectedOpenTrades, ...selectedClosedTrades].slice(0, 12);
 
-  const displaySymbol = useMemo(() => symbol.toUpperCase(), [symbol]);
-  const oandaSymbol = useMemo(() => normalizeDisplaySymbol(symbol), [symbol]);
-  const selectedOpenTrades = (status?.openTrades || []).filter((trade: any) => String(trade.symbol).replace(/[^A-Z0-9]/gi, '').toUpperCase() === displaySymbol);
-  const selectedClosedTrades = (status?.closedTrades || []).filter((trade: any) => String(trade.symbol).replace(/[^A-Z0-9]/gi, '').toUpperCase() === displaySymbol);
-  const selectedHistory = [...selectedOpenTrades, ...selectedClosedTrades].slice(0, 8);
+  const loadCandles = () => fetchCandles(displaySymbol, timeframe, 250)
+    .then((data) => {
+      setCandles(Array.isArray(data) ? data : []);
+      setChartError(Array.isArray(data) && data.length > 0 ? '' : 'Candele OANDA non disponibili');
+    })
+    .catch(() => {
+      setCandles([]);
+      setChartError('Candele OANDA non disponibili');
+    });
 
   useEffect(() => {
-    fetchCandles(symbol, timeframe)
+    let disposed = false;
+    const refresh = () => fetchCandles(displaySymbol, timeframe, 250)
       .then((data) => {
+        if (disposed) return;
         setCandles(Array.isArray(data) ? data : []);
-        setChartError('');
+        setChartError(Array.isArray(data) && data.length > 0 ? '' : 'Candele OANDA non disponibili');
       })
       .catch(() => {
+        if (disposed) return;
         setCandles([]);
-        setChartError('Dati candele non disponibili');
+        setChartError('Candele OANDA non disponibili');
       });
-  }, [symbol, timeframe]);
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 15000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [displaySymbol, timeframe]);
+
+  useEffect(() => {
+    let disposed = false;
+    const refresh = () => fetchIntelligence(displaySymbol)
+      .then((data) => {
+        if (disposed) return;
+        setIntelligence(data);
+        setIntelligenceError('');
+      })
+      .catch(() => {
+        if (disposed) return;
+        setIntelligence(null);
+        setIntelligenceError('Analisi multi-timeframe OANDA non disponibile');
+      });
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [displaySymbol]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
-
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-      candleSeriesRef.current = null;
-      smaSeriesRef.current = null;
-    }
-
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
-      height: 430,
-      layout: {
-        background: { color: '#070b13' },
-        textColor: '#9aa7bd'
-      },
-      grid: {
-        vertLines: { color: '#141b2a' },
-        horzLines: { color: '#141b2a' }
-      },
+      height: 500,
+      layout: { background: { color: '#070b13' }, textColor: '#9aa7bd' },
+      grid: { vertLines: { color: '#141b2a' }, horzLines: { color: '#141b2a' } },
       crosshair: { mode: CrosshairMode.Magnet },
       rightPriceScale: { borderColor: '#1e293b' },
-      timeScale: { borderColor: '#1e293b', timeVisible: true }
+      timeScale: { borderColor: '#1e293b', timeVisible: true, secondsVisible: false }
     });
-
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e',
-      downColor: '#ef476f',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef476f'
+      upColor: '#22c55e', downColor: '#ef476f', borderVisible: false,
+      wickUpColor: '#22c55e', wickDownColor: '#ef476f'
     });
-    const smaSeries = chart.addLineSeries({
-      color: '#f7c948',
-      lineWidth: 2,
-      lineStyle: LineStyle.Solid
-    });
-
-    candleSeriesRef.current = candleSeries;
-    smaSeriesRef.current = smaSeries;
+    const ema = chart.addLineSeries({ color: '#f7c948', lineWidth: 2, lineStyle: LineStyle.Solid, title: 'EMA20' });
     chartRef.current = chart;
-
-    const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth ?? 0 });
-    window.addEventListener('resize', handleResize);
+    candleSeriesRef.current = candleSeries;
+    emaSeriesRef.current = ema;
+    const resize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth || 0 });
+    window.addEventListener('resize', resize);
     return () => {
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('resize', resize);
       chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      emaSeriesRef.current = null;
     };
   }, []);
 
+  const formatted = useMemo(() => candles.flatMap((candle) => {
+    const timestamp = Math.floor(Date.parse(String(candle?.time || '')) / 1000);
+    const open = Number(candle?.mid?.o);
+    const high = Number(candle?.mid?.h);
+    const low = Number(candle?.mid?.l);
+    const close = Number(candle?.mid?.c);
+    if (![timestamp, open, high, low, close].every(Number.isFinite) || high < low || low <= 0) return [];
+    return [{ time: timestamp as UTCTimestamp, open, high, low, close }];
+  }), [candles]);
+
   useEffect(() => {
-    if (!candleSeriesRef.current || !smaSeriesRef.current) return;
-
-    const formatted: CandlestickData<UTCTimestamp>[] = candles.map((c) => ({
-      time: Math.floor(new Date(c.time).getTime() / 1000) as UTCTimestamp,
-      open: Number(c.mid.o),
-      high: Number(c.mid.h),
-      low: Number(c.mid.l),
-      close: Number(c.mid.c)
-    }));
-
-    candleSeriesRef.current.setData(formatted);
+    const series = candleSeriesRef.current;
+    if (!series || !emaSeriesRef.current) return;
+    series.setData(formatted);
+    emaSeriesRef.current.setData(emaSeries(formatted, 20));
     if (formatted.length > 0) chartRef.current?.timeScale().fitContent();
 
-    const smaLength = 9;
-    const smaData: LineData[] = formatted
-      .map((point, idx, arr) => {
-        if (idx < smaLength - 1) return null;
-        const sum = arr.slice(idx - smaLength + 1, idx + 1).reduce((acc, value) => acc + value.close, 0);
-        return { time: point.time, value: sum / smaLength };
-      })
-      .filter(Boolean) as LineData[];
+    const markers: any[] = [];
+    if (layers.trades) {
+      selectedHistory.forEach((trade: any) => {
+        const time = containingCandleTime(formatted, trade.openedAt);
+        if (!time || (trade.side !== 'BUY' && trade.side !== 'SELL')) return;
+        const identifier = String(trade.signalId || trade.oandaTradeId || trade.id || 'N/A');
+        markers.push({
+          time,
+          position: trade.side === 'BUY' ? 'belowBar' : 'aboveBar',
+          color: trade.side === 'BUY' ? '#22c55e' : '#ef476f',
+          shape: trade.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+          text: `${trade.side} ${new Date(trade.openedAt).toLocaleTimeString()} · ${identifier.slice(-12)}`
+        });
+      });
+    }
+    if (layers.structure) {
+      [...(selectedMarket?.swingHighs || [])].forEach((swing: any) => {
+        const time = containingCandleTime(formatted, swing.time);
+        if (time) markers.push({ time, position: 'aboveBar', color: '#a78bfa', shape: 'circle', text: `SWING H ${price(swing.price, displaySymbol)}` });
+      });
+      [...(selectedMarket?.swingLows || [])].forEach((swing: any) => {
+        const time = containingCandleTime(formatted, swing.time);
+        if (time) markers.push({ time, position: 'belowBar', color: '#38bdf8', shape: 'circle', text: `SWING L ${price(swing.price, displaySymbol)}` });
+      });
+      const fvgTime = containingCandleTime(formatted, selectedMarket?.fairValueGapZone?.time);
+      if (fvgTime) markers.push({
+        time: fvgTime,
+        position: selectedMarket.fairValueGapZone.direction === 'BULLISH' ? 'belowBar' : 'aboveBar',
+        color: '#f59e0b', shape: 'square', text: `FVG ${selectedMarket.fairValueGapZone.direction}`
+      });
+    }
+    markers.sort((left, right) => Number(left.time) - Number(right.time));
+    series.setMarkers(markers);
 
-    smaSeriesRef.current.setData(smaData);
+    priceLinesRef.current.forEach((line) => {
+      try { series.removePriceLine(line); } catch (_error) { /* already removed */ }
+    });
+    priceLinesRef.current = [];
+    const addLine = (value: unknown, color: string, title: string, style = LineStyle.Dashed) => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) return;
+      priceLinesRef.current.push(series.createPriceLine({ price: parsed, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+    };
+    if (layers.trades) selectedOpenTrades.slice(0, 1).forEach((trade: any) => {
+      addLine(trade.entryPrice, '#60a5fa', `ENTRY ${trade.side || ''}`, LineStyle.Solid);
+      addLine(trade.stopLoss, '#ef476f', 'STOP');
+      addLine(trade.takeProfit, '#22c55e', 'TAKE PROFIT');
+    });
+    if (layers.levels) {
+      (selectedMarket?.supportLevels || []).slice(0, 3).forEach((level: number, index: number) => addLine(level, '#38bdf8', `SUPPORT ${index + 1}`, LineStyle.Dotted));
+      (selectedMarket?.resistanceLevels || []).slice(0, 3).forEach((level: number, index: number) => addLine(level, '#a78bfa', `RESISTANCE ${index + 1}`, LineStyle.Dotted));
+      addLine(selectedMarket?.fairValueGapZone?.low, '#f59e0b', 'FVG LOW', LineStyle.Dotted);
+      addLine(selectedMarket?.fairValueGapZone?.high, '#f59e0b', 'FVG HIGH', LineStyle.Dotted);
+    }
+  }, [formatted, layers, selectedHistory, selectedMarket, selectedOpenTrades, displaySymbol]);
 
-    const recentSignals = selectedHistory.slice(0, 10);
-    const markers = recentSignals.map((trade: any, index: number) => {
-      const fallbackPoint = formatted[Math.max(0, formatted.length - 1 - index * 8)];
-      const signalTime = Math.floor(new Date(trade.openedAt || Date.now()).getTime() / 1000) as UTCTimestamp;
-      const minTime = formatted[0]?.time as number | undefined;
-      const maxTime = formatted[formatted.length - 1]?.time as number | undefined;
-      const time = minTime && maxTime && signalTime >= minTime && signalTime <= maxTime ? signalTime : fallbackPoint?.time;
-
-      return {
-        time,
-        position: trade.side === 'BUY' ? 'belowBar' as const : 'aboveBar' as const,
-        color: trade.side === 'BUY' ? '#22c55e' : '#ef476f',
-        shape: trade.side === 'BUY' ? 'arrowUp' as const : 'arrowDown' as const,
-        text: `${trade.side} ${trade.confidence || 72}%`
-      };
-    }).filter((marker: any) => marker.time);
-
-    candleSeriesRef.current.setMarkers(markers);
-  }, [candles, selectedHistory, displaySymbol]);
-
-  const latestPrice = useMemo(() => {
-    const market = marketData?.[displaySymbol] || marketData?.[oandaSymbol];
-    if (market?.closePrice) return Number(market.closePrice).toFixed(5);
-    if (candles.length) return Number(candles[candles.length - 1]?.mid?.c).toFixed(5);
-    return '-';
-  }, [marketData, displaySymbol, oandaSymbol, candles]);
-
-  const pairPnl = selectedHistory.reduce((sum: number, trade: any) => sum + (trade.pnl || 0), 0);
-  const pairWins = selectedClosedTrades.filter((trade: any) => (trade.pnl || 0) > 0).length;
-  const pairWinRate = selectedClosedTrades.length ? Math.round((pairWins / selectedClosedTrades.length) * 100) : 0;
+  const latestPrice = formatted.length > 0 ? formatted[formatted.length - 1].close : undefined;
 
   return (
     <div className="chart-page">
+      <section className="page-hero">
+        <div><p className="eyebrow">Real OANDA chart</p><h1>Prezzo, struttura e operazioni sul loro timestamp originale.</h1></div>
+        <div className={formatted.length > 0 ? 'system-active' : 'system-warning'}>{formatted.length > 0 ? `${formatted.length} OANDA CANDLES` : 'DATA UNAVAILABLE'}</div>
+      </section>
+
       <section className="chart-workspace">
         <div className="symbol-tabs">
-          {SYMBOLS.map((item) => (
-            <button key={item} className={item === symbol ? 'chip active' : 'chip'} onClick={() => setSymbol(item)}>{item}</button>
-          ))}
+          {configuredSymbols.map((item: string) => <button key={item} className={item === displaySymbol ? 'chip active' : 'chip'} onClick={() => setSymbol(item)}>{item}</button>)}
         </div>
-
         <div className="time-tabs">
-          {TIMEFRAMES.map(([value, label]) => (
-            <button key={value} className={value === timeframe ? 'time-chip active' : 'time-chip'} onClick={() => setTimeframe(value)}>{label}</button>
-          ))}
-          <button className="time-chip ghost" onClick={() => void fetchCandles(symbol, timeframe).then(setCandles)}>REFRESH</button>
+          {TIMEFRAMES.map(([value, label]) => <button key={value} className={value === timeframe ? 'time-chip active' : 'time-chip'} onClick={() => setTimeframe(value)}>{label}</button>)}
+          <button className="time-chip ghost" onClick={() => void loadCandles()}>REFRESH</button>
         </div>
-
+        <div className="chart-layer-controls">
+          {Object.entries(layers).map(([name, enabled]) => (
+            <button key={name} className={enabled ? 'time-chip active' : 'time-chip'} onClick={() => setLayers((current) => ({ ...current, [name]: !enabled }))}>
+              {name.toUpperCase()} {enabled ? 'ON' : 'OFF'}
+            </button>
+          ))}
+        </div>
         <div className="chart-statbar">
           <strong>{displaySymbol}</strong>
-          <span>{selectedOpenTrades.length} aperte</span>
-          <span className={pairPnl >= 0 ? 'win' : 'loss'}>{pairPnl >= 0 ? '+' : '-'}${Math.abs(pairPnl).toFixed(2)}</span>
-          <span>{pairWinRate}% win</span>
-          <span>{selectedClosedTrades.length} chiuse</span>
-          <span>{candles.length ? 'OANDA' : 'DATI NON DISP.'}</span>
+          <span>{timeframe}</span>
+          <span>Price {price(latestPrice, displaySymbol)}</span>
+          <span>{selectedOpenTrades.length} open</span>
+          <span>{selectedClosedTrades.length} closed</span>
+          <span>{selectedMarket?.structureSource || (formatted.length ? 'OANDA_CANDLES' : 'N/A')}</span>
         </div>
-
         <div className="chart-frame">
-          <div className="chart-price-tag">{latestPrice}</div>
-          <iframe
-            className="tradingview-frame"
-            title={`TradingView ${displaySymbol}`}
-            src={`https://s.tradingview.com/widgetembed/?symbol=${tradingViewSymbol(displaySymbol)}&interval=${timeframe === 'H1' ? '60' : timeframe.replace('M', '')}&theme=dark&style=1&timezone=Europe%2FZurich&withdateranges=1&hide_side_toolbar=0&allow_symbol_change=0&save_image=0&studies=%5B%5D`}
-          />
+          <div className="chart-price-tag">{price(latestPrice, displaySymbol)}</div>
           <div className="chart-canvas" ref={chartContainerRef} />
           {chartError && <div className="chart-empty">{chartError}</div>}
         </div>
+      </section>
 
-        <div className="chart-legend">
-          <span><b className="dot open-dot" />APERTO</span>
-          <span><b className="dot win-dot" />WIN</span>
-          <span><b className="dot loss-dot" />LOSS</span>
-          <span><b className="line buy-line" />BUY</span>
-          <span><b className="line sell-line" />SELL</span>
-        </div>
+      <section className="panel analytics-card-wide">
+        <div className="panel-title"><h2>Multi-timeframe intelligence</h2><span>{intelligence ? `${intelligence.availableFrames}/4 OANDA frames · ${intelligence.consensus}` : 'N/A'}</span></div>
+        {intelligence ? (
+          <div className="indicator-grid">
+            {(intelligence.frames || []).map((frame: any) => (
+              <div key={frame.timeframe}>
+                <strong>{frame.timeframe} · {frame.available ? frame.direction : 'N/A'}</strong>
+                <span>{frame.available ? `${frame.structure || 'N/A'} · BOS ${frame.bos || 'N/A'} · ${frame.alignmentScore ?? 'N/A'}%` : frame.reason || 'DATI NON DISPONIBILI'}</span>
+              </div>
+            ))}
+          </div>
+        ) : <div className="empty-state">{intelligenceError || 'DATI NON DISPONIBILI'}</div>}
       </section>
 
       <section className="panel chart-history-panel">
-        <div className="panel-title"><h2>Storico {displaySymbol}</h2><span>{selectedHistory.length} trade</span></div>
+        <div className="panel-title"><h2>Operazioni {displaySymbol}</h2><span>timestamp non riposizionati</span></div>
         <div className="compact-history">
           {selectedHistory.length > 0 ? selectedHistory.map((trade: any) => (
             <div key={trade.id} className="compact-row">
-              <span className={trade.side === 'BUY' ? 'win' : 'loss'}>{trade.side}</span>
-              <span>@ {price(trade.entryPrice)}</span>
-              <strong className={(trade.pnl || 0) >= 0 ? 'win' : 'loss'}>{(trade.pnl || 0) >= 0 ? '+' : '-'}${Math.abs(trade.pnl || 0).toFixed(2)}</strong>
+              <span className={trade.side === 'BUY' ? 'win' : 'loss'}>{trade.side || 'N/A'}</span>
+              <span>{dateTime(trade.openedAt)}</span>
+              <span>@ {price(trade.entryPrice, displaySymbol)}</span>
+              <span>{trade.source || 'N/A'} · {trade.verificationStatus || 'N/A'}</span>
+              <strong>{tradePnl(trade)}</strong>
+              <small>{trade.oandaTradeId ? `OANDA TRADE ID ${trade.oandaTradeId}` : trade.signalId || trade.id || 'N/A'}</small>
             </div>
-          )) : <div className="empty-state">Nessun trade per questa coppia.</div>}
+          )) : <div className="empty-state">Nessuna operazione verificabile per questo strumento.</div>}
         </div>
       </section>
     </div>

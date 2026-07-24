@@ -3,60 +3,36 @@ import { generateMarketData } from "./market-engine";
 import { canOpenTrade } from "./risk-engine";
 import { getSession, isKillzone } from "./session-engine";
 import { rankSignals } from "./signal-ranker";
-import {
-  detectFVG,
-  detectLiquidity,
-  detectOrderBlock,
-  detectStructure
-} from "./smart-money";
 import { MarketData, TradingDecision } from "./types";
 import { executeVerifiedMarketOrder } from "./execution-engine";
 import { createPairedSignalSnapshot, PairedSignalSnapshot, StrategyVariant } from "./signal-pair";
 const oanda = require("./oanda");
 const config = require("./config");
 
-const SYMBOLS = [
-  "XAUUSD",
-  "EURUSD",
-  "GBPUSD",
-  "USDJPY",
-  "USDCAD",
-  "AUDUSD",
-  "USDCHF",
-  "NZDUSD",
-  "GBPJPY",
-  "EURJPY",
-  "AUDJPY",
-  "NZDJPY",
-  "EURGBP",
-  "EURAUD",
-  "EURCAD",
-  "GBPAUD"
-];
+const SYMBOLS = (config.SYMBOLS || []).map((symbol: string) => String(symbol).replace("_", ""));
 
 // Market data uses M5 candles; evaluate the latest real OANDA data every two minutes.
-const SIGNAL_INTERVAL = 2 * 60 * 1000;
+const SIGNAL_INTERVAL = Number(config.SCAN_INTERVAL || 2 * 60 * 1000);
 const CLOSE_INTERVAL = 5000;
 const PRICE_INTERVAL = 1000;
 
-const MAX_DAILY_TRADES = 1000;
-const DAILY_TARGET = 800;
-const MAX_OPEN_POSITIONS = 15;
+const MAX_DAILY_TRADES = Number(config.MAX_DAILY_TRADES);
+const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
+const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
-const DEFAULT_LOT_SIZE = Number(process.env.DEFAULT_LOT_SIZE || 0.01);
-const MAX_DAILY_LOSS = Number(process.env.MAX_DAILY_LOSS || 50);
+const MAX_DAILY_LOSS = Number(config.MAX_DAILY_LOSS || 50);
 
 interface BotTrade {
   id: string;
   symbol: string;
   side: "BUY" | "SELL" | "HOLD";
   entryPrice: number;
-  currentPrice: number;
+  currentPrice?: number;
   stopLoss?: number;
   takeProfit?: number;
   riskAmount?: number;
   rewardAmount?: number;
-  pnl: number;
+  pnl?: number;
   pnlPips?: number;
   openedAt: string;
   closedAt?: string;
@@ -97,10 +73,9 @@ export interface BotSnapshot {
   liveExecutionVariantValid: boolean;
   accountCurrency?: string;
   symbols: string[];
-  dailyTarget: number;
   maxDailyTrades: number;
+  minimumConfidence: number;
   maxOpenPositions: number;
-  defaultLotSize: number;
   maxDailyLoss: number;
   currentSymbol?: string;
   currentAction?: "BUY" | "SELL" | "HOLD";
@@ -129,6 +104,15 @@ export interface BotSnapshot {
   lastSignals?: Record<string, TradingDecision & { scannedAt: string }>;
   pairedSignals?: Record<string, PairedSignalSnapshot>;
   latestPairedSignal?: PairedSignalSnapshot;
+  priceCoverage: number;
+  priceExpected: number;
+  reconciliationStatus: "NOT_RUN" | "VERIFIED" | "FAILED";
+  lastReconciledAt?: string;
+  lastOrderAttemptAt?: string;
+  lastOrderStatus?: "SUBMITTING" | "OPEN_VERIFIED" | "REJECTED" | "SKIPPED";
+  lastOrderReason?: string;
+  lastOandaOrderId?: string;
+  lastOandaTradeId?: string;
 }
 
 const botState: BotSnapshot = {
@@ -149,10 +133,9 @@ const botState: BotSnapshot = {
   liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
   liveExecutionVariantValid: config.LIVE_EXECUTION_VARIANT_VALID,
   symbols: SYMBOLS,
-  dailyTarget: DAILY_TARGET,
   maxDailyTrades: MAX_DAILY_TRADES,
+  minimumConfidence: MIN_CONFIDENCE,
   maxOpenPositions: MAX_OPEN_POSITIONS,
-  defaultLotSize: DEFAULT_LOT_SIZE,
   maxDailyLoss: MAX_DAILY_LOSS,
   dailyTradeCount: 0,
   signalsAnalyzed: 0,
@@ -164,11 +147,14 @@ const botState: BotSnapshot = {
   shadowTradeCount: 0,
   session: "OFF_HOURS",
   killzone: false,
-  logs: []
-  ,marketData: {},
+  logs: [],
+  marketData: {},
   livePrices: {},
   lastSignals: {},
-  pairedSignals: {}
+  pairedSignals: {},
+  priceCoverage: 0,
+  priceExpected: SYMBOLS.length,
+  reconciliationStatus: "NOT_RUN"
 };
 
 const listeners = new Set<(snapshot: BotSnapshot) => void>();
@@ -215,6 +201,12 @@ function pushLog(message: string) {
 
 function cleanSymbol(symbol: string) {
   return String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function optionalFinite(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function isGold(symbol: string) {
@@ -325,21 +317,24 @@ function buildTrade(
   const { riskAmount, rewardAmount } = cashRules(symbol);
   const stopLoss = entryPrice - direction * priceDistanceForCash(symbol, riskAmount);
   const takeProfit = entryPrice + direction * priceDistanceForCash(symbol, rewardAmount);
+  const currentPrice = paperExitPrice(decision.action, marketData);
+  const pnl = calculatePaperPnl(symbol, decision.action, entryPrice, currentPrice);
+  const multiplier = pipMultiplier(symbol);
 
   return {
     id: `PAPER-${symbol}-${Date.now()}`,
     symbol,
     side: decision.action,
     entryPrice,
-    currentPrice: marketData.closePrice,
+    currentPrice,
     stopLoss,
     takeProfit,
     riskAmount,
     rewardAmount,
-    pnl: 0,
-    pnlPips: 0,
+    pnl,
+    pnlPips: direction * (currentPrice - entryPrice) * multiplier,
     openedAt: new Date().toISOString(),
-    setupType: decision.setupType || "EMA_STACK",
+    setupType: decision.setupType,
     confidence: decision.confidence,
     reasoning: `${decision.reasoning}. Paper trading only, units ${tradeUnits(symbol)}, RR 1:2; P&L espresso nella valuta quotata.`,
     status: "OPEN",
@@ -388,24 +383,30 @@ function isToday(dateIso?: string) {
 }
 
 export function getAnalytics() {
-  const closed = (botState.closedTrades || []).filter((trade) => trade.source !== "LOCAL_ORPHAN");
-  const open = (botState.openTrades || []).filter((trade) => trade.source !== "LOCAL_ORPHAN");
+  const eligible = (trade: BotTrade) => config.TRADING_MODE === "LIVE"
+    ? trade.source === "OANDA" && trade.verificationStatus === "VERIFIED"
+    : trade.source === "PAPER";
+  const closed = (botState.closedTrades || []).filter(eligible);
+  const open = (botState.openTrades || []).filter(eligible);
 
   const todaysClosed = closed.filter((t) => isToday(t.openedAt) || isToday(t.closedAt));
-  const pnlTrades = [...todaysClosed, ...open].filter((trade) => Number.isFinite(trade.pnl));
+  const relevantPnlTrades = [...todaysClosed, ...open];
+  const pnlTrades = relevantPnlTrades.filter((trade) => Number.isFinite(trade.pnl));
   const pnlCurrencies = new Set(
     pnlTrades
       .map((trade) => trade.source === "OANDA" ? trade.accountCurrency : trade.pnlCurrency)
       .filter((currency): currency is string => Boolean(currency))
   );
   const pnlCurrency = pnlCurrencies.size === 1 ? [...pnlCurrencies][0] : null;
-  const pnlToday = pnlTrades.length > 0 && pnlCurrency
-    ? pnlTrades.reduce((sum, trade) => sum + trade.pnl, 0)
+  const pnlComplete = relevantPnlTrades.length > 0 && pnlTrades.length === relevantPnlTrades.length;
+  const pnlToday = pnlComplete && pnlCurrency
+    ? pnlTrades.reduce((sum, trade) => sum + Number(trade.pnl), 0)
     : null;
 
-  const wins = closed.filter((t) => (t.pnl || 0) > 0).length;
-  const losses = closed.filter((t) => (t.pnl || 0) <= 0).length;
-  const winRate = closed.length > 0 ? Math.round((wins / closed.length) * 1000) / 10 : null;
+  const decided = closed.filter((trade) => Number.isFinite(trade.pnl) && trade.pnl !== 0);
+  const wins = decided.filter((trade) => Number(trade.pnl) > 0).length;
+  const losses = decided.filter((trade) => Number(trade.pnl) < 0).length;
+  const winRate = decided.length > 0 ? Math.round((wins / decided.length) * 1000) / 10 : null;
 
   // distribution by setupType
   const distribution: Record<string, number> = {};
@@ -418,6 +419,7 @@ export function getAnalytics() {
   const perDay: Record<string, number> = {};
   closed.forEach((t) => {
     const d = (t as any).closedAt ? new Date((t as any).closedAt) : new Date((t as any).openedAt);
+    if (Number.isNaN(d.getTime())) return;
     const key = d.toISOString().slice(0, 10);
     perDay[key] = (perDay[key] || 0) + 1;
   });
@@ -438,6 +440,11 @@ export function getAnalytics() {
 
 async function refreshLivePrices() {
   if (!botState.isRunning || priceRefreshInProgress) return;
+  if (!botState.oandaConnected) {
+    botState.priceFeedStatus = "DISCONNECTED";
+    botState.priceCoverage = 0;
+    return;
+  }
   priceRefreshInProgress = true;
 
   try {
@@ -446,24 +453,28 @@ async function refreshLivePrices() {
       throw new Error("OANDA_PRICE_SNAPSHOT_UNAVAILABLE");
     }
 
-    botState.livePrices = botState.livePrices || {};
+    const nextPrices: NonNullable<BotSnapshot["livePrices"]> = {};
     let updated = 0;
-    let latestTime = botState.lastPriceAt;
+    let latestTime: string | undefined;
 
     for (const item of prices) {
       const symbol = cleanSymbol(item?.instrument);
       const bid = Number(item?.bids?.[0]?.price ?? item?.closeoutBid);
       const ask = Number(item?.asks?.[0]?.price ?? item?.closeoutAsk);
-      if (!symbol || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask <= 0) continue;
+      const time = String(item?.time || "");
+      const timeValue = Date.parse(time);
+      const age = Date.now() - timeValue;
+      if (!symbol || !Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid ||
+        !Number.isFinite(timeValue) || age < -5000 || age > 30000) continue;
 
       const mid = (bid + ask) / 2;
-      const time = String(item?.time || "");
-      botState.livePrices[symbol] = {
+      const tradeable = item?.tradeable === true && String(item?.status || "").toLowerCase() === "tradeable";
+      nextPrices[symbol] = {
         bid,
         ask,
         mid,
         time,
-        tradeable: item?.tradeable !== false && String(item?.status || "tradeable").toLowerCase() === "tradeable"
+        tradeable
       };
 
       const existing = botState.marketData?.[symbol];
@@ -476,7 +487,7 @@ async function refreshLivePrices() {
            closePrice: mid,
            spread: Math.max(0, ask - bid) * multiplier,
            priceTime: time,
-           tradeable: item?.tradeable !== false && String(item?.status || "tradeable").toLowerCase() === "tradeable"
+           tradeable
          };
       }
 
@@ -485,6 +496,8 @@ async function refreshLivePrices() {
     }
 
     if (updated === 0) throw new Error("OANDA_PRICE_SNAPSHOT_EMPTY");
+    botState.livePrices = nextPrices;
+    botState.priceCoverage = updated;
     botState.lastPriceAt = latestTime;
     botState.priceFeedStatus = "CONNECTED";
     botState.oandaConnected = true;
@@ -493,6 +506,8 @@ async function refreshLivePrices() {
     emitState();
   } catch (_error) {
     botState.priceFeedStatus = "DISCONNECTED";
+    botState.priceCoverage = 0;
+    botState.livePrices = {};
     const now = Date.now();
     if (now - lastPriceErrorLogAt >= 30000) {
       lastPriceErrorLogAt = now;
@@ -506,14 +521,19 @@ async function refreshLivePrices() {
 }
 
 function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: BotTrade): BotTrade {
-  const signedUnits = Number(remote?.currentUnits || remote?.initialUnits || 0);
+  const signedUnits = optionalFinite(remote?.currentUnits ?? remote?.initialUnits);
   const symbol = cleanSymbol(remote?.instrument);
-  const entryPrice = Number(remote?.price);
-  const marketPrice = Number(botState.marketData?.[symbol]?.closePrice);
-  const currentPrice = Number.isFinite(marketPrice) && marketPrice > 0
+  const entryPrice = optionalFinite(remote?.price) ?? previous?.entryPrice;
+  const marketPrice = optionalFinite(botState.marketData?.[symbol]?.closePrice);
+  const currentPrice = marketPrice && marketPrice > 0
     ? marketPrice
-    : previous?.currentPrice || entryPrice;
+    : previous?.currentPrice;
+  const openedAt = String(remote?.openTime || previous?.openedAt || "");
+  if (!signedUnits || !symbol || !entryPrice || !Number.isFinite(Date.parse(openedAt))) {
+    throw new Error("OANDA_OPEN_TRADE_FIELDS_INCOMPLETE");
+  }
   const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
+  const unrealizedPL = optionalFinite(remote?.unrealizedPL);
 
   return {
     id: `OANDA-${remote.id}`,
@@ -522,14 +542,14 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
     units: Math.abs(signedUnits),
     entryPrice,
     currentPrice,
-    stopLoss: Number(remote?.stopLossOrder?.price) || previous?.stopLoss,
-    takeProfit: Number(remote?.takeProfitOrder?.price) || previous?.takeProfit,
+    stopLoss: optionalFinite(remote?.stopLossOrder?.price),
+    takeProfit: optionalFinite(remote?.takeProfitOrder?.price),
     riskAmount: previous?.riskAmount,
     rewardAmount: previous?.rewardAmount,
-    pnl: Number(remote?.unrealizedPL || 0),
+    pnl: unrealizedPL,
     pnlPips: previous?.pnlPips,
-    openedAt: remote?.openTime || previous?.openedAt || new Date().toISOString(),
-    setupType: previous?.setupType || (ownership ? "GEMMO_SYNC" : "OANDA_EXTERNAL"),
+    openedAt,
+    setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
     confidence: previous?.confidence,
     reasoning: previous?.reasoning || (ownership
       ? "Posizione GEMMO aperta e verificata direttamente tramite OANDA Practice."
@@ -550,9 +570,13 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
 }
 
 function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: BotTrade): BotTrade {
-  const signedUnits = Number(remote?.initialUnits || remote?.currentUnits || 0);
-  const entryPrice = Number(remote?.price);
-  const closePrice = Number(remote?.averageClosePrice);
+  const signedUnits = optionalFinite(remote?.initialUnits ?? remote?.currentUnits);
+  const entryPrice = optionalFinite(remote?.price) ?? previous?.entryPrice;
+  const closePrice = optionalFinite(remote?.averageClosePrice);
+  const openedAt = String(remote?.openTime || previous?.openedAt || "");
+  if (!signedUnits || !entryPrice || !Number.isFinite(Date.parse(openedAt))) {
+    throw new Error("OANDA_CLOSED_TRADE_FIELDS_INCOMPLETE");
+  }
   const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
   return {
     id: `OANDA-${remote.id}`,
@@ -560,21 +584,21 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     side: signedUnits < 0 ? "SELL" : "BUY",
     units: Math.abs(signedUnits),
     entryPrice,
-    currentPrice: Number.isFinite(closePrice) && closePrice > 0 ? closePrice : previous?.currentPrice || entryPrice,
+    currentPrice: closePrice && closePrice > 0 ? closePrice : previous?.currentPrice,
     stopLoss: previous?.stopLoss,
     takeProfit: previous?.takeProfit,
     riskAmount: previous?.riskAmount,
     rewardAmount: previous?.rewardAmount,
-    pnl: Number(remote?.realizedPL || 0),
+    pnl: optionalFinite(remote?.realizedPL),
     pnlPips: previous?.pnlPips,
-    openedAt: remote?.openTime || previous?.openedAt || new Date().toISOString(),
+    openedAt,
     closedAt: remote?.closeTime || previous?.closedAt,
-    setupType: previous?.setupType || (ownership ? "GEMMO_SYNC" : "OANDA_EXTERNAL"),
+    setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
     confidence: previous?.confidence,
     reasoning: previous?.reasoning || (ownership
       ? "Trade GEMMO chiuso e verificato direttamente tramite OANDA Practice."
       : "Trade OANDA chiuso verificato; origine bot non dimostrata."),
-    closeReason: previous?.closeReason || "MANUAL",
+    closeReason: previous?.closeReason,
     status: "CLOSED",
     source: "OANDA",
     accountCurrency,
@@ -607,14 +631,21 @@ async function reconcileLiveTrades() {
 
 async function reconcileLiveTradesOnce() {
   try {
-    const [account, remoteOpenTrades, remoteClosedTrades] = await Promise.all([
+    const [account, remoteOpenTrades, remoteOpenPositions, remoteClosedTrades] = await Promise.all([
       oanda.getAccount(),
       oanda.getOpenTrades(),
+      oanda.getOpenPositions(),
       oanda.getClosedTrades(80)
     ]);
-    if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteClosedTrades)) {
+    if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteOpenPositions) || !Array.isArray(remoteClosedTrades)) {
       throw new Error("OANDA_RECONCILIATION_UNAVAILABLE");
     }
+    const tradeInstruments = new Set(remoteOpenTrades.map((trade: any) => cleanSymbol(trade?.instrument)));
+    const unmatchedPosition = remoteOpenPositions.find((position: any) => {
+      const hasUnits = Number(position?.long?.units || 0) !== 0 || Number(position?.short?.units || 0) !== 0;
+      return hasUnits && !tradeInstruments.has(cleanSymbol(position?.instrument));
+    });
+    if (unmatchedPosition) throw new Error("OANDA_POSITION_TRADE_MISMATCH");
 
     const currency = String(account.currency).toUpperCase();
     botState.accountCurrency = currency;
@@ -634,15 +665,20 @@ async function reconcileLiveTradesOnce() {
       try {
         const verified = await oanda.getTrade(String(local.oandaTradeId));
         if (String(verified?.state || "").toUpperCase() === "CLOSED") {
+          const realizedPL = optionalFinite(verified?.realizedPL);
+          const closePrice = optionalFinite(verified?.averageClosePrice);
+          const closedAt = typeof verified?.closeTime === "string" && Number.isFinite(Date.parse(verified.closeTime))
+            ? verified.closeTime
+            : undefined;
           newlyClosed.push({
             ...local,
             status: "CLOSED",
             source: "OANDA",
             verificationStatus: "VERIFIED",
-            pnl: Number(verified.realizedPL || 0),
-            currentPrice: Number(verified.averageClosePrice) || local.currentPrice,
-            closedAt: verified.closeTime || new Date().toISOString(),
-            closeReason: local.closeReason || "MANUAL"
+            pnl: realizedPL,
+            currentPrice: closePrice,
+            closedAt,
+            closeReason: local.closeReason
           });
         } else if (String(verified?.state || "").toUpperCase() === "OPEN") {
           verifiedOpen.push(mapVerifiedOandaTrade(verified, currency, local));
@@ -651,7 +687,7 @@ async function reconcileLiveTradesOnce() {
             ...local,
             source: "LOCAL_ORPHAN",
             verificationStatus: "NOT_VERIFIED",
-            pnl: 0,
+            pnl: undefined,
             reasoning: "LOCAL ORPHAN / NOT VERIFIED: non incluso nel P&L OANDA."
           });
         }
@@ -660,7 +696,7 @@ async function reconcileLiveTradesOnce() {
           ...local,
           source: "LOCAL_ORPHAN",
           verificationStatus: "NOT_VERIFIED",
-          pnl: 0,
+          pnl: undefined,
           reasoning: "LOCAL ORPHAN / NOT VERIFIED: verifica OANDA non disponibile."
         });
       }
@@ -679,16 +715,21 @@ async function reconcileLiveTradesOnce() {
       .slice(0, 80);
 
     if (newlyClosed.length > 0) {
-      newlyClosed.forEach((trade) => pushLog(`[${trade.symbol}] chiusura verificata OANDA | P&L ${currency} ${trade.pnl.toFixed(2)}`));
+      newlyClosed.forEach((trade) => pushLog(
+        `[${trade.symbol}] chiusura verificata OANDA | P&L ${Number.isFinite(trade.pnl) ? `${currency} ${Number(trade.pnl).toFixed(2)}` : "N/A"}`
+      ));
     }
     botState.openTrades = [...verifiedOpen, ...orphans];
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
+    botState.reconciliationStatus = "VERIFIED";
+    botState.lastReconciledAt = new Date().toISOString();
     botState.lastUpdated = new Date().toISOString();
     emitState();
   } catch (error) {
     botState.oandaConnected = false;
     botState.oandaReason = "reconciliation_failed";
+    botState.reconciliationStatus = "FAILED";
     pushLog("OANDA reconciliation failed: le posizioni esistenti non sono state alterate");
   }
 }
@@ -741,7 +782,7 @@ function closeShadowTradeAtMarket(index: number, marketData: MarketData, reason:
   };
   botState.shadowOpenTrades = botState.shadowOpenTrades.filter((_, itemIndex) => itemIndex !== index);
   botState.shadowClosedTrades = [closed, ...botState.shadowClosedTrades].slice(0, 80);
-  pushLog(`[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${reason} | ${trade.pnlCurrency || "quote currency"} ${closed.pnl.toFixed(2)} | no OANDA order`);
+  pushLog(`[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${reason} | ${trade.pnlCurrency || "quote currency"} ${Number(closed.pnl).toFixed(2)} | no OANDA order`);
 }
 
 function updateShadowFromSignal(
@@ -754,7 +795,7 @@ function updateShadowFromSignal(
   const lane = shadowLaneForPair(pair);
   const existingIndex = botState.shadowOpenTrades.findIndex((trade) => cleanSymbol(trade.symbol) === cleanSymbol(symbol));
 
-  if (lane.action === "HOLD" || lane.confidence < 50) {
+  if (lane.action === "HOLD" || lane.confidence < MIN_CONFIDENCE) {
     if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "SIGNAL EXIT");
     return;
   }
@@ -785,19 +826,24 @@ async function closeVerifiedOandaTrade(trade: BotTrade) {
       pushLog(`[${trade.symbol}] chiusura non verificata: trade mantenuto aperto`);
       return false;
     }
+    const realizedPL = optionalFinite(verified?.realizedPL);
+    const closePrice = optionalFinite(verified?.averageClosePrice);
+    const closeTime = typeof verified?.closeTime === "string" && Number.isFinite(Date.parse(verified.closeTime))
+      ? verified.closeTime
+      : undefined;
     const closed: BotTrade = {
       ...trade,
       status: "CLOSED",
       source: "OANDA",
       verificationStatus: "VERIFIED",
-      pnl: Number(verified.realizedPL || 0),
-      currentPrice: Number(verified.averageClosePrice) || trade.currentPrice,
-      closedAt: verified.closeTime || new Date().toISOString(),
+      pnl: realizedPL,
+      currentPrice: closePrice,
+      closedAt: closeTime,
       closeReason: "SIGNAL EXIT"
     };
     botState.openTrades = botState.openTrades.filter((item) => item.oandaTradeId !== trade.oandaTradeId);
     botState.closedTrades = [closed, ...botState.closedTrades].slice(0, 80);
-    pushLog(`[${trade.symbol}] SIGNAL EXIT verificata da OANDA | P&L ${trade.accountCurrency || "N/A"} ${closed.pnl.toFixed(2)}`);
+    pushLog(`[${trade.symbol}] SIGNAL EXIT verificata da OANDA | P&L ${Number.isFinite(closed.pnl) ? `${trade.accountCurrency || "N/A"} ${Number(closed.pnl).toFixed(2)}` : "N/A"}`);
     return true;
   } catch (error: any) {
     const reason = error?.response?.data?.errorCode || error?.message || "OANDA_CLOSE_FAILED";
@@ -860,12 +906,34 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
         rsi: Number(enrichedMarketData.rsi),
         spread: Number(enrichedMarketData.spread),
         structureBias: enrichedMarketData.structureBias,
-        trend: enrichedMarketData.trend
+        trend: enrichedMarketData.trend,
+        macdHistogram: enrichedMarketData.macdHistogram,
+        atr: enrichedMarketData.atr,
+        volatility: enrichedMarketData.volatility,
+        volumeRatio: enrichedMarketData.volumeRatio,
+        breakOfStructure: enrichedMarketData.breakOfStructure,
+        changeOfCharacter: enrichedMarketData.changeOfCharacter,
+        liquiditySweep: enrichedMarketData.liquiditySweep,
+        fairValueGap: enrichedMarketData.fairValueGap,
+        equalHigh: enrichedMarketData.equalHigh,
+        equalLow: enrichedMarketData.equalLow,
+        supportLevels: enrichedMarketData.supportLevels,
+        resistanceLevels: enrichedMarketData.resistanceLevels,
+        structureSource: enrichedMarketData.structureSource,
+        candleCount: enrichedMarketData.candleCount
       },
       mainDecision: rankedDecision,
       tradingMode: liveExecutionActive() ? "LIVE" : liveModeConfigured() ? "BLOCKED" : "PAPER",
-      liveExecutionVariant: config.LIVE_EXECUTION_VARIANT
+      liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
+      minimumConfidence: MIN_CONFIDENCE
     });
+    if (isGold(symbol)) {
+      pairedSignal.executionBlockedReason = "XAU_ANALYSIS_ONLY_VALIDATION_PENDING";
+      pairedSignal.main.executionState = "NOT_ELIGIBLE";
+      pairedSignal.main.executionReason = "XAU_ANALYSIS_ONLY";
+      pairedSignal.inverse.executionState = "NOT_ELIGIBLE";
+      pairedSignal.inverse.executionReason = "XAU_ANALYSIS_ONLY";
+    }
     const selectedLane = config.LIVE_EXECUTION_VARIANT === "INVERSE"
       ? pairedSignal.inverse
       : pairedSignal.main;
@@ -892,18 +960,28 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     botState.pairedSignals[symbol] = pairedSignal;
     botState.latestPairedSignal = pairedSignal;
     botState.currentPrice = pairedSignal.market.mid;
-    botState.entryPrice = rankedDecision.entryPrice ?? enrichedMarketData.closePrice;
+    botState.entryPrice = rankedDecision.action === "HOLD"
+      ? undefined
+      : rankedDecision.entryPrice ?? pairedSignal.market.mid;
     const signalDirection = rankedDecision.action === "SELL" ? -1 : 1;
     const cash = cashRules(symbol);
-    botState.stopLoss = liveModeConfigured()
+    botState.stopLoss = rankedDecision.action === "HOLD"
+      ? undefined
+      : isGold(symbol)
+      ? rankedDecision.stopLossPrice
+      : liveModeConfigured()
       ? undefined
       : enrichedMarketData.closePrice - signalDirection * priceDistanceForCash(symbol, cash.riskAmount);
-    botState.takeProfit = liveModeConfigured()
+    botState.takeProfit = rankedDecision.action === "HOLD"
+      ? undefined
+      : isGold(symbol)
+      ? rankedDecision.structuralTargets?.[0]
+      : liveModeConfigured()
       ? undefined
       : enrichedMarketData.closePrice + signalDirection * priceDistanceForCash(symbol, cash.rewardAmount);
-    botState.riskAmount = cash.riskAmount;
-    botState.rewardAmount = cash.rewardAmount;
-    botState.profitLoss = 0;
+    botState.riskAmount = isGold(symbol) ? undefined : cash.riskAmount;
+    botState.rewardAmount = isGold(symbol) ? undefined : cash.rewardAmount;
+    botState.profitLoss = undefined;
     botState.session = session;
     botState.killzone = killzone;
     botState.lastUpdated = new Date().toISOString();
@@ -919,9 +997,16 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       return;
     }
 
+    if (isGold(symbol)) {
+      botState.signalsDiscarded += rankedDecision.action === "HOLD" ? 0 : 1;
+      pushLog(`[${symbol}] ANALYSIS ONLY: struttura XAUUSD aggiornata; nessun trade PAPER, SHADOW o OANDA viene aperto`);
+      emitState();
+      return;
+    }
+
     updateShadowFromSignal(symbol, pairedSignal, enrichedMarketData, cycle);
 
-    if (rankedDecision.action === "HOLD" || rankedDecision.confidence < 50) {
+    if (rankedDecision.action === "HOLD" || rankedDecision.confidence < MIN_CONFIDENCE) {
       botState.signalsDiscarded += 1;
 
       const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);
@@ -982,6 +1067,11 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           return;
         }
         updatePairExecution(pairedSignal, "SUBMITTING");
+        botState.lastOrderAttemptAt = new Date().toISOString();
+        botState.lastOrderStatus = "SUBMITTING";
+        botState.lastOrderReason = undefined;
+        botState.lastOandaOrderId = undefined;
+        botState.lastOandaTradeId = undefined;
         emitState();
         const result = await executeVerifiedMarketOrder({
           oanda,
@@ -998,9 +1088,9 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           const trade: BotTrade = {
             id: `OANDA-${result.trade.oandaTradeId}`,
             ...result.trade,
-            pnl: 0,
-            pnlPips: 0,
-            setupType: decisionForExecution.setupType || "EMA_STACK",
+            pnl: undefined,
+            pnlPips: undefined,
+            setupType: decisionForExecution.setupType,
             confidence: decisionForExecution.confidence,
             reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} e trade verificati tramite OANDA Practice.`,
             status: "OPEN",
@@ -1018,10 +1108,15 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
             orderId: trade.oandaOrderId,
             tradeId: trade.oandaTradeId
           });
+          botState.lastOrderStatus = "OPEN_VERIFIED";
+          botState.lastOandaOrderId = trade.oandaOrderId;
+          botState.lastOandaTradeId = trade.oandaTradeId;
           pushLog(`[${symbol}] OANDA ${config.LIVE_EXECUTION_VARIANT} OPEN VERIFIED | ${trade.side} ${trade.units} | trade ID ${trade.oandaTradeId}`);
         } else {
           botState.signalsDiscarded += 1;
           updatePairExecution(pairedSignal, result.status, result.reason);
+          botState.lastOrderStatus = result.status;
+          botState.lastOrderReason = result.reason;
           pushLog(`[${symbol}] ${result.status}: ${result.reason}`);
         }
       } else {
@@ -1063,6 +1158,18 @@ async function scanAllSymbols() {
   pushLog(`Starting market scan: 15 FX + XAUUSD | maximum ${MAX_NEW_TRADES_PER_CYCLE} valid new entries`);
 
   try {
+    const connection = await oanda.getConnectionStatus();
+    botState.oandaConnected = Boolean(connection?.connected);
+    botState.oandaReason = connection?.reason;
+    botState.accountCurrency = connection?.currency ? String(connection.currency).toUpperCase() : undefined;
+    if (!connection?.connected) {
+      botState.dataSource = "OANDA_UNAVAILABLE";
+      botState.priceFeedStatus = "DISCONNECTED";
+      botState.priceCoverage = 0;
+      pushLog(`Market scan blocked: OANDA ${connection?.reason || "DISCONNECTED"}`);
+      emitState();
+      return;
+    }
     if (liveModeConfigured()) {
       await reconcileLiveTrades();
     }
@@ -1127,7 +1234,7 @@ async function monitorShadowTrades() {
   if (justClosed.length > 0) {
     botState.shadowClosedTrades = [...justClosed.reverse(), ...botState.shadowClosedTrades].slice(0, 80);
     justClosed.forEach((trade) => pushLog(
-      `[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${trade.closeReason} | ${trade.pnlCurrency || "quote currency"} ${trade.pnl.toFixed(2)} | no OANDA order`
+      `[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${trade.closeReason} | ${trade.pnlCurrency || "quote currency"} ${Number(trade.pnl).toFixed(2)} | no OANDA order`
     ));
   }
 }
@@ -1148,7 +1255,7 @@ async function monitorTrades() {
         bid: priceData?.bids?.[0]?.price ?? priceData?.closeoutBid,
         ask: priceData?.asks?.[0]?.price ?? priceData?.closeoutAsk,
         time: priceData?.time,
-        tradeable: priceData?.tradeable !== false && String(priceData?.status || "tradeable").toLowerCase() === "tradeable"
+        tradeable: priceData?.tradeable === true && String(priceData?.status || "").toLowerCase() === "tradeable"
       };
       const currentPrice = Number(trade.side === "SELL"
         ? quote.ask
@@ -1170,11 +1277,7 @@ async function monitorTrades() {
           ? currentPrice <= trade.stopLoss
           : currentPrice >= trade.stopLoss
         : false;
-      const fillPrice = hitTakeProfit
-        ? trade.takeProfit ?? currentPrice
-        : hitStopLoss
-          ? trade.stopLoss ?? currentPrice
-          : currentPrice;
+      const fillPrice = currentPrice;
       const pnl = calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, fillPrice);
 
       const updatedTrade = {
@@ -1201,7 +1304,7 @@ async function monitorTrades() {
     if (justClosed.length > 0) {
       botState.closedTrades = [...justClosed.reverse(), ...botState.closedTrades].slice(0, 80);
       justClosed.forEach((trade) => {
-        pushLog(`[${trade.symbol}] ${trade.closeReason} | paper P&L ${trade.pnlCurrency || "quote currency"} ${trade.pnl.toFixed(2)}`);
+        pushLog(`[${trade.symbol}] ${trade.closeReason} | paper P&L ${trade.pnlCurrency || "quote currency"} ${Number(trade.pnl).toFixed(2)}`);
       });
     }
 
@@ -1256,8 +1359,8 @@ export function startAutonomousBot() {
   pushLog("=================================");
   pushLog("AUTONOMOUS BOT STARTED");
   pushLog(`Symbols: ${SYMBOLS.length}`);
-  pushLog(`Daily Target: ${DAILY_TARGET}`);
   pushLog(`Max Daily Trades: ${MAX_DAILY_TRADES}`);
+  pushLog(`Minimum Signal Confidence: ${MIN_CONFIDENCE}%`);
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
   pushLog(`Max New Trades Per Cycle: ${MAX_NEW_TRADES_PER_CYCLE}`);
   pushLog(liveExecutionActive()
