@@ -356,10 +356,10 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       try { series.removePriceLine(line); } catch (_error) { /* already removed */ }
     });
     priceLinesRef.current = [];
-    const addLine = (value: unknown, color: string, title: string, style = LineStyle.Dashed) => {
+    const addLine = (value: unknown, color: string, title: string, style = LineStyle.Dashed, axisLabelVisible = true) => {
       const parsed = Number(value);
       if (!Number.isFinite(parsed) || parsed <= 0) return;
-      priceLinesRef.current.push(series.createPriceLine({ price: parsed, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title }));
+      priceLinesRef.current.push(series.createPriceLine({ price: parsed, color, lineWidth: 1, lineStyle: style, axisLabelVisible, title }));
     };
     if (layers.trades) selectedOpenTrades.slice(0, 1).forEach((trade: any) => {
       addLine(trade.entryPrice, '#60a5fa', `ENTRY ${trade.side || ''}`, LineStyle.Solid);
@@ -367,10 +367,10 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       addLine(trade.takeProfit, '#22c55e', 'TAKE PROFIT');
     });
     if (layers.levels) {
-      dedupeLevels(selectedMarket?.supportLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#38bdf8', `S${index + 1}`, LineStyle.Dotted));
-      dedupeLevels(selectedMarket?.resistanceLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#a78bfa', `R${index + 1}`, LineStyle.Dotted));
-      addLine(selectedMarket?.fairValueGapZone?.low, '#f59e0b', 'FVG LOW', LineStyle.Dotted);
-      addLine(selectedMarket?.fairValueGapZone?.high, '#f59e0b', 'FVG HIGH', LineStyle.Dotted);
+      dedupeLevels(selectedMarket?.supportLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#38bdf8', `S${index + 1}`, LineStyle.Dotted, false));
+      dedupeLevels(selectedMarket?.resistanceLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#a78bfa', `R${index + 1}`, LineStyle.Dotted, false));
+      addLine(selectedMarket?.fairValueGapZone?.low, '#f59e0b', 'FVG LOW', LineStyle.Dotted, false);
+      addLine(selectedMarket?.fairValueGapZone?.high, '#f59e0b', 'FVG HIGH', LineStyle.Dotted, false);
     }
   }, [formatted, layers, selectedHistory, selectedMarket, selectedOpenTrades, displaySymbol]);
 
