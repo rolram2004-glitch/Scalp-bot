@@ -71,7 +71,24 @@ export interface MarketData {
 
 export interface TradingDecision {
   action: "BUY" | "SELL" | "HOLD";
+  /** Backward-compatible numeric field. This is a deterministic setup score, not a probability. */
   confidence: number;
+  setupScore?: number;
+  scoreLabel?: "WEAK" | "DEVELOPING" | "VALID" | "STRONG";
+  scoreBreakdown?: {
+    trend: number;
+    momentum: number;
+    structure: number;
+    liquidity: number;
+    volatility: number;
+    spread: number;
+    session: number;
+    risk: number;
+  };
+  scenarioScores?: {
+    BUY: number;
+    SELL: number;
+  };
 
   entryPrice?: number;
 

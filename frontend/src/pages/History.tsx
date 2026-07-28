@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { BotTrade, StatusSnapshot } from '../types';
+import { executionView, hasVerifiedOandaLedger } from '../trading-state';
 
 type HistoryFilter = 'LIVE' | 'PAPER' | 'SHADOW';
 
@@ -7,19 +8,15 @@ function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function compactSymbol(value?: string) {
-  return String(value || '').toUpperCase().replace(/[^A-Z]/g, '');
-}
-
-function quoteCurrency(symbol?: string) {
-  const normalized = compactSymbol(symbol);
-  return normalized.length === 6 ? normalized.slice(-3) : undefined;
+function setupScore(trade: BotTrade) {
+  const value = finite(trade.setupScore) ? trade.setupScore : finite(trade.confidence) ? trade.confidence : undefined;
+  return value === undefined ? 'N/A' : `${Math.max(0, Math.min(100, Math.round(value)))}/100`;
 }
 
 function price(value: unknown, symbol?: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 'N/A';
-  const normalized = compactSymbol(symbol);
+  const normalized = String(symbol || '').toUpperCase().replace(/[^A-Z]/g, '');
   return parsed.toFixed(normalized.includes('JPY') || normalized.includes('XAU') ? 3 : 5);
 }
 
@@ -34,7 +31,7 @@ function money(trade: BotTrade, filter: HistoryFilter) {
   if (!finite(trade.pnl)) return 'N/A';
   const currency = filter === 'LIVE'
     ? trade.accountCurrency
-    : trade.pnlCurrency || quoteCurrency(trade.symbol);
+    : trade.pnlCurrency;
   if (!currency) return 'N/A';
   return `${trade.pnl >= 0 ? '+' : '-'}${Math.abs(trade.pnl).toFixed(2)} ${currency}`;
 }
@@ -55,8 +52,11 @@ function identifier(trade: BotTrade) {
 
 export function HistoryPage({ status }: { status: StatusSnapshot | null }) {
   const [filter, setFilter] = useState<HistoryFilter>('LIVE');
-  const live = [...(status?.closedTrades || []), ...(status?.openTrades || [])]
-    .filter((trade) => trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED');
+  const mode = executionView(status);
+  const liveAvailable = hasVerifiedOandaLedger(status);
+  const live = liveAvailable ? [...(status?.closedTrades || []), ...(status?.openTrades || [])]
+    .filter((trade) => trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED')
+    : [];
   const paper = [...(status?.closedTrades || []), ...(status?.openTrades || [])]
     .filter((trade) => trade.source === 'PAPER');
   const shadow = [...(status?.shadowClosedTrades || []), ...(status?.shadowOpenTrades || [])]
@@ -64,6 +64,10 @@ export function HistoryPage({ status }: { status: StatusSnapshot | null }) {
   const selected = (filter === 'LIVE' ? live : filter === 'PAPER' ? paper : shadow)
     .sort((left, right) => Date.parse(right.closedAt || right.openedAt || '') - Date.parse(left.closedAt || left.openedAt || ''))
     .slice(0, 80);
+  const selectedAvailable = Boolean(
+    status &&
+    (filter === 'LIVE' ? liveAvailable : filter === 'PAPER' ? mode.paper : true)
+  );
 
   return (
     <div className="history-page">
@@ -75,7 +79,7 @@ export function HistoryPage({ status }: { status: StatusSnapshot | null }) {
       <div className="time-tabs">
         {(['LIVE', 'PAPER', 'SHADOW'] as HistoryFilter[]).map((item) => (
           <button key={item} className={filter === item ? 'time-chip active' : 'time-chip'} onClick={() => setFilter(item)}>
-            {item === 'LIVE' ? 'LIVE OANDA' : item === 'PAPER' ? 'PAPER' : 'PAPER SHADOW'} · {item === 'LIVE' ? live.length : item === 'PAPER' ? paper.length : shadow.length}
+            {item === 'LIVE' ? 'OANDA VERIFIED' : item === 'PAPER' ? 'PAPER' : 'PAPER SHADOW'} · {item === 'LIVE' ? liveAvailable ? live.length : 'N/A' : item === 'PAPER' ? mode.paper ? paper.length : 'N/A' : status ? shadow.length : 'N/A'}
           </button>
         ))}
       </div>
@@ -98,18 +102,18 @@ export function HistoryPage({ status }: { status: StatusSnapshot | null }) {
                   <div><span>Ragionamento</span><p>{trade.reasoning || 'N/A'}</p></div>
                   <div className="detail-grid">
                     <div><span>Fonte</span><strong>{trade.source || 'N/A'}</strong></div>
-                    <div><span>Verifica</span><strong>{trade.verificationStatus || 'N/A'}</strong></div>
+                    <div><span>Verifica</span><strong>{filter === 'LIVE' ? trade.verificationStatus || 'N/A' : 'PAPER RECORDED'}</strong></div>
                     <div><span>OANDA trade ID</span><strong>{tradeId || 'N/A'}</strong></div>
                     <div><span>OANDA order ID</span><strong>{trade.oandaOrderId || trade.oandaOrderID || trade.orderId || trade.orderID || 'N/A'}</strong></div>
                     <div><span>Stop loss</span><strong className="loss">{price(trade.stopLoss, trade.symbol)}</strong></div>
                     <div><span>Take profit</span><strong className="win">{price(trade.takeProfit, trade.symbol)}</strong></div>
-                    <div><span>Confidence</span><strong>{finite(trade.confidence) ? `${trade.confidence}%` : 'N/A'}</strong></div>
+                    <div><span>Setup score</span><strong>{setupScore(trade)}</strong></div>
                     <div><span>Durata</span><strong>{duration(trade)}</strong></div>
                   </div>
                 </div>
               </article>
             );
-          }) : <div className="empty-state">{status ? `Nessun trade ${filter === 'LIVE' ? 'OANDA verificato' : filter} disponibile.` : 'DATI NON DISPONIBILI'}</div>}
+          }) : <div className="empty-state">{selectedAvailable ? `Nessun trade ${filter === 'LIVE' ? 'OANDA verificato' : filter} disponibile.` : filter === 'LIVE' && mode.oanda ? 'DATI NON DISPONIBILI: riconciliazione OANDA non verificata.' : 'DATI NON DISPONIBILI'}</div>}
         </div>
       </section>
     </div>

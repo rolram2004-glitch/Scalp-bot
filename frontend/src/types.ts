@@ -13,6 +13,8 @@ export interface BotTrade {
   closedAt?: string;
   setupType?: string;
   confidence?: number;
+  setupScore?: number;
+  scoreLabel?: 'WEAK' | 'DEVELOPING' | 'VALID' | 'STRONG';
   reasoning?: string;
   closeReason?: string;
   riskRewardRatio?: number;
@@ -43,6 +45,8 @@ export interface BotTrade {
 export interface TradingDecisionSnapshot {
   action: 'BUY' | 'SELL' | 'HOLD' | string;
   confidence: number;
+  setupScore?: number;
+  scoreLabel?: 'WEAK' | 'DEVELOPING' | 'VALID' | 'STRONG';
   reasoning?: string;
   entryPrice?: number;
   lotSize?: number;
@@ -75,9 +79,11 @@ export interface SignalLaneSnapshot {
   variant: 'MAIN' | 'INVERSE';
   action: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
+  setupScore?: number;
+  scoreLabel?: 'WEAK' | 'DEVELOPING' | 'VALID' | 'STRONG';
   reasoning: string;
   setupType?: string;
-  mode: 'LIVE OANDA PRACTICE' | 'PAPER' | 'PAPER SHADOW';
+  mode: string;
   selectedForExecution: boolean;
   executionState: 'SHADOW' | 'PAPER' | 'NOT_ELIGIBLE' | 'READY' | 'SUBMITTING' | 'SKIPPED' | 'REJECTED' | 'OPEN_VERIFIED';
   executionReason?: string;
@@ -137,15 +143,28 @@ export interface StatusSnapshot {
   startedAt?: string;
   lastUpdated?: string;
   lastPriceAt?: string;
-  priceFeedStatus?: 'CONNECTED' | 'DISCONNECTED';
+  priceFeedStatus?: 'CONNECTED' | 'PARTIAL' | 'DISCONNECTED';
   dataSource: string;
   oandaConnected?: boolean;
   oandaReason?: string;
   executionMode: string;
-  tradingMode: 'PAPER' | 'LIVE';
+  tradingMode: 'PAPER' | 'OANDA_DEMO' | 'OANDA_LIVE';
+  effectiveExecutionState:
+    | 'UNAVAILABLE'
+    | 'PAPER'
+    | 'OANDA_DEMO_BLOCKED'
+    | 'OANDA_DEMO_READY'
+    | 'OANDA_LIVE_BLOCKED'
+    | 'OANDA_LIVE_READY';
   liveTradingEnabled: boolean;
   liveExecutionVariant: 'MAIN' | 'INVERSE' | 'INVALID';
   liveExecutionVariantValid: boolean;
+  aiProvider?: 'DISABLED' | 'GEMINI';
+  aiConfirmationRequired?: boolean;
+  aiStatus?: 'DISABLED' | 'NOT_CHECKED' | 'APPROVED' | 'REJECTED' | 'ERROR';
+  lastAiReason?: string;
+  lastAiCheckedAt?: string;
+  lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
   maxDailyTrades: number;
@@ -168,6 +187,7 @@ export interface StatusSnapshot {
   signalsDiscarded: number;
   openTrades: BotTrade[];
   closedTrades: BotTrade[];
+  orphanTrades: BotTrade[];
   shadowOpenTrades: BotTrade[];
   shadowClosedTrades: BotTrade[];
   shadowTradeCount: number;
@@ -188,4 +208,13 @@ export interface StatusSnapshot {
   lastOrderReason?: string;
   lastOandaOrderId?: string;
   lastOandaTradeId?: string;
+  dailyRiskStatus: {
+    dateUTC: string;
+    tradeCount: number;
+    maxTrades: number;
+    pnl: number | null;
+    currency?: string;
+    complete: boolean;
+    reason?: string;
+  };
 }

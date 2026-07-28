@@ -108,6 +108,62 @@ function hasInstrumentExposure(instrument: string, trades: any[], positions: any
   return openTrade || openPosition;
 }
 
+const PROTECTIVE_PENDING_ORDER_TYPES = new Set([
+  "TAKE_PROFIT",
+  "STOP_LOSS",
+  "TRAILING_STOP_LOSS",
+  "GUARANTEED_STOP_LOSS"
+]);
+
+function hasPendingEntryOrder(instrument: string, orders: any[]) {
+  const normalized = normalizeOandaSymbol(instrument);
+  if (!Array.isArray(orders)) return true;
+  return orders.some((order) => {
+    if (normalizeOandaSymbol(order?.instrument) !== normalized) return false;
+    const state = String(order?.state || "PENDING").toUpperCase();
+    if (state !== "PENDING") return false;
+    const type = String(order?.type || "").toUpperCase();
+    return !PROTECTIVE_PENDING_ORDER_TYPES.has(type);
+  });
+}
+
+function strictPrecision(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 && parsed <= 12 ? parsed : null;
+}
+
+function signedPositionUnits(instrument: string, positions: any[]) {
+  if (!Array.isArray(positions)) return null;
+  const normalized = normalizeOandaSymbol(instrument);
+  const position = positions.find(
+    (item) => normalizeOandaSymbol(item?.instrument) === normalized
+  );
+  if (!position) return 0;
+  const longUnits = Number(position?.long?.units);
+  const shortUnits = Number(position?.short?.units);
+  if (!Number.isFinite(longUnits) || !Number.isFinite(shortUnits)) return null;
+  return longUnits + shortUnits;
+}
+
+function matchingTaggedOpenTrades(
+  instrument: string,
+  trades: any[],
+  expectedClientTag: string,
+  expectedSignedUnits: number,
+  tolerance: number
+) {
+  if (!Array.isArray(trades)) return [];
+  return trades.filter((trade: any) => {
+    const candidateUnits = Number(trade?.currentUnits);
+    return Boolean(trade?.id) &&
+      String(trade?.state || "OPEN").toUpperCase() === "OPEN" &&
+      normalizeOandaSymbol(trade?.instrument) === instrument &&
+      Number.isFinite(candidateUnits) &&
+      Math.abs(candidateUnits - expectedSignedUnits) < tolerance &&
+      String(trade?.clientExtensions?.tag || "") === expectedClientTag;
+  });
+}
+
 function roundedUnits(units: number, precision: number) {
   const factor = 10 ** Math.max(0, precision);
   return Math.round(Math.abs(units) * factor) / factor;
@@ -116,6 +172,33 @@ function roundedUnits(units: number, precision: number) {
 function clientTag(variant: "MAIN" | "INVERSE", signalId?: string) {
   const suffix = String(signalId || "UNTRACKED").replace(/[^A-Za-z0-9._-]/g, "-");
   return `GEMMO-${variant}-${suffix}`.slice(0, 128);
+}
+
+async function closeUnverifiedExposure(oanda: any, tradeId: string, reason: string): Promise<VerifiedOrderResult> {
+  const baseReason = String(reason || "OANDA_POST_FILL_VERIFICATION_FAILED")
+    .replace(/[^A-Z0-9_]/gi, "_")
+    .slice(0, 120);
+  if (!tradeId || typeof oanda?.closeTrade !== "function" || typeof oanda?.getTrade !== "function") {
+    return { status: "REJECTED", reason: `${baseReason}_EMERGENCY_CLOSE_NOT_VERIFIED` };
+  }
+
+  try {
+    await oanda.closeTrade(String(tradeId), "ALL");
+  } catch (_error) {
+    // A close rejection can also mean the trade was already closed. The
+    // authoritative re-read below decides whether exposure still exists.
+  }
+
+  try {
+    const closed = await oanda.getTrade(String(tradeId));
+    if (String(closed?.state || "").toUpperCase() === "CLOSED") {
+      return { status: "REJECTED", reason: `${baseReason}_EXPOSURE_CLOSED` };
+    }
+  } catch (_error) {
+    // Fall through to the explicit critical state. No local trade is created.
+  }
+
+  return { status: "REJECTED", reason: `${baseReason}_EMERGENCY_CLOSE_NOT_VERIFIED` };
 }
 
 export async function executeVerifiedMarketOrder(
@@ -153,12 +236,14 @@ export async function executeVerifiedMarketOrder(
   }
 
   instrumentsInFlight.add(instrument);
+  let filledTradeId: string | undefined;
 
   try {
-    const [account, openTrades, openPositions, instrumentInfo, pricing] = await Promise.all([
+    const [account, openTrades, openPositions, pendingOrders, instrumentInfo, pricing] = await Promise.all([
       oanda.getAccount(),
       oanda.getOpenTrades(),
       oanda.getOpenPositions(),
+      oanda.getPendingOrders(),
       oanda.getAccountInstrument(instrument),
       oanda.getPricingContext(instrument)
     ]);
@@ -166,16 +251,29 @@ export async function executeVerifiedMarketOrder(
     if (!account || !account.currency) {
       return { status: "REJECTED", reason: "OANDA_ACCOUNT_NOT_VERIFIED" };
     }
+    if (!Array.isArray(openTrades) || !Array.isArray(openPositions) || !Array.isArray(pendingOrders)) {
+      return { status: "REJECTED", reason: "OANDA_PREFLIGHT_RECONCILIATION_UNAVAILABLE" };
+    }
     if (hasInstrumentExposure(instrument, openTrades, openPositions)) {
       return { status: "SKIPPED", reason: "POSITION_ALREADY_OPEN_ON_OANDA" };
+    }
+    if (pendingOrders.some((order: any) => !order?.instrument || !order?.type)) {
+      return { status: "REJECTED", reason: "OANDA_PENDING_ORDER_DATA_INCOMPLETE" };
+    }
+    if (hasPendingEntryOrder(instrument, pendingOrders)) {
+      return { status: "SKIPPED", reason: "PENDING_ENTRY_ORDER_ALREADY_EXISTS_ON_OANDA" };
     }
     if (!instrumentInfo) {
       return { status: "REJECTED", reason: "INSTRUMENT_METADATA_UNAVAILABLE" };
     }
 
-    const unitsPrecision = Math.max(0, Number(instrumentInfo.tradeUnitsPrecision || 0));
+    const unitsPrecision = strictPrecision(instrumentInfo.tradeUnitsPrecision);
+    const displayPrecision = strictPrecision(instrumentInfo.displayPrecision);
+    const minimumTradeSize = finitePositive(instrumentInfo.minimumTradeSize);
+    if (unitsPrecision === null || displayPrecision === null || minimumTradeSize === null) {
+      return { status: "REJECTED", reason: "INSTRUMENT_METADATA_INCOMPLETE" };
+    }
     const units = roundedUnits(request.units, unitsPrecision);
-    const minimumTradeSize = finitePositive(instrumentInfo.minimumTradeSize) || 1;
     if (!Number.isFinite(units) || units < minimumTradeSize) {
       return { status: "REJECTED", reason: "UNITS_BELOW_OANDA_MINIMUM" };
     }
@@ -183,6 +281,11 @@ export async function executeVerifiedMarketOrder(
     const price = pricing?.price;
     if (!price || price.tradeable !== true || String(price.status || "").toLowerCase() !== "tradeable") {
       return { status: "REJECTED", reason: "INSTRUMENT_NOT_TRADEABLE" };
+    }
+    const priceTime = Date.parse(String(price.time || ""));
+    const priceAge = Date.now() - priceTime;
+    if (!Number.isFinite(priceTime) || priceAge < -5000 || priceAge > 30000) {
+      return { status: "REJECTED", reason: "OANDA_PRICING_SNAPSHOT_STALE" };
     }
     const entry = executablePrice(price, side);
     if (!entry) {
@@ -208,7 +311,6 @@ export async function executeVerifiedMarketOrder(
     const riskDistance = risk / (units * factors.loss);
     const rewardDistance = reward / (units * factors.gain);
     const direction = side === "BUY" ? 1 : -1;
-    const displayPrecision = Math.max(0, Number(instrumentInfo.displayPrecision || 5));
     const stopLossNumber = entry - direction * riskDistance;
     const takeProfitNumber = entry + direction * rewardDistance;
     if (stopLossNumber <= 0 || takeProfitNumber <= 0) {
@@ -218,15 +320,51 @@ export async function executeVerifiedMarketOrder(
     const takeProfit = takeProfitNumber.toFixed(displayPrecision);
 
     const expectedClientTag = clientTag(strategyVariant, signalId);
-    const response = await oanda.createMarketOrder({
-      instrument,
-      side,
-      units,
-      stopLoss,
-      takeProfit,
-      clientTag: expectedClientTag,
-      strategyVariant
-    });
+    const expectedSignedUnits = side === "BUY" ? units : -units;
+    const tolerance = 0.5 / 10 ** Math.max(0, unitsPrecision);
+    let response: any;
+    try {
+      response = await oanda.createMarketOrder({
+        instrument,
+        side,
+        units,
+        stopLoss,
+        takeProfit,
+        clientTag: expectedClientTag,
+        strategyVariant
+      });
+    } catch (error) {
+      try {
+        const [tradesAfterSubmit, positionsAfterSubmit] = await Promise.all([
+          oanda.getOpenTrades(),
+          oanda.getOpenPositions()
+        ]);
+        const candidates = matchingTaggedOpenTrades(
+          instrument,
+          tradesAfterSubmit,
+          expectedClientTag,
+          expectedSignedUnits,
+          tolerance
+        );
+        if (candidates.length === 1) {
+          return closeUnverifiedExposure(
+            oanda,
+            String(candidates[0].id),
+            "OANDA_ORDER_SUBMISSION_OUTCOME_NOT_VERIFIED"
+          );
+        }
+        const positionUnits = signedPositionUnits(instrument, positionsAfterSubmit);
+        if (candidates.length === 0 && positionUnits === 0) {
+          return { status: "REJECTED", reason: safeReason(error) };
+        }
+      } catch (_reconciliationError) {
+        // The POST result is ambiguous until OANDA can be reconciled again.
+      }
+      return {
+        status: "REJECTED",
+        reason: "OANDA_ORDER_SUBMISSION_OUTCOME_NOT_VERIFIED"
+      };
+    }
 
     if (response?.orderRejectTransaction) {
       return {
@@ -243,23 +381,65 @@ export async function executeVerifiedMarketOrder(
 
     const orderId = response?.orderCreateTransaction?.id;
     const tradeId = response?.orderFillTransaction?.tradeOpened?.tradeID;
-    if (!orderId || !tradeId) {
-      return { status: "REJECTED", reason: "OANDA_FILL_NOT_VERIFIED" };
+    if (!tradeId) {
+      try {
+        const [tradesAfterFill, positionsAfterFill] = await Promise.all([
+          oanda.getOpenTrades(),
+          oanda.getOpenPositions()
+        ]);
+        if (!Array.isArray(tradesAfterFill) || !Array.isArray(positionsAfterFill)) {
+          throw new Error("OANDA_POST_FILL_RECONCILIATION_UNAVAILABLE");
+        }
+        const candidates = matchingTaggedOpenTrades(
+          instrument,
+          tradesAfterFill,
+          expectedClientTag,
+          expectedSignedUnits,
+          tolerance
+        );
+        if (candidates.length === 1) {
+          return closeUnverifiedExposure(
+            oanda,
+            String(candidates[0].id),
+            "OANDA_FILL_TRADE_ID_NOT_VERIFIED"
+          );
+        }
+        const positionUnits = signedPositionUnits(instrument, positionsAfterFill);
+        if (candidates.length === 0 && positionUnits === 0) {
+          return { status: "REJECTED", reason: "OANDA_FILL_NOT_VERIFIED" };
+        }
+      } catch (_error) {
+        // The outcome of a submitted market order is ambiguous if OANDA cannot
+        // be reconciled immediately. Never create a local trade in this state.
+      }
+      return {
+        status: "REJECTED",
+        reason: "OANDA_FILL_NOT_VERIFIED_EMERGENCY_CLOSE_NOT_VERIFIED"
+      };
+    }
+    filledTradeId = String(tradeId);
+    if (!orderId) {
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_ORDER_ID_NOT_VERIFIED");
     }
 
-    const verified = await oanda.getTrade(String(tradeId));
+    const [verified, positionsAfterFill] = await Promise.all([
+      oanda.getTrade(filledTradeId),
+      oanda.getOpenPositions()
+    ]);
     const verifiedUnits = Number(verified?.currentUnits);
-    const expectedSignedUnits = side === "BUY" ? units : -units;
-    const tolerance = 0.5 / 10 ** Math.max(0, unitsPrecision);
-    const matches =
+    const positionUnits = signedPositionUnits(instrument, positionsAfterFill);
+    const tradeMatches =
       verified &&
       String(verified.state).toUpperCase() === "OPEN" &&
       normalizeOandaSymbol(verified.instrument) === instrument &&
       Number.isFinite(verifiedUnits) &&
       Math.abs(verifiedUnits - expectedSignedUnits) < tolerance &&
       String(verified?.clientExtensions?.tag || "") === expectedClientTag;
-    if (!matches) {
-      return { status: "REJECTED", reason: "OANDA_TRADE_VERIFICATION_MISMATCH" };
+    if (!tradeMatches) {
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_TRADE_VERIFICATION_MISMATCH");
+    }
+    if (positionUnits === null || Math.abs(positionUnits - expectedSignedUnits) >= tolerance) {
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_POSITION_VERIFICATION_MISMATCH");
     }
 
     const verifiedEntry = finitePositive(verified.price);
@@ -267,7 +447,7 @@ export async function executeVerifiedMarketOrder(
     const verifiedTakeProfit = finitePositive(verified?.takeProfitOrder?.price);
     const verifiedOpenedAt = String(verified?.openTime || response?.orderFillTransaction?.time || "");
     if (!verifiedEntry || !Number.isFinite(Date.parse(verifiedOpenedAt))) {
-      return { status: "REJECTED", reason: "OANDA_TRADE_DETAILS_INCOMPLETE" };
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_TRADE_DETAILS_INCOMPLETE");
     }
     const priceTolerance = 0.5 / 10 ** displayPrecision;
     const protectiveOrdersVerified =
@@ -280,7 +460,7 @@ export async function executeVerifiedMarketOrder(
       Math.abs(verifiedStopLoss - Number(stopLoss)) <= priceTolerance &&
       Math.abs(verifiedTakeProfit - Number(takeProfit)) <= priceTolerance;
     if (!protectiveOrdersVerified) {
-      return { status: "REJECTED", reason: "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED" };
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED");
     }
     verifiedSignalIds.add(signalId);
     if (verifiedSignalIds.size > 10000) {
@@ -303,7 +483,7 @@ export async function executeVerifiedMarketOrder(
         rewardAmount: reward,
         openedAt: verifiedOpenedAt,
         oandaOrderId: String(orderId),
-        oandaTradeId: String(tradeId),
+        oandaTradeId: filledTradeId,
         strategyVariant,
         signalId,
         signalAt,
@@ -311,6 +491,9 @@ export async function executeVerifiedMarketOrder(
       }
     };
   } catch (error) {
+    if (filledTradeId) {
+      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_POST_FILL_VERIFICATION_FAILED");
+    }
     return { status: "REJECTED", reason: safeReason(error) };
   } finally {
     instrumentsInFlight.delete(instrument);

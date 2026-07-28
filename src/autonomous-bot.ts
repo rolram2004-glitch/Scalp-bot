@@ -6,6 +6,7 @@ import { rankSignals } from "./signal-ranker";
 import { MarketData, TradingDecision } from "./types";
 import { executeVerifiedMarketOrder } from "./execution-engine";
 import { createPairedSignalSnapshot, PairedSignalSnapshot, StrategyVariant } from "./signal-pair";
+import { confirmSetupWithAi, AiConfirmationStatus } from "./ai-confirmation";
 const oanda = require("./oanda");
 const config = require("./config");
 
@@ -39,7 +40,7 @@ interface BotTrade {
   setupType?: string;
   confidence?: number;
   reasoning?: string;
-  closeReason?: "TP HIT" | "SL HIT" | "MANUAL" | "SIGNAL EXIT";
+  closeReason?: "TP HIT" | "SL HIT" | "MANUAL" | "SIGNAL EXIT" | "POST-FILL RECONCILIATION FAILURE";
   status: "OPEN" | "CLOSED";
   source: "PAPER" | "PAPER_SHADOW" | "OANDA" | "LOCAL_ORPHAN";
   units: number;
@@ -78,6 +79,12 @@ export interface BotSnapshot {
   liveTradingEnabled: boolean;
   liveExecutionVariant: StrategyVariant | "INVALID";
   liveExecutionVariantValid: boolean;
+  aiProvider: "DISABLED" | "GEMINI";
+  aiConfirmationRequired: boolean;
+  aiStatus: AiConfirmationStatus | "NOT_CHECKED";
+  lastAiReason?: string;
+  lastAiCheckedAt?: string;
+  lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
   maxDailyTrades: number;
@@ -157,6 +164,9 @@ const botState: BotSnapshot = {
   liveTradingEnabled: config.LIVE_TRADING_ENABLED,
   liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
   liveExecutionVariantValid: config.LIVE_EXECUTION_VARIANT_VALID,
+  aiProvider: config.AI_PROVIDER,
+  aiConfirmationRequired: config.AI_CONFIRMATION_REQUIRED,
+  aiStatus: config.AI_PROVIDER === "GEMINI" ? "NOT_CHECKED" : "DISABLED",
   symbols: SYMBOLS,
   maxDailyTrades: MAX_DAILY_TRADES,
   minimumConfidence: MIN_CONFIDENCE,
@@ -212,6 +222,8 @@ function liveExecutionActive() {
   const priceFresh = Number.isFinite(priceTime) && Date.now() - priceTime >= -5000 && Date.now() - priceTime <= 30000;
   const modeReady = config.TRADING_MODE === "OANDA_DEMO" ||
     (config.TRADING_MODE === "OANDA_LIVE" && config.OANDA_LIVE_CONFIRMED === true);
+  const aiGateConfigured = config.AI_CONFIRMATION_REQUIRED !== true ||
+    (config.AI_PROVIDER === "GEMINI" && Boolean(config.GEMINI_API_KEY));
   return modeReady &&
     config.OANDA_ORDER_EXECUTION_ENABLED === true &&
     config.LIVE_TRADING_ENABLED === true &&
@@ -222,7 +234,8 @@ function liveExecutionActive() {
     botState.priceFeedStatus === "CONNECTED" &&
     botState.priceCoverage === botState.priceExpected &&
     priceFresh &&
-    dailyRiskDataComplete;
+    dailyRiskDataComplete &&
+    aiGateConfigured;
 }
 
 function liveModeConfigured() {
@@ -989,7 +1002,10 @@ function updateShadowFromSignal(
   pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} opened on OANDA quote ${pair.market.time} | no OANDA order`);
 }
 
-async function closeVerifiedOandaTrade(trade: BotTrade) {
+async function closeVerifiedOandaTrade(
+  trade: BotTrade,
+  closeReason: NonNullable<BotTrade["closeReason"]> = "SIGNAL EXIT"
+) {
   if (!canAutoCloseOandaTrade(trade, config.LIVE_EXECUTION_VARIANT)) {
     pushLog(`[${trade.symbol}] chiusura bloccata: trade OANDA non attribuito alla corsia GEMMO attiva`);
     return false;
@@ -1019,11 +1035,11 @@ async function closeVerifiedOandaTrade(trade: BotTrade) {
       pnl: realizedPL,
       currentPrice: closePrice,
       closedAt: closeTime,
-      closeReason: "SIGNAL EXIT"
+      closeReason
     };
     botState.openTrades = botState.openTrades.filter((item) => item.oandaTradeId !== trade.oandaTradeId);
     botState.closedTrades = [closed, ...botState.closedTrades].slice(0, 80);
-    pushLog(`[${trade.symbol}] SIGNAL EXIT verificata da OANDA | P&L ${Number.isFinite(closed.pnl) ? `${trade.accountCurrency || "N/A"} ${Number(closed.pnl).toFixed(2)}` : "N/A"}`);
+    pushLog(`[${trade.symbol}] ${closeReason} verificata da OANDA | P&L ${Number.isFinite(closed.pnl) ? `${trade.accountCurrency || "N/A"} ${Number(closed.pnl).toFixed(2)}` : "N/A"}`);
     return true;
   } catch (error: any) {
     const reason = error?.response?.data?.errorCode || error?.message || "OANDA_CLOSE_FAILED";
@@ -1221,16 +1237,19 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       }
 
       pushLog(
-        `[${symbol}] ${rankedDecision.action} | ${rankedDecision.confidence}% | ${rankedDecision.reasoning}`
+        `[${symbol}] ${rankedDecision.action} | setup score ${rankedDecision.confidence}/100 | ${rankedDecision.reasoning}`
       );
     } else if (liveModeConfigured() && !liveExecutionActive()) {
       botState.signalsDiscarded += 1;
-      const reason = !config.LIVE_TRADING_ENABLED
-        ? "OANDA_ORDER_EXECUTION_ENABLED must be true"
+      const reason = !config.OANDA_ORDER_EXECUTION_ENABLED || !config.LIVE_TRADING_ENABLED
+        ? "OANDA_ORDER_EXECUTION_ENABLED and LIVE_TRADING_ENABLED must both be true"
         : !config.OANDA_ENVIRONMENT_VALID
           ? "OANDA_ENVIRONMENT does not match TRADING_MODE"
           : !config.LIVE_EXECUTION_VARIANT_VALID
             ? "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE"
+            : config.AI_CONFIRMATION_REQUIRED === true &&
+              (config.AI_PROVIDER !== "GEMINI" || !config.GEMINI_API_KEY)
+              ? "AI confirmation is required but Gemini is not configured"
             : "OANDA safety gates are not verified";
       pushLog(`[${symbol}] OANDA execution blocked: ${reason}`);
     } else if (liveExecutionActive() && pairedSignal.executionBlockedReason) {
@@ -1250,6 +1269,47 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       pushLog(`[${symbol}] valid signal queued: cycle cap ${MAX_NEW_TRADES_PER_CYCLE} reached`);
     } else if (canOpenTrade(botState.dailyTradeCount, botState.openTrades.length)) {
       if (liveExecutionActive()) {
+        if (config.AI_CONFIRMATION_REQUIRED === true) {
+          const aiResult = await confirmSetupWithAi({
+            signalId: pairedSignal.pairId,
+            symbol,
+            action: decisionForExecution.action as "BUY" | "SELL",
+            setupScore: Number(decisionForExecution.confidence),
+            scoreBreakdown: (decisionForExecution as TradingDecision & {
+              scoreBreakdown?: Record<string, number>;
+            }).scoreBreakdown,
+            snapshotAt: pairedSignal.evaluatedAt,
+            priceTime: pairedSignal.market.time,
+            bid: pairedSignal.market.bid,
+            ask: pairedSignal.market.ask,
+            spread: Number(enrichedMarketData.spread),
+            timeframe: String(enrichedMarketData.timeframe || config.TIMEFRAME),
+            trend: enrichedMarketData.trend,
+            structure: enrichedMarketData.structureBias,
+            session,
+            riskStatus: "PASS",
+            reasoning: decisionForExecution.reasoning
+          }, {
+            provider: config.AI_PROVIDER,
+            required: true,
+            apiKey: config.GEMINI_API_KEY,
+            model: config.GEMINI_MODEL,
+            minimumScore: Number(config.AI_MIN_CONFIDENCE),
+            timeoutMs: 8000
+          });
+          botState.aiStatus = aiResult.status;
+          botState.lastAiReason = aiResult.reason;
+          botState.lastAiCheckedAt = aiResult.checkedAt;
+          botState.lastAiSignalId = pairedSignal.pairId;
+          if (!aiResult.approved) {
+            const aiReason = `AI_${aiResult.status}: ${aiResult.reason}`;
+            botState.signalsDiscarded += 1;
+            updatePairExecution(pairedSignal, "SKIPPED", aiReason);
+            pushLog(`[${symbol}] OANDA execution skipped: ${aiReason}`);
+            emitState();
+            return;
+          }
+        }
         if (!botState.isRunning || generation !== runGeneration) {
           updatePairExecution(pairedSignal, "SKIPPED", "BOT_STOPPED_BEFORE_SUBMISSION");
           pushLog(`[${symbol}] order skipped: bot stopped before submission`);
@@ -1294,7 +1354,18 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
             item.oandaTradeId === provisionalTrade.oandaTradeId
           );
           if (!trade) {
-            const reason = "OANDA_POST_FILL_RECONCILIATION_FAILED";
+            const exposureClosed = await closeVerifiedOandaTrade(
+              provisionalTrade,
+              "POST-FILL RECONCILIATION FAILURE"
+            );
+            if (exposureClosed) {
+              botState.orphanTrades = botState.orphanTrades.filter(
+                (item) => item.oandaTradeId !== provisionalTrade.oandaTradeId
+              );
+            }
+            const reason = exposureClosed
+              ? "OANDA_POST_FILL_RECONCILIATION_FAILED_EXPOSURE_CLOSED"
+              : "OANDA_POST_FILL_RECONCILIATION_FAILED_EMERGENCY_CLOSE_NOT_VERIFIED";
             botState.signalsDiscarded += 1;
             updatePairExecution(pairedSignal, "REJECTED", reason);
             botState.lastOrderStatus = "REJECTED";
@@ -1328,7 +1399,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
         cycle.opened += 1;
         botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
         pushLog(
-          `[${symbol}] PAPER ${rankedDecision.action} | ${rankedDecision.confidence}% | ${rankedDecision.reasoning}`
+          `[${symbol}] PAPER ${rankedDecision.action} | setup score ${rankedDecision.confidence}/100 | ${rankedDecision.reasoning}`
         );
       }
     } else {

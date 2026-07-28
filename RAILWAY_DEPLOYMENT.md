@@ -17,13 +17,14 @@ Dashboard corrente: https://scalp-bot-production-761a.up.railway.app/
    - `LIVE_TRADING_ENABLED=false`;
    - `LIVE_EXECUTION_VARIANT=MAIN` (unico valore alternativo valido: `INVERSE`);
    - `MAX_NEW_TRADES_PER_CYCLE=6`;
+   - `MAX_OPEN_POSITIONS=15`;
    - `MAX_DAILY_TRADES=50`;
    - `MIN_SIGNAL_CONFIDENCE=65`;
    - `DEFAULT_UNITS=1000` o il valore approvato dall'utente;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
    - `ENABLE_OANDA_DEMO_TEST=false`;
-   - `AI_PROVIDER=DISABLED` e `AI_CONFIRMATION_REQUIRED=false` finche Gemini non e configurato.
+   - `AI_PROVIDER=DISABLED`, `AI_CONFIRMATION_REQUIRED=false` e `GEMINI_MODEL=gemini-3.5-flash-lite` finche Gemini non e configurato.
 6. Health check: `/health`.
 7. Verificare `/api/oanda/status`, `/api/status`, `/api/candles?symbol=EURUSD&timeframe=M5&count=2` e `/api/intelligence?symbol=EURUSD`.
 

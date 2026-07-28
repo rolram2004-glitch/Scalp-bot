@@ -1,3 +1,5 @@
+import { OandaStatus, StatusSnapshot } from '../types';
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     cache: 'no-store',
@@ -16,7 +18,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function fetchStatus() {
-  return fetchJson<any>('/api/status');
+  return fetchJson<StatusSnapshot>('/api/status');
 }
 
 export function fetchAnalytics() {
@@ -52,5 +54,5 @@ export async function fetchNews() {
 }
 
 export function fetchOandaStatus() {
-  return fetchJson<any>('/api/oanda/status');
+  return fetchJson<OandaStatus>('/api/oanda/status');
 }

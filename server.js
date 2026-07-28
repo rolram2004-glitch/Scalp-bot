@@ -35,10 +35,14 @@ function safeTokenMatch(actual, expected) {
 function requireControlAccess(req, res, next) {
   const expected = String(process.env.CONTROL_PANEL_TOKEN || "");
   if (!expected) {
-    if (config.TRADING_MODE === "PAPER") return next();
+    const remoteAddress = String(req.socket?.remoteAddress || req.ip || "").toLowerCase();
+    const loopback = remoteAddress === "127.0.0.1" ||
+      remoteAddress === "::1" ||
+      remoteAddress === "::ffff:127.0.0.1";
+    if (config.TRADING_MODE === "PAPER" && loopback) return next();
     return res.status(503).json({
       error: "control_panel_token_not_configured",
-      message: "Mutating OANDA controls are disabled until CONTROL_PANEL_TOKEN is configured."
+      message: "Remote bot controls are disabled until CONTROL_PANEL_TOKEN is configured."
     });
   }
   const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
@@ -136,8 +140,12 @@ function createApp() {
     const configured = new Set((config.SYMBOLS || []).map(normalizeOandaSymbol));
     const side = String(req.body?.side || "BUY").toUpperCase();
     const units = Number(req.body?.units || 1);
+    const configuredDemoMaxUnits = Number(process.env.DEMO_TEST_MAX_UNITS);
+    const demoMaxUnits = Number.isFinite(configuredDemoMaxUnits) && configuredDemoMaxUnits > 0
+      ? Math.min(1, configuredDemoMaxUnits)
+      : 1;
     if (!configured.has(symbol) || symbol === "XAU_USD" || !["BUY", "SELL"].includes(side) ||
-        !Number.isFinite(units) || units <= 0 || units > Number(process.env.DEMO_TEST_MAX_UNITS || 1)) {
+        !Number.isFinite(units) || units <= 0 || units > demoMaxUnits) {
       return res.status(400).json({ error: "invalid_demo_test_order" });
     }
     const signalAt = new Date().toISOString();

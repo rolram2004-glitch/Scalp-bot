@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createChart, CrosshairMode, LineStyle, ISeriesApi, CandlestickData, LineData, UTCTimestamp } from 'lightweight-charts';
 import { fetchCandles, fetchIntelligence } from '../services/api';
-
-const DEFAULT_SYMBOLS = ['XAUUSD', 'EURUSD', 'GBPUSD', 'USDJPY', 'USDCAD', 'AUDUSD', 'USDCHF', 'NZDUSD', 'GBPJPY', 'EURJPY', 'AUDJPY', 'NZDJPY', 'EURGBP', 'EURAUD', 'EURCAD', 'GBPAUD'];
+import { StatusSnapshot } from '../types';
+import { executionView, hasVerifiedOandaLedger } from '../trading-state';
 const TIMEFRAMES = [['M1', '1m'], ['M5', '5m'], ['M15', '15m'], ['H1', '1h']];
 
 function compactSymbol(symbol: unknown) {
@@ -11,6 +11,20 @@ function compactSymbol(symbol: unknown) {
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function setupScore(source: { setupScore?: unknown; confidence?: unknown } | null | undefined) {
+  const value = finite(source?.setupScore)
+    ? source.setupScore
+    : finite(source?.confidence)
+      ? source.confidence
+      : undefined;
+  return value === undefined ? undefined : Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function setupScoreText(source: { setupScore?: unknown; confidence?: unknown } | null | undefined) {
+  const score = setupScore(source);
+  return score === undefined ? 'N/A' : `${score}/100`;
 }
 
 function price(value: unknown, symbol: string) {
@@ -25,17 +39,12 @@ function dateTime(value?: string) {
   return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleString();
 }
 
-function quoteCurrency(symbol?: string) {
-  const normalized = compactSymbol(symbol);
-  return normalized.length === 6 ? normalized.slice(-3) : undefined;
-}
-
 function tradePnl(trade: any) {
   if (!finite(trade?.pnl)) return 'N/A';
   const verifiedLive = trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED';
   const paper = String(trade.source || '').startsWith('PAPER');
   if (!verifiedLive && !paper) return 'N/A';
-  const currency = verifiedLive ? trade.accountCurrency : trade.pnlCurrency || quoteCurrency(trade.symbol);
+  const currency = verifiedLive ? trade.accountCurrency : trade.pnlCurrency;
   if (!currency) return 'N/A';
   return `${trade.pnl >= 0 ? '+' : '-'}${Math.abs(trade.pnl).toFixed(2)} ${currency}`;
 }
@@ -65,15 +74,62 @@ function emaSeries(data: CandlestickData<UTCTimestamp>[], period: number): LineD
   return result;
 }
 
-export function ChartPage({ status, marketData }: { status: any; marketData: Record<string, any> }) {
+function ScenarioCard({
+  title,
+  lane,
+  pair,
+  symbol,
+  stopLoss,
+  takeProfit
+}: {
+  title: string;
+  lane: any;
+  pair: any;
+  symbol: string;
+  stopLoss?: number;
+  takeProfit?: number;
+}) {
+  const action = lane?.action;
+  const entry = action === 'BUY' ? pair?.market?.ask : action === 'SELL' ? pair?.market?.bid : undefined;
+  const conditions = [
+    pair?.analysis?.trend ? `Trend ${pair.analysis.trend}` : undefined,
+    pair?.analysis?.structureBias ? `Structure ${pair.analysis.structureBias}` : undefined,
+    pair?.analysis?.breakOfStructure ? `BOS ${pair.analysis.breakOfStructure}` : undefined,
+    pair?.analysis?.changeOfCharacter ? `CHoCH ${pair.analysis.changeOfCharacter}` : undefined,
+    typeof pair?.analysis?.rsi === 'number' ? `RSI ${pair.analysis.rsi.toFixed(1)}` : undefined
+  ].filter((item): item is string => Boolean(item));
+  return (
+    <article className={`scenario-card ${action === 'BUY' ? 'buy' : action === 'SELL' ? 'sell' : 'hold'}`}>
+      <header>
+        <div><span>{title}</span><strong className={action === 'BUY' ? 'positive' : action === 'SELL' ? 'negative' : 'neutral'}>{action || 'N/A'}</strong></div>
+        <b>SETUP SCORE {setupScoreText(lane)}</b>
+      </header>
+      <div className="scenario-card__body">
+        <ul>{conditions.length ? conditions.map((condition) => <li key={condition}>{condition}</li>) : <li>CONDIZIONI N/A</li>}</ul>
+        <dl>
+          <div><dt>Entry quote</dt><dd>{price(entry, symbol)}</dd></div>
+          <div><dt>Stop</dt><dd>{price(stopLoss, symbol)}</dd></div>
+          <div><dt>Take profit</dt><dd>{price(takeProfit, symbol)}</dd></div>
+          <div><dt>Execution</dt><dd>{lane?.executionState || 'N/A'}</dd></div>
+        </dl>
+      </div>
+      <footer>{lane?.reasoning || 'NESSUNO SNAPSHOT REALE DISPONIBILE'}</footer>
+    </article>
+  );
+}
+
+export function ChartPage({ status, marketData }: { status: StatusSnapshot | null; marketData: Record<string, any> }) {
   const configuredSymbols = Array.isArray(status?.symbols) && status.symbols.length > 0
     ? status.symbols.map(compactSymbol)
-    : DEFAULT_SYMBOLS;
-  const [symbol, setSymbol] = useState('XAUUSD');
+    : [];
+  const configuredKey = configuredSymbols.join('|');
+  const [symbol, setSymbol] = useState('EURUSD');
   const [timeframe, setTimeframe] = useState('M5');
   const [candles, setCandles] = useState<any[]>([]);
+  const [candleDatasetKey, setCandleDatasetKey] = useState('');
   const [chartError, setChartError] = useState('');
   const [intelligence, setIntelligence] = useState<any>(null);
+  const [intelligenceSymbol, setIntelligenceSymbol] = useState('');
   const [intelligenceError, setIntelligenceError] = useState('');
   const [layers, setLayers] = useState({ trades: true, structure: true, levels: true });
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
@@ -81,69 +137,119 @@ export function ChartPage({ status, marketData }: { status: any; marketData: Rec
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const priceLinesRef = useRef<any[]>([]);
+  const candleRequestRef = useRef(0);
+  const intelligenceRequestRef = useRef(0);
+  const fittedDatasetRef = useRef('');
   const displaySymbol = compactSymbol(symbol);
+  const activeCandleKey = `${displaySymbol}:${timeframe}`;
+  const displayedChartError = candleDatasetKey === activeCandleKey ? chartError : '';
+  const displayedIntelligence = intelligenceSymbol === displaySymbol ? intelligence : null;
+  const displayedIntelligenceError = intelligenceSymbol === displaySymbol ? intelligenceError : '';
+  const mode = executionView(status);
+  const oandaLedgerAvailable = hasVerifiedOandaLedger(status);
+  const tradeLedgerAvailable = mode.paper || oandaLedgerAvailable;
   const selectedMarket = marketData?.[displaySymbol] || marketData?.[`${displaySymbol.slice(0, 3)}_${displaySymbol.slice(3)}`];
-  const selectedOpenTrades = (status?.openTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol);
-  const selectedClosedTrades = (status?.closedTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol);
+  const tradeEligible = (trade: any) => {
+    if (trade?.source === 'LOCAL_ORPHAN' || trade?.verificationStatus === 'NOT_VERIFIED') return false;
+    if (mode.paper) return trade?.source === 'PAPER';
+    return oandaLedgerAvailable && trade?.source === 'OANDA' && trade?.verificationStatus === 'VERIFIED';
+  };
+  const selectedOpenTrades = (status?.openTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol && tradeEligible(trade));
+  const selectedClosedTrades = (status?.closedTrades || []).filter((trade: any) => compactSymbol(trade.symbol) === displaySymbol && tradeEligible(trade));
+  const allVisibleOpenTrades = tradeLedgerAvailable ? (status?.openTrades || []).filter(tradeEligible) : [];
   const selectedHistory = [...selectedOpenTrades, ...selectedClosedTrades].slice(0, 12);
 
-  const loadCandles = () => fetchCandles(displaySymbol, timeframe, 250)
-    .then((data) => {
-      setCandles(Array.isArray(data) ? data : []);
-      setChartError(Array.isArray(data) && data.length > 0 ? '' : 'Candele OANDA non disponibili');
-    })
-    .catch(() => {
-      setCandles([]);
-      setChartError('Candele OANDA non disponibili');
-    });
-
   useEffect(() => {
-    let disposed = false;
-    const refresh = () => fetchCandles(displaySymbol, timeframe, 250)
+    if (configuredSymbols.length > 0 && !configuredSymbols.includes(displaySymbol)) {
+      setSymbol(configuredSymbols[0]);
+    }
+  }, [configuredKey, displaySymbol]);
+
+  const loadCandles = useCallback((clearBeforeLoad = false) => {
+    const requestedSymbol = displaySymbol;
+    const requestedTimeframe = timeframe;
+    const requestId = ++candleRequestRef.current;
+    if (clearBeforeLoad) {
+      setCandles([]);
+      setCandleDatasetKey(`${requestedSymbol}:${requestedTimeframe}`);
+      setChartError('');
+    }
+    if (!configuredKey || !configuredSymbols.includes(requestedSymbol)) {
+      setCandles([]);
+      setCandleDatasetKey(`${requestedSymbol}:${requestedTimeframe}`);
+      setChartError('Stato strumenti non disponibile');
+      return Promise.resolve();
+    }
+    return fetchCandles(requestedSymbol, requestedTimeframe, 250)
       .then((data) => {
-        if (disposed) return;
+        if (requestId !== candleRequestRef.current) return;
         setCandles(Array.isArray(data) ? data : []);
+        setCandleDatasetKey(`${requestedSymbol}:${requestedTimeframe}`);
         setChartError(Array.isArray(data) && data.length > 0 ? '' : 'Candele OANDA non disponibili');
       })
       .catch(() => {
-        if (disposed) return;
+        if (requestId !== candleRequestRef.current) return;
         setCandles([]);
+        setCandleDatasetKey(`${requestedSymbol}:${requestedTimeframe}`);
         setChartError('Candele OANDA non disponibili');
       });
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 15000);
-    return () => {
-      disposed = true;
-      window.clearInterval(timer);
-    };
-  }, [displaySymbol, timeframe]);
+  }, [configuredKey, displaySymbol, timeframe]);
 
   useEffect(() => {
-    let disposed = false;
-    const refresh = () => fetchIntelligence(displaySymbol)
+    void loadCandles(true);
+    const timer = window.setInterval(() => void loadCandles(false), 15000);
+    return () => {
+      candleRequestRef.current += 1;
+      window.clearInterval(timer);
+    };
+  }, [loadCandles]);
+
+  useEffect(() => {
+    const requestedSymbol = displaySymbol;
+    const requestId = ++intelligenceRequestRef.current;
+    setIntelligence(null);
+    setIntelligenceSymbol(requestedSymbol);
+    setIntelligenceError('');
+    if (!configuredKey || !configuredSymbols.includes(requestedSymbol)) {
+      setIntelligenceError('Stato strumenti non disponibile');
+      return;
+    }
+    const refresh = () => {
+      const refreshId = ++intelligenceRequestRef.current;
+      return fetchIntelligence(requestedSymbol)
       .then((data) => {
-        if (disposed) return;
+        if (refreshId !== intelligenceRequestRef.current) return;
+        if (compactSymbol(data?.symbol) !== requestedSymbol) {
+          setIntelligence(null);
+          setIntelligenceSymbol(requestedSymbol);
+          setIntelligenceError('Risposta multi-timeframe per simbolo non corrispondente');
+          return;
+        }
         setIntelligence(data);
+        setIntelligenceSymbol(requestedSymbol);
         setIntelligenceError('');
       })
       .catch(() => {
-        if (disposed) return;
+        if (refreshId !== intelligenceRequestRef.current) return;
         setIntelligence(null);
+        setIntelligenceSymbol(requestedSymbol);
         setIntelligenceError('Analisi multi-timeframe OANDA non disponibile');
       });
+    };
     void refresh();
     const timer = window.setInterval(() => void refresh(), 30000);
     return () => {
-      disposed = true;
+      if (requestId <= intelligenceRequestRef.current) intelligenceRequestRef.current += 1;
       window.clearInterval(timer);
     };
-  }, [displaySymbol]);
+  }, [configuredKey, displaySymbol]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
-    const chart = createChart(chartContainerRef.current, {
-      width: chartContainerRef.current.clientWidth,
-      height: 500,
+    const container = chartContainerRef.current;
+    const chart = createChart(container, {
+      width: container.clientWidth,
+      height: container.clientHeight || 500,
       layout: { background: { color: '#070b13' }, textColor: '#9aa7bd' },
       grid: { vertLines: { color: '#141b2a' }, horzLines: { color: '#141b2a' } },
       crosshair: { mode: CrosshairMode.Magnet },
@@ -158,10 +264,16 @@ export function ChartPage({ status, marketData }: { status: any; marketData: Rec
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     emaSeriesRef.current = ema;
-    const resize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth || 0 });
-    window.addEventListener('resize', resize);
+    const resize = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (width > 0 && height > 0) chart.applyOptions({ width, height });
+    };
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(container);
+    resize();
     return () => {
-      window.removeEventListener('resize', resize);
+      resizeObserver.disconnect();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
@@ -169,7 +281,7 @@ export function ChartPage({ status, marketData }: { status: any; marketData: Rec
     };
   }, []);
 
-  const formatted = useMemo(() => candles.flatMap((candle) => {
+  const formatted = useMemo(() => (candleDatasetKey === activeCandleKey ? candles : []).flatMap((candle) => {
     const timestamp = Math.floor(Date.parse(String(candle?.time || '')) / 1000);
     const open = Number(candle?.mid?.o);
     const high = Number(candle?.mid?.h);
@@ -177,14 +289,24 @@ export function ChartPage({ status, marketData }: { status: any; marketData: Rec
     const close = Number(candle?.mid?.c);
     if (![timestamp, open, high, low, close].every(Number.isFinite) || high < low || low <= 0) return [];
     return [{ time: timestamp as UTCTimestamp, open, high, low, close }];
-  }), [candles]);
+  }), [activeCandleKey, candleDatasetKey, candles]);
 
   useEffect(() => {
     const series = candleSeriesRef.current;
-    if (!series || !emaSeriesRef.current) return;
+    const ema = emaSeriesRef.current;
+    if (!series || !ema) return;
     series.setData(formatted);
-    emaSeriesRef.current.setData(emaSeries(formatted, 20));
-    if (formatted.length > 0) chartRef.current?.timeScale().fitContent();
+    ema.setData(emaSeries(formatted, 20));
+    const datasetKey = `${displaySymbol}:${timeframe}`;
+    if (formatted.length > 0 && fittedDatasetRef.current !== datasetKey) {
+      chartRef.current?.timeScale().fitContent();
+      fittedDatasetRef.current = datasetKey;
+    }
+  }, [displaySymbol, formatted, timeframe]);
+
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!series) return;
 
     const markers: any[] = [];
     if (layers.trades) {
@@ -243,73 +365,172 @@ export function ChartPage({ status, marketData }: { status: any; marketData: Rec
   }, [formatted, layers, selectedHistory, selectedMarket, selectedOpenTrades, displaySymbol]);
 
   const latestPrice = formatted.length > 0 ? formatted[formatted.length - 1].close : undefined;
+  const selectedPair = status?.pairedSignals?.[displaySymbol];
+  const selectedOpenTrade = selectedOpenTrades[0];
+  const snapshotMatchesSymbol = compactSymbol(status?.currentSymbol) === displaySymbol;
+  const mainOpenTrade = selectedOpenTrades.find((trade: any) => (trade.strategyVariant || 'MAIN') === 'MAIN');
+  const inverseOpenTrade = selectedOpenTrades.find((trade: any) => trade.strategyVariant === 'INVERSE');
+  const mainScenarioStop = mainOpenTrade?.stopLoss ?? (snapshotMatchesSymbol ? status?.stopLoss : undefined);
+  const mainScenarioTakeProfit = mainOpenTrade?.takeProfit ?? (snapshotMatchesSymbol ? status?.takeProfit : undefined);
+  const inverseScenarioStop = inverseOpenTrade?.stopLoss;
+  const inverseScenarioTakeProfit = inverseOpenTrade?.takeProfit;
+  const xauSymbol = 'XAUUSD';
+  const xauMarket = status?.marketData?.[xauSymbol] || marketData?.[xauSymbol];
+  const xauPair = status?.pairedSignals?.[xauSymbol];
+  const xauQuote = status?.livePrices?.[xauSymbol];
+  const xauPrice = xauQuote?.mid ?? xauMarket?.closePrice;
+  const displayMode = !mode.known
+    ? 'MODE N/A'
+    : mode.paper
+      ? 'PAPER'
+      : mode.ready && oandaLedgerAvailable ? mode.label : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
 
   return (
-    <div className="chart-page">
-      <section className="page-hero">
-        <div><p className="eyebrow">Real OANDA chart</p><h1>Prezzo, struttura e operazioni sul loro timestamp originale.</h1></div>
-        <div className={formatted.length > 0 ? 'system-active' : 'system-warning'}>{formatted.length > 0 ? `${formatted.length} OANDA CANDLES` : 'DATA UNAVAILABLE'}</div>
-      </section>
-
-      <section className="chart-workspace">
-        <div className="symbol-tabs">
-          {configuredSymbols.map((item: string) => <button key={item} className={item === displaySymbol ? 'chip active' : 'chip'} onClick={() => setSymbol(item)}>{item}</button>)}
-        </div>
-        <div className="time-tabs">
-          {TIMEFRAMES.map(([value, label]) => <button key={value} className={value === timeframe ? 'time-chip active' : 'time-chip'} onClick={() => setTimeframe(value)}>{label}</button>)}
-          <button className="time-chip ghost" onClick={() => void loadCandles()}>REFRESH</button>
-        </div>
-        <div className="chart-layer-controls">
-          {Object.entries(layers).map(([name, enabled]) => (
-            <button key={name} className={enabled ? 'time-chip active' : 'time-chip'} onClick={() => setLayers((current) => ({ ...current, [name]: !enabled }))}>
-              {name.toUpperCase()} {enabled ? 'ON' : 'OFF'}
-            </button>
-          ))}
-        </div>
-        <div className="chart-statbar">
-          <strong>{displaySymbol}</strong>
-          <span>{timeframe}</span>
-          <span>Price {price(latestPrice, displaySymbol)}</span>
-          <span>{selectedOpenTrades.length} open</span>
-          <span>{selectedClosedTrades.length} closed</span>
-          <span>{selectedMarket?.structureSource || (formatted.length ? 'OANDA_CANDLES' : 'N/A')}</span>
-        </div>
-        <div className="chart-frame">
-          <div className="chart-price-tag">{price(latestPrice, displaySymbol)}</div>
-          <div className="chart-canvas" ref={chartContainerRef} />
-          {chartError && <div className="chart-empty">{chartError}</div>}
-        </div>
-      </section>
-
-      <section className="panel analytics-card-wide">
-        <div className="panel-title"><h2>Multi-timeframe intelligence</h2><span>{intelligence ? `${intelligence.availableFrames}/4 OANDA frames · ${intelligence.consensus}` : 'N/A'}</span></div>
-        {intelligence ? (
-          <div className="indicator-grid">
-            {(intelligence.frames || []).map((frame: any) => (
-              <div key={frame.timeframe}>
-                <strong>{frame.timeframe} · {frame.available ? frame.direction : 'N/A'}</strong>
-                <span>{frame.available ? `${frame.structure || 'N/A'} · BOS ${frame.bos || 'N/A'} · ${frame.alignmentScore ?? 'N/A'}%` : frame.reason || 'DATI NON DISPONIBILI'}</span>
+    <div className="trading-room-page">
+      <section className="trading-room-grid">
+        <aside className="cockpit-panel scanner-rail">
+          <header className="cockpit-panel__header">
+            <div><span>REAL MARKET</span><h2>SCANNER</h2></div>
+            <b>{configuredSymbols.length || 'N/A'}</b>
+          </header>
+          <div className="scanner-rail__rows">
+            {configuredSymbols.map((item) => {
+              const market = status?.marketData?.[item] || marketData?.[item];
+              const pair = status?.pairedSignals?.[item];
+              const quote = status?.livePrices?.[item];
+              const action = pair?.main?.action || status?.lastSignals?.[item]?.action;
+              const scoreSource = pair?.main || status?.lastSignals?.[item];
+              return (
+                <button key={item} className={item === displaySymbol ? 'active' : ''} onClick={() => setSymbol(item)}>
+                  <strong>{item}</strong>
+                  <span className={action === 'BUY' ? 'positive' : action === 'SELL' ? 'negative' : 'neutral'}>{action || market?.trend || 'N/A'}</span>
+                  <b>{setupScoreText(scoreSource)}</b>
+                  <small>{price(quote?.mid ?? market?.closePrice, item)}</small>
+                </button>
+              );
+            })}
+            {configuredSymbols.length === 0 && <div className="dense-empty">SCANNER N/A</div>}
+          </div>
+          <div className="scanner-filter">
+            <span>TIMEFRAME</span>
+            <div>{TIMEFRAMES.map(([value, label]) => <button key={value} className={value === timeframe ? 'active' : ''} onClick={() => setTimeframe(value)}>{label}</button>)}</div>
+          </div>
+          <section className="rail-positions">
+            <header><span>POSIZIONI APERTE</span><b>{tradeLedgerAvailable ? allVisibleOpenTrades.length : 'N/A'}</b></header>
+            {allVisibleOpenTrades.slice(0, 6).map((trade: any) => (
+              <div key={trade.id}>
+                <strong>{trade.symbol}</strong>
+                <b className={trade.side === 'BUY' ? 'positive' : 'negative'}>{trade.side}</b>
+                <span>{price(trade.entryPrice, trade.symbol)}</span>
+                <em>{tradePnl(trade)}</em>
               </div>
             ))}
-          </div>
-        ) : <div className="empty-state">{intelligenceError || 'DATI NON DISPONIBILI'}</div>}
+            {allVisibleOpenTrades.length === 0 && <div className="dense-empty">{tradeLedgerAvailable ? 'NESSUNA POSIZIONE' : 'LEDGER N/A'}</div>}
+          </section>
+        </aside>
+
+        <main className="trading-room-center">
+          <article className="cockpit-panel pro-chart-panel">
+            <header className="pro-chart-panel__header">
+              <div className="instrument-title">
+                <span>{displaySymbol || 'N/A'}</span>
+                <strong>{price(latestPrice, displaySymbol)}</strong>
+                <small>{selectedMarket?.trend || 'TREND N/A'} · {selectedMarket?.structureBias || 'STRUCTURE N/A'}</small>
+              </div>
+              <div className="chart-control-row">
+                {TIMEFRAMES.map(([value, label]) => <button key={value} className={value === timeframe ? 'active' : ''} onClick={() => setTimeframe(value)}>{label}</button>)}
+                {Object.entries(layers).map(([name, enabled]) => (
+                  <button key={name} className={enabled ? 'active layer' : 'layer'} onClick={() => setLayers((current) => ({ ...current, [name]: !enabled }))}>{name}</button>
+                ))}
+                <button onClick={() => void loadCandles(false)}>↻</button>
+              </div>
+            </header>
+            <div className="pro-chart-statbar">
+              <span>O {formatted.length ? price(formatted[formatted.length - 1].open, displaySymbol) : 'N/A'}</span>
+              <span>H {formatted.length ? price(formatted[formatted.length - 1].high, displaySymbol) : 'N/A'}</span>
+              <span>L {formatted.length ? price(formatted[formatted.length - 1].low, displaySymbol) : 'N/A'}</span>
+              <span>C {price(latestPrice, displaySymbol)}</span>
+              <strong>{formatted.length ? `${formatted.length} OANDA CANDLES` : 'DATA N/A'}</strong>
+            </div>
+            <div className="chart-frame pro-chart-frame">
+              {finite(latestPrice) && latestPrice > 0 && <div className="chart-price-tag">{price(latestPrice, displaySymbol)}</div>}
+              <div className="chart-canvas" ref={chartContainerRef} />
+              {displayedChartError && <div className="chart-empty">{displayedChartError}</div>}
+            </div>
+          </article>
+
+          <section className="scenario-grid">
+            <ScenarioCard title={`SCENARIO ${selectedPair?.main?.action || 'MAIN'}`} lane={selectedPair?.main} pair={selectedPair} symbol={displaySymbol} stopLoss={mainScenarioStop} takeProfit={mainScenarioTakeProfit} />
+            <ScenarioCard title={`SCENARIO ${selectedPair?.inverse?.action || 'INVERSE'}`} lane={selectedPair?.inverse} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
+          </section>
+
+          <section className="cockpit-panel mtf-command-strip">
+            <header className="cockpit-panel__header">
+              <div><span>MULTI-TIMEFRAME</span><h2>ALIGNMENT</h2></div>
+              <b>{displayedIntelligence ? `${displayedIntelligence.availableFrames}/4 · ${displayedIntelligence.consensus}` : 'N/A'}</b>
+            </header>
+            <div>
+              {(displayedIntelligence?.frames || []).map((frame: any) => (
+                <article key={frame.timeframe}>
+                  <span>{frame.timeframe}</span>
+                  <strong className={frame.direction === 'BULLISH' ? 'positive' : frame.direction === 'BEARISH' ? 'negative' : 'neutral'}>{frame.available ? frame.direction : 'N/A'}</strong>
+                  <small>{frame.available ? `${frame.structure || 'N/A'} · ALIGN ${finite(frame.alignmentScore) ? `${Math.round(frame.alignmentScore)}/100` : 'N/A'}` : frame.reason || 'N/A'}</small>
+                </article>
+              ))}
+              {!displayedIntelligence && <div className="dense-empty">{displayedIntelligenceError || 'MTF DATA N/A'}</div>}
+            </div>
+          </section>
+        </main>
+
+        <aside className="structure-rail">
+          <article className="cockpit-panel xau-structure-panel">
+            <header className="cockpit-panel__header">
+              <div><span>XAUUSD GOLD</span><h2>{price(xauPrice, xauSymbol)}</h2></div>
+              <b>ANALYSIS ONLY</b>
+            </header>
+            <div className="xau-rail-targets">
+              <div><span>Direction</span><strong>{xauPair?.main?.action || 'N/A'}</strong></div>
+              <div><span>Setup score</span><strong>{setupScoreText(xauPair?.main)}</strong></div>
+              <div><span>Structure</span><strong>{xauMarket?.structureBias || 'N/A'}</strong></div>
+              <div><span>Trend</span><strong>{xauMarket?.trend || 'N/A'}</strong></div>
+            </div>
+            <section>
+              <h3>STRUTTURA MERCATO</h3>
+              <p>{xauPair?.main?.reasoning || 'DATI STRUTTURALI NON DISPONIBILI'}</p>
+            </section>
+            <section>
+              <h3>LIVELLI CHIAVE</h3>
+              <dl className="key-level-list">
+                <div><dt>Swing high</dt><dd>{price(xauMarket?.swingHigh, xauSymbol)}</dd></div>
+                <div><dt>Swing low</dt><dd>{price(xauMarket?.swingLow, xauSymbol)}</dd></div>
+                {(xauMarket?.resistanceLevels || []).slice(0, 3).map((level: number, index: number) => <div key={`r-${level}`}><dt>Resistance R{index + 1}</dt><dd>{price(level, xauSymbol)}</dd></div>)}
+                {(xauMarket?.supportLevels || []).slice(0, 3).map((level: number, index: number) => <div key={`s-${level}`}><dt>Support S{index + 1}</dt><dd>{price(level, xauSymbol)}</dd></div>)}
+              </dl>
+            </section>
+          </article>
+
+          <article className="cockpit-panel active-trade-proof">
+            <header className="cockpit-panel__header"><div><span>SELECTED SYMBOL</span><h2>TRADE PROOF</h2></div><b>{displayMode}</b></header>
+            {selectedOpenTrade ? (
+              <dl>
+                <div><dt>Trade ID</dt><dd>{selectedOpenTrade.oandaTradeId || selectedOpenTrade.signalId || 'N/A'}</dd></div>
+                <div><dt>Side</dt><dd>{selectedOpenTrade.side}</dd></div>
+                <div><dt>Entry</dt><dd>{price(selectedOpenTrade.entryPrice, displaySymbol)}</dd></div>
+                <div><dt>SL</dt><dd>{price(selectedOpenTrade.stopLoss, displaySymbol)}</dd></div>
+                <div><dt>TP</dt><dd>{price(selectedOpenTrade.takeProfit, displaySymbol)}</dd></div>
+                <div><dt>Source</dt><dd>{selectedOpenTrade.source}</dd></div>
+              </dl>
+            ) : <div className="dense-empty">{tradeLedgerAvailable ? 'NESSUNA POSIZIONE SELEZIONATA' : 'LEDGER N/A'}</div>}
+          </article>
+        </aside>
       </section>
 
-      <section className="panel chart-history-panel">
-        <div className="panel-title"><h2>Operazioni {displaySymbol}</h2><span>timestamp non riposizionati</span></div>
-        <div className="compact-history">
-          {selectedHistory.length > 0 ? selectedHistory.map((trade: any) => (
-            <div key={trade.id} className="compact-row">
-              <span className={trade.side === 'BUY' ? 'win' : 'loss'}>{trade.side || 'N/A'}</span>
-              <span>{dateTime(trade.openedAt)}</span>
-              <span>@ {price(trade.entryPrice, displaySymbol)}</span>
-              <span>{trade.source || 'N/A'} · {trade.verificationStatus || 'N/A'}</span>
-              <strong>{tradePnl(trade)}</strong>
-              <small>{trade.oandaTradeId ? `OANDA TRADE ID ${trade.oandaTradeId}` : trade.signalId || trade.id || 'N/A'}</small>
-            </div>
-          )) : <div className="empty-state">Nessuna operazione verificabile per questo strumento.</div>}
-        </div>
-      </section>
+      <footer className="trading-room-status">
+        <span>MODE <b>{displayMode}</b></span>
+        <span>OANDA <b>{status?.oandaConnected ? 'CONNECTED' : 'DISCONNECTED'}</b></span>
+        <span>FEED <b>{status?.priceFeedStatus || 'N/A'}</b></span>
+        <span>LAST TICK <b>{status?.lastPriceAt ? dateTime(status.lastPriceAt) : 'N/A'}</b></span>
+      </footer>
     </div>
   );
 }

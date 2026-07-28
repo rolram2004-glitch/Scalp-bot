@@ -597,7 +597,7 @@ td {
   padding: 7px 9px;
   position: absolute;
   right: 0;
-  top: 508px;
+  top: 8px;
   z-index: 4;
 }
 
@@ -606,8 +606,20 @@ td {
 }
 
 .chart-empty {
+  background: rgba(7, 11, 19, 0.9);
   color: #ff9bad;
+  left: 12px;
   padding: 14px;
+  position: absolute;
+  top: 12px;
+  z-index: 5;
+}
+
+.empty-inline {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 10px 0;
 }
 
 .chart-legend {
@@ -1185,6 +1197,10 @@ td {
   .compact-row {
     align-items: start;
     grid-template-columns: 1fr;
+  }
+
+  .system-active, .system-offline, .system-warning {
+    white-space: normal;
   }
 
   .chart-frame, .chart-canvas {

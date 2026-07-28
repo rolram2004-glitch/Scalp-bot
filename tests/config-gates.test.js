@@ -8,7 +8,16 @@ function readConfig(env) {
     OANDA_ORDER_EXECUTION_ENABLED: process.env.OANDA_ORDER_EXECUTION_ENABLED,
     OANDA_LIVE_CONFIRMATION: process.env.OANDA_LIVE_CONFIRMATION,
     LIVE_TRADING_ENABLED: process.env.LIVE_TRADING_ENABLED,
-    LIVE_EXECUTION_VARIANT: process.env.LIVE_EXECUTION_VARIANT
+    LIVE_EXECUTION_VARIANT: process.env.LIVE_EXECUTION_VARIANT,
+    MAX_OPEN_POSITIONS: process.env.MAX_OPEN_POSITIONS,
+    MAX_NEW_TRADES_PER_CYCLE: process.env.MAX_NEW_TRADES_PER_CYCLE,
+    MAX_DAILY_TRADES: process.env.MAX_DAILY_TRADES,
+    MAX_RISK_PERCENT: process.env.MAX_RISK_PERCENT,
+    MAX_DAILY_LOSS: process.env.MAX_DAILY_LOSS,
+    AI_PROVIDER: process.env.AI_PROVIDER,
+    AI_CONFIRMATION_REQUIRED: process.env.AI_CONFIRMATION_REQUIRED,
+    AI_MIN_CONFIDENCE: process.env.AI_MIN_CONFIDENCE,
+    GEMINI_MODEL: process.env.GEMINI_MODEL
   };
   Object.assign(process.env, env);
   delete require.cache[require.resolve("../src/config")];
@@ -82,5 +91,46 @@ test("missing execution lane and OANDA_LIVE without explicit confirmation fail c
   assert.equal(unconfirmedLive.OANDA_ORDER_EXECUTION_ENABLED, true);
   assert.equal(unconfirmedLive.LIVE_TRADING_ENABLED, false);
   assert.equal(unconfirmedLive.OANDA_LIVE_CONFIRMED, false);
+});
+
+test("invalid numeric risk limits fall back to bounded safe values", () => {
+  const config = readConfig({
+    TRADING_MODE: "PAPER",
+    MAX_OPEN_POSITIONS: "not-a-number",
+    MAX_NEW_TRADES_PER_CYCLE: "999",
+    MAX_DAILY_TRADES: "-4",
+    MAX_RISK_PERCENT: "invalid",
+    MAX_DAILY_LOSS: "invalid"
+  });
+
+  assert.equal(config.MAX_OPEN_TRADES, 15);
+  assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 6);
+  assert.equal(config.MAX_DAILY_TRADES, 1);
+  assert.equal(config.RISK_PERCENT, 0.25);
+  assert.equal(config.MAX_DAILY_LOSS, 50);
+});
+
+test("Gemini remains disabled by default and parses only explicit safe configuration", () => {
+  const disabled = readConfig({
+    TRADING_MODE: "PAPER",
+    AI_PROVIDER: "unknown",
+    AI_CONFIRMATION_REQUIRED: "false",
+    GEMINI_MODEL: "../../bad-model"
+  });
+  assert.equal(disabled.AI_PROVIDER, "DISABLED");
+  assert.equal(disabled.AI_CONFIRMATION_REQUIRED, false);
+  assert.equal(disabled.GEMINI_MODEL, "gemini-3.5-flash-lite");
+
+  const configured = readConfig({
+    TRADING_MODE: "PAPER",
+    AI_PROVIDER: "GEMINI",
+    AI_CONFIRMATION_REQUIRED: "true",
+    AI_MIN_CONFIDENCE: "72",
+    GEMINI_MODEL: "gemini-3.6-flash"
+  });
+  assert.equal(configured.AI_PROVIDER, "GEMINI");
+  assert.equal(configured.AI_CONFIRMATION_REQUIRED, true);
+  assert.equal(configured.AI_MIN_CONFIDENCE, 72);
+  assert.equal(configured.GEMINI_MODEL, "gemini-3.6-flash");
 });
 

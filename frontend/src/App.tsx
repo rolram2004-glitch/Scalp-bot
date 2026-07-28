@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom';
 import { TerminalPage } from './pages/Terminal';
 import { ChartPage } from './pages/Chart';
 import { HistoryPage } from './pages/History';
 import { AnalyticsPage } from './pages/Analytics';
 import { SetupPage } from './pages/Setup';
+import { XauPage } from './pages/Xau';
 import { fetchStatus, fetchAnalytics, fetchMarketData, fetchNews, fetchOandaStatus, startBot } from './services/api';
 import { OandaStatus, StatusSnapshot } from './types';
+import { executionView, hasFullFreshCoverage } from './trading-state';
 
 function isFresh(value?: string, maximumAgeMs = 15000) {
   if (!value) return false;
@@ -21,23 +23,63 @@ function clock(value?: string) {
   return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleTimeString();
 }
 
+function NavIcon({ name }: { name: 'dashboard' | 'chart' | 'history' | 'analytics' | 'xau' | 'setup' }) {
+  const paths: Record<typeof name, ReactNode> = {
+    dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    chart: <><path d="M4 19V9" /><path d="M9 16V5" /><path d="M14 20V11" /><path d="M19 14V3" /></>,
+    history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    analytics: <><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" /></>,
+    xau: <><path d="M12 3l8 5v8l-8 5-8-5V8z" /><path d="M8 10h8M9 14h6" /></>,
+    setup: <><circle cx="12" cy="12" r="3" /><path d="M19 13.5v-3l-2-.7-.6-1.4.9-1.9-2.1-2.1-1.9.9-1.4-.6L10.5 2h-3l-.7 2-1.4.6-1.9-.9-2.1 2.1.9 1.9-.6 1.4-2 .7v3l2 .7.6 1.4-.9 1.9 2.1 2.1 1.9-.9 1.4.6.7 2h3l.7-2 1.4-.6 1.9.9 2.1-2.1-.9-1.9.6-1.4z" transform="scale(.8) translate(3 3)" /></>
+  };
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
+}
+
 function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | null; oandaStatus: OandaStatus; reload: () => void }) {
   const [starting, setStarting] = useState(false);
+  const localControls = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
+  const mode = executionView(status);
   const accountConnected = oandaStatus.connected === true;
-  const feedConnected = accountConnected && status?.priceFeedStatus === 'CONNECTED' && isFresh(status.lastPriceAt);
-  const liveRequested = status?.tradingMode === 'LIVE';
-  const liveReady = Boolean(
-    liveRequested &&
-    status?.liveTradingEnabled &&
-    status?.liveExecutionVariantValid &&
+  const accountStatusUnavailable = oandaStatus.reason === 'checking' || oandaStatus.reason === 'status_request_failed';
+  const fullCoverage = hasFullFreshCoverage(status);
+  const feedConnected = Boolean(
+    accountConnected &&
+    fullCoverage &&
+    isFresh(status?.lastPriceAt)
+  );
+  const oandaExecutionReady = Boolean(
+    mode.oanda &&
+    mode.ready &&
+    status?.reconciliationStatus === 'VERIFIED' &&
     accountConnected &&
     feedConnected
   );
-  const modeLabel = liveReady
-    ? `LIVE OANDA ${status?.liveExecutionVariant}`
-    : liveRequested
-      ? 'LIVE BLOCKED'
-      : 'PAPER';
+  const modeLabel = !mode.known
+    ? 'MODE UNAVAILABLE'
+    : mode.paper
+      ? 'PAPER'
+      : oandaExecutionReady
+        ? mode.label
+        : mode.demo
+          ? 'OANDA DEMO BLOCKED'
+          : 'OANDA LIVE BLOCKED';
+  const feedLabel = status === null
+    ? 'UNAVAILABLE'
+    : !accountConnected
+      ? accountStatusUnavailable ? 'UNAVAILABLE' : 'DISCONNECTED'
+      : feedConnected
+        ? 'FULL / FRESH'
+        : status.priceFeedStatus === 'PARTIAL'
+          ? 'PARTIAL'
+          : isFresh(status.lastPriceAt) ? 'PARTIAL / STALE' : 'STALE / N/A';
+  const navigation = [
+    { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
+    { to: '/chart', label: 'Grafico', icon: 'chart' as const },
+    { to: '/history', label: 'Storico', icon: 'history' as const },
+    { to: '/analytics', label: 'Analisi', icon: 'analytics' as const },
+    { to: '/xauusd', label: 'XAUUSD', icon: 'xau' as const },
+    { to: '/setup', label: 'Setup', icon: 'setup' as const }
+  ];
 
   async function handleStart() {
     setStarting(true);
@@ -51,46 +93,64 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
 
   return (
     <>
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="brand-mark">GR</div>
-          <div>
-            <div className="brand">GEMMO REMONDATA BOT</div>
-            <div className="brand-subtitle">OANDA Practice · real market intelligence · verified execution gates</div>
+      <aside className="cockpit-sidebar">
+        <div className="cockpit-brand">
+          <span className="cockpit-brand__bolt">◆</span>
+          <strong>GEMMO</strong>
+          <small>BOT</small>
+        </div>
+        <nav className="cockpit-nav" aria-label="Navigazione principale">
+          {navigation.map((item) => (
+            <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => isActive ? 'active' : ''}>
+              <NavIcon name={item.icon} />
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </nav>
+        <div className="cockpit-sidebar__foot">
+          <span className={status?.isRunning ? 'live-dot on' : 'live-dot'} />
+          <small>{status === null ? 'N/A' : status.isRunning ? 'RUN' : 'STOP'}</small>
+        </div>
+      </aside>
+
+      <header className="cockpit-header">
+        <div className="cockpit-header__identity">
+          <strong>GEMMO REMONDATA BOT</strong>
+          <span>REAL-MARKET COMMAND CENTER</span>
+        </div>
+
+        <div className="cockpit-header__telemetry">
+          <div className="header-telemetry">
+            <span>SCANNER</span>
+            <strong className={status?.isRunning ? 'positive' : ''}>{status === null ? 'N/A' : status.isRunning ? 'ONLINE' : 'STOPPED'}</strong>
+          </div>
+          <div className="header-telemetry">
+            <span>OANDA</span>
+            <strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'AUTH' : accountStatusUnavailable ? 'N/A' : 'OFFLINE'}</strong>
+          </div>
+          <div className="header-telemetry header-telemetry--mode">
+            <span>MODE</span>
+            <strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong>
+          </div>
+          <div className="header-telemetry">
+            <span>FEED</span>
+            <strong className={feedConnected ? 'positive' : 'warning-text'}>{feedLabel}</strong>
+          </div>
+          <div className="header-telemetry">
+            <span>LAST TICK</span>
+            <strong>{clock(status?.lastPriceAt)}</strong>
           </div>
         </div>
 
-        <div className="status-group">
-          <div className={status?.isRunning ? 'status-pill success' : 'status-pill muted'}>
-            <span>SCANNER</span><strong>{status === null ? 'UNAVAILABLE' : status.isRunning ? 'RUNNING' : 'STOPPED'}</strong>
-          </div>
-          <div className={accountConnected ? 'status-pill success' : 'status-pill warning'}>
-            <span>OANDA ACCOUNT</span><strong>{accountConnected ? 'AUTHENTICATED' : 'DISCONNECTED'}</strong>
-          </div>
-          <div className={feedConnected ? 'status-pill success' : 'status-pill warning'}>
-            <span>MARKET FEED</span><strong>{feedConnected ? 'FRESH' : accountConnected ? 'STALE / N/A' : 'DISCONNECTED'}</strong>
-          </div>
-          <div className={liveReady ? 'status-pill success' : liveRequested ? 'status-pill warning' : 'status-pill'}>
-            <span>EXECUTION</span><strong>{modeLabel}</strong>
-          </div>
-          <div className="status-pill">
-            <span>LAST PRICE</span><strong>{clock(status?.lastPriceAt)}</strong>
-          </div>
-        </div>
-
-        <div className="button-group">
-          <button className="button primary" onClick={handleStart} disabled={starting}>{starting ? 'STARTING…' : 'START SCANNER'}</button>
-          <button className="button" onClick={reload}>REFRESH</button>
+        <div className="cockpit-header__actions">
+          <button className="touch-button accent-button" onClick={handleStart} disabled={!localControls || starting || status?.isRunning === true}>
+            {!localControls
+              ? status?.isRunning ? 'SCANNER ATTIVO' : 'CONTROLLO RAILWAY'
+              : starting ? 'AVVIO…' : status?.isRunning ? 'SCANNER ATTIVO' : 'AVVIA'}
+          </button>
+          <button className="touch-button icon-button" onClick={reload} aria-label="Aggiorna dati">↻</button>
         </div>
       </header>
-
-      <nav className="navigation">
-        <NavLink to="/" end>TERMINAL</NavLink>
-        <NavLink to="/chart">CHART</NavLink>
-        <NavLink to="/history">HISTORY</NavLink>
-        <NavLink to="/analytics">ANALYTICS</NavLink>
-        <NavLink to="/setup">SETUP</NavLink>
-      </nav>
     </>
   );
 }
@@ -180,14 +240,15 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="app-container">
+      <div className="app-container cockpit-layout">
         <AppShell status={status} oandaStatus={oandaStatus} reload={reload} />
-        <main className="main-content">
+        <main className="main-content cockpit-content">
           <Routes>
             <Route path="/" element={<TerminalPage status={status} marketData={marketData} news={news} oandaStatus={oandaStatus} />} />
             <Route path="/chart" element={<ChartPage status={status} marketData={marketData} />} />
             <Route path="/history" element={<HistoryPage status={status} />} />
             <Route path="/analytics" element={<AnalyticsPage analytics={analytics} status={status} />} />
+            <Route path="/xauusd" element={<XauPage status={status} />} />
             <Route path="/setup" element={<SetupPage status={status} news={news} oandaStatus={oandaStatus} />} />
           </Routes>
         </main>

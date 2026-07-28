@@ -11,10 +11,12 @@ function buildOandaMock(overrides = {}) {
     getAccount: 0,
     getOpenTrades: 0,
     getOpenPositions: 0,
+    getPendingOrders: 0,
     getAccountInstrument: 0,
     getPricingContext: 0,
     createMarketOrder: 0,
-    getTrade: 0
+    getTrade: 0,
+    closeTrade: 0
   };
 
   const values = {
@@ -32,6 +34,7 @@ function buildOandaMock(overrides = {}) {
         instrument: "EUR_USD",
         status: "tradeable",
         tradeable: true,
+        time: new Date().toISOString(),
         asks: [{ price: "1.10010" }],
         bids: [{ price: "1.10000" }],
         quoteHomeConversionFactors: {
@@ -67,11 +70,31 @@ function buildOandaMock(overrides = {}) {
     },
     async getOpenTrades() {
       calls.getOpenTrades += 1;
+      if (calls.createMarketOrder > 0 && Object.hasOwn(values, "postFillTrades")) {
+        return typeof values.postFillTrades === "function"
+          ? values.postFillTrades(calls)
+          : values.postFillTrades;
+      }
       return values.openTrades;
     },
     async getOpenPositions() {
       calls.getOpenPositions += 1;
+      if (calls.createMarketOrder > 0) {
+        if (Object.hasOwn(values, "postFillPositions")) return values.postFillPositions;
+        const signedUnits = calls.lastOrder?.side === "SELL"
+          ? -Number(calls.lastOrder?.units)
+          : Number(calls.lastOrder?.units);
+        return [{
+          instrument: calls.lastOrder?.instrument,
+          long: { units: String(Math.max(0, signedUnits)) },
+          short: { units: String(Math.min(0, signedUnits)) }
+        }];
+      }
       return values.openPositions;
+    },
+    async getPendingOrders() {
+      calls.getPendingOrders += 1;
+      return values.pendingOrders || [];
     },
     async getAccountInstrument() {
       calls.getAccountInstrument += 1;
@@ -90,6 +113,13 @@ function buildOandaMock(overrides = {}) {
     async getTrade(tradeId) {
       calls.getTrade += 1;
       calls.lastTradeId = tradeId;
+      if (calls.closed) {
+        return {
+          ...values.verifiedTrade,
+          state: values.closeVerificationState || "CLOSED",
+          closeTime: "2026-07-24T12:00:01.000Z"
+        };
+      }
       return {
         ...values.verifiedTrade,
         clientExtensions: Object.hasOwn(values.verifiedTrade || {}, "clientExtensions")
@@ -102,6 +132,14 @@ function buildOandaMock(overrides = {}) {
           ? values.verifiedTrade.takeProfitOrder
           : { id: "301", state: "PENDING", price: calls.lastOrder?.takeProfit }
       };
+    },
+    async closeTrade(tradeId, units) {
+      calls.closeTrade += 1;
+      calls.closedTradeId = tradeId;
+      calls.closedUnits = units;
+      if (values.closeError) throw values.closeError;
+      calls.closed = true;
+      return { orderFillTransaction: { tradesClosed: [{ tradeID: tradeId }] } };
     }
   };
 
@@ -128,6 +166,8 @@ test("PAPER mode blocks createMarketOrder before any HTTP request", async () => 
   const axios = require("axios");
   const originalPost = axios.post;
   const oldMode = process.env.TRADING_MODE;
+  const oldEnvironment = process.env.OANDA_ENVIRONMENT;
+  const oldExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED;
   const oldLiveEnabled = process.env.LIVE_TRADING_ENABLED;
   let postCalls = 0;
 
@@ -145,13 +185,17 @@ test("PAPER mode blocks createMarketOrder before any HTTP request", async () => 
 
     await assert.rejects(
       () => paperOanda.createMarketOrder({ instrument: "EUR_USD", side: "BUY", units: 1 }),
-      /LIVE_ORDER_BLOCKED_BY_CONFIGURATION/
+      /OANDA_ORDER_BLOCKED_IN_PAPER/
     );
     assert.equal(postCalls, 0);
   } finally {
     axios.post = originalPost;
     if (oldMode === undefined) delete process.env.TRADING_MODE;
     else process.env.TRADING_MODE = oldMode;
+    if (oldEnvironment === undefined) delete process.env.OANDA_ENVIRONMENT;
+    else process.env.OANDA_ENVIRONMENT = oldEnvironment;
+    if (oldExecutionEnabled === undefined) delete process.env.OANDA_ORDER_EXECUTION_ENABLED;
+    else process.env.OANDA_ORDER_EXECUTION_ENABLED = oldExecutionEnabled;
     if (oldLiveEnabled === undefined) delete process.env.LIVE_TRADING_ENABLED;
     else process.env.LIVE_TRADING_ENABLED = oldLiveEnabled;
     delete require.cache[require.resolve("../src/config")];
@@ -193,9 +237,13 @@ test("missing verified protective orders never returns OPENED", async () => {
 
   const result = await executeVerifiedMarketOrder(request(oanda));
 
-  assert.deepEqual(result, { status: "REJECTED", reason: "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED" });
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED_EXPOSURE_CLOSED"
+  });
   assert.equal(calls.createMarketOrder, 1);
-  assert.equal(calls.getTrade, 1);
+  assert.equal(calls.getTrade, 2);
+  assert.equal(calls.closeTrade, 1);
   assert.equal(Object.hasOwn(result, "trade"), false);
 });
 
@@ -203,12 +251,16 @@ test("OANDA wrapper blocks a strategy variant that differs from configuration", 
   const axios = require("axios");
   const originalPost = axios.post;
   const oldMode = process.env.TRADING_MODE;
+  const oldEnvironment = process.env.OANDA_ENVIRONMENT;
+  const oldExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED;
   const oldLiveEnabled = process.env.LIVE_TRADING_ENABLED;
   const oldVariant = process.env.LIVE_EXECUTION_VARIANT;
   let postCalls = 0;
 
   try {
-    process.env.TRADING_MODE = "LIVE";
+    process.env.TRADING_MODE = "OANDA_DEMO";
+    process.env.OANDA_ENVIRONMENT = "PRACTICE";
+    process.env.OANDA_ORDER_EXECUTION_ENABLED = "true";
     process.env.LIVE_TRADING_ENABLED = "true";
     process.env.LIVE_EXECUTION_VARIANT = "MAIN";
     axios.post = async () => {
@@ -235,6 +287,10 @@ test("OANDA wrapper blocks a strategy variant that differs from configuration", 
     axios.post = originalPost;
     if (oldMode === undefined) delete process.env.TRADING_MODE;
     else process.env.TRADING_MODE = oldMode;
+    if (oldEnvironment === undefined) delete process.env.OANDA_ENVIRONMENT;
+    else process.env.OANDA_ENVIRONMENT = oldEnvironment;
+    if (oldExecutionEnabled === undefined) delete process.env.OANDA_ORDER_EXECUTION_ENABLED;
+    else process.env.OANDA_ORDER_EXECUTION_ENABLED = oldExecutionEnabled;
     if (oldLiveEnabled === undefined) delete process.env.LIVE_TRADING_ENABLED;
     else process.env.LIVE_TRADING_ENABLED = oldLiveEnabled;
     if (oldVariant === undefined) delete process.env.LIVE_EXECUTION_VARIANT;
@@ -319,8 +375,12 @@ test("trade tag mismatch rejects ownership verification", async () => {
   });
   const result = await executeVerifiedMarketOrder(request(oanda));
 
-  assert.deepEqual(result, { status: "REJECTED", reason: "OANDA_TRADE_VERIFICATION_MISMATCH" });
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_TRADE_VERIFICATION_MISMATCH_EXPOSURE_CLOSED"
+  });
   assert.equal(calls.createMarketOrder, 1);
+  assert.equal(calls.closeTrade, 1);
 });
 
 test("concurrent opposite requests on one symbol submit at most one OANDA order", async () => {
@@ -371,18 +431,31 @@ test("an OANDA reject never returns a local trade", async () => {
   assert.equal(calls.getTrade, 0);
 });
 
-for (const [label, orderResponse] of [
-  ["order ID", { orderFillTransaction: { tradeOpened: { tradeID: "200" } } }],
-  ["trade ID", { orderCreateTransaction: { id: "100" }, orderFillTransaction: {} }]
+for (const [label, orderResponse, reason, tradeReads, closeCalls] of [
+  [
+    "order ID",
+    { orderFillTransaction: { tradeOpened: { tradeID: "200" } } },
+    "OANDA_ORDER_ID_NOT_VERIFIED_EXPOSURE_CLOSED",
+    1,
+    1
+  ],
+  [
+    "trade ID",
+    { orderCreateTransaction: { id: "100" }, orderFillTransaction: {} },
+    "OANDA_FILL_NOT_VERIFIED_EMERGENCY_CLOSE_NOT_VERIFIED",
+    0,
+    0
+  ]
 ]) {
   test(`missing ${label} rejects without creating a local trade`, async () => {
     const { oanda, calls } = buildOandaMock({ orderResponse });
 
     const result = await executeVerifiedMarketOrder(request(oanda));
 
-    assert.deepEqual(result, { status: "REJECTED", reason: "OANDA_FILL_NOT_VERIFIED" });
+    assert.deepEqual(result, { status: "REJECTED", reason });
     assert.equal(Object.hasOwn(result, "trade"), false);
-    assert.equal(calls.getTrade, 0);
+    assert.equal(calls.getTrade, tradeReads);
+    assert.equal(calls.closeTrade, closeCalls);
   });
 }
 
@@ -398,10 +471,11 @@ for (const [label, verifiedTrade] of [
 
     assert.deepEqual(result, {
       status: "REJECTED",
-      reason: "OANDA_TRADE_VERIFICATION_MISMATCH"
+      reason: "OANDA_TRADE_VERIFICATION_MISMATCH_EXPOSURE_CLOSED"
     });
     assert.equal(Object.hasOwn(result, "trade"), false);
-    assert.equal(calls.getTrade, 1);
+    assert.equal(calls.getTrade, 2);
+    assert.equal(calls.closeTrade, 1);
   });
 }
 
@@ -429,3 +503,182 @@ for (const [label, exposure] of [
     assert.equal(calls.getTrade, 0);
   });
 }
+
+test("same-symbol pending entry order blocks submission but protective orders do not", async () => {
+  const blocked = buildOandaMock({
+    pendingOrders: [{
+      id: "700",
+      instrument: "EUR_USD",
+      type: "LIMIT",
+      state: "PENDING"
+    }]
+  });
+  const blockedResult = await executeVerifiedMarketOrder(request(blocked.oanda));
+  assert.deepEqual(blockedResult, {
+    status: "SKIPPED",
+    reason: "PENDING_ENTRY_ORDER_ALREADY_EXISTS_ON_OANDA"
+  });
+  assert.equal(blocked.calls.createMarketOrder, 0);
+
+  const protectiveOnly = buildOandaMock({
+    pendingOrders: [{
+      id: "701",
+      instrument: "EUR_USD",
+      type: "STOP_LOSS",
+      state: "PENDING"
+    }]
+  });
+  const opened = await executeVerifiedMarketOrder(request(protectiveOnly.oanda));
+  assert.equal(opened.status, "OPENED");
+  assert.equal(protectiveOnly.calls.createMarketOrder, 1);
+});
+
+test("missing OANDA unit or price precision fails before submission", async () => {
+  for (const instrument of [
+    { name: "EUR_USD", displayPrecision: 5, minimumTradeSize: "1" },
+    { name: "EUR_USD", tradeUnitsPrecision: 0, minimumTradeSize: "1" },
+    { name: "EUR_USD", displayPrecision: 5, tradeUnitsPrecision: 0 }
+  ]) {
+    const { oanda, calls } = buildOandaMock({ instrument });
+    const result = await executeVerifiedMarketOrder(request(oanda));
+    assert.deepEqual(result, {
+      status: "REJECTED",
+      reason: "INSTRUMENT_METADATA_INCOMPLETE"
+    });
+    assert.equal(calls.createMarketOrder, 0);
+  }
+});
+
+test("stale OANDA pricing context fails before submission", async () => {
+  const { oanda, calls } = buildOandaMock({
+    pricing: {
+      price: {
+        instrument: "EUR_USD",
+        status: "tradeable",
+        tradeable: true,
+        time: "2020-01-01T00:00:00.000Z",
+        asks: [{ price: "1.10010" }],
+        bids: [{ price: "1.10000" }],
+        quoteHomeConversionFactors: {
+          negativeUnits: "0.90000",
+          positiveUnits: "0.91000"
+        }
+      },
+      homeConversions: []
+    }
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_PRICING_SNAPSHOT_STALE"
+  });
+  assert.equal(calls.createMarketOrder, 0);
+});
+
+test("post-fill position mismatch is closed and never returned as a local trade", async () => {
+  const { oanda, calls } = buildOandaMock({
+    postFillPositions: [{
+      instrument: "EUR_USD",
+      long: { units: "999" },
+      short: { units: "0" }
+    }]
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_POSITION_VERIFICATION_MISMATCH_EXPOSURE_CLOSED"
+  });
+  assert.equal(Object.hasOwn(result, "trade"), false);
+  assert.equal(calls.closeTrade, 1);
+  assert.equal(calls.closedTradeId, "200");
+  assert.equal(calls.closedUnits, "ALL");
+});
+
+test("missing fill trade ID is recovered by client tag and closed", async () => {
+  const { oanda, calls } = buildOandaMock({
+    orderResponse: {
+      orderCreateTransaction: { id: "100" },
+      orderFillTransaction: { id: "101", time: new Date().toISOString() }
+    },
+    postFillTrades: (currentCalls) => [{
+      id: "205",
+      state: "OPEN",
+      instrument: "EUR_USD",
+      currentUnits: "1000",
+      clientExtensions: { tag: currentCalls.lastOrder.clientTag }
+    }]
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_FILL_TRADE_ID_NOT_VERIFIED_EXPOSURE_CLOSED"
+  });
+  assert.equal(calls.closeTrade, 1);
+  assert.equal(calls.closedTradeId, "205");
+});
+
+test("ambiguous order submission is reconciled and a matching exposure is closed", async () => {
+  const { oanda, calls } = buildOandaMock({
+    orderError: new Error("socket timeout"),
+    postFillTrades: (currentCalls) => [{
+      id: "206",
+      state: "OPEN",
+      instrument: "EUR_USD",
+      currentUnits: "1000",
+      clientExtensions: { tag: currentCalls.lastOrder.clientTag }
+    }]
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_ORDER_SUBMISSION_OUTCOME_NOT_VERIFIED_EXPOSURE_CLOSED"
+  });
+  assert.equal(calls.closeTrade, 1);
+  assert.equal(calls.closedTradeId, "206");
+});
+
+test("failed submission with verified zero exposure returns only the sanitized failure", async () => {
+  const { oanda, calls } = buildOandaMock({
+    orderError: new Error("socket timeout"),
+    postFillTrades: [],
+    postFillPositions: []
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, { status: "REJECTED", reason: "socket timeout" });
+  assert.equal(calls.closeTrade, 0);
+});
+
+test("failed emergency close is reported as unverified exposure and never as OPENED", async () => {
+  const { oanda, calls } = buildOandaMock({
+    verifiedTrade: {
+      id: "200",
+      state: "OPEN",
+      instrument: "EUR_USD",
+      currentUnits: "999",
+      price: "1.10012",
+      openTime: "2026-07-24T12:00:00.000Z"
+    },
+    closeError: new Error("close unavailable"),
+    closeVerificationState: "OPEN"
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_TRADE_VERIFICATION_MISMATCH_EMERGENCY_CLOSE_NOT_VERIFIED"
+  });
+  assert.equal(Object.hasOwn(result, "trade"), false);
+  assert.equal(calls.closeTrade, 1);
+  assert.equal(calls.getTrade, 2);
+});
