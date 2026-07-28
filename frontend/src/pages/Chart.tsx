@@ -30,7 +30,17 @@ function setupScoreText(source: { setupScore?: unknown; confidence?: unknown } |
 function price(value: unknown, symbol: string) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return 'N/A';
-  return parsed.toFixed(symbol.includes('JPY') || symbol.includes('XAU') ? 3 : 5);
+  return parsed.toFixed(pricePrecision(symbol));
+}
+
+function pricePrecision(symbol: string, metadata?: any) {
+  if (symbol.includes('XAU')) return Number.isInteger(metadata?.displayPrecision) ? metadata.displayPrecision : 3;
+  return symbol.includes('JPY') ? 3 : 5;
+}
+
+function dedupeLevels(values: unknown[], symbol: string, atr?: unknown) {
+  const threshold = Math.max(Number(atr) || 0, symbol.includes('JPY') ? 0.003 : symbol.includes('XAU') ? 0.15 : 0.00003);
+  return values.map(Number).filter((value) => Number.isFinite(value) && value > 0).sort((a, b) => a - b).filter((value, index, all) => index === 0 || Math.abs(value - all[index - 1]) >= threshold).slice(0, 3);
 }
 
 function dateTime(value?: string) {
@@ -253,14 +263,14 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       layout: { background: { color: '#070b13' }, textColor: '#9aa7bd' },
       grid: { vertLines: { color: '#141b2a' }, horzLines: { color: '#141b2a' } },
       crosshair: { mode: CrosshairMode.Magnet },
-      rightPriceScale: { borderColor: '#1e293b' },
+      rightPriceScale: { borderColor: '#1e293b', autoScale: true },
       timeScale: { borderColor: '#1e293b', timeVisible: true, secondsVisible: false }
     });
     const candleSeries = chart.addCandlestickSeries({
       upColor: '#22c55e', downColor: '#ef476f', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef476f'
+      wickUpColor: '#22c55e', wickDownColor: '#ef476f', priceFormat: { type: 'price', precision: pricePrecision(displaySymbol), minMove: displaySymbol.includes('JPY') ? 0.001 : 0.00001 }
     });
-    const ema = chart.addLineSeries({ color: '#f7c948', lineWidth: 2, lineStyle: LineStyle.Solid, title: 'EMA20' });
+    const ema = chart.addLineSeries({ color: '#f7c948', lineWidth: 2, lineStyle: LineStyle.Solid, title: 'EMA20', priceFormat: { type: 'price', precision: pricePrecision(displaySymbol), minMove: displaySymbol.includes('JPY') ? 0.001 : 0.00001 } });
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     emaSeriesRef.current = ema;
@@ -279,7 +289,7 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       candleSeriesRef.current = null;
       emaSeriesRef.current = null;
     };
-  }, []);
+  }, [displaySymbol]);
 
   const formatted = useMemo(() => (candleDatasetKey === activeCandleKey ? candles : []).flatMap((candle) => {
     const timestamp = Math.floor(Date.parse(String(candle?.time || '')) / 1000);
@@ -324,11 +334,11 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       });
     }
     if (layers.structure) {
-      [...(selectedMarket?.swingHighs || [])].forEach((swing: any) => {
+      [...(selectedMarket?.swingHighs || [])].slice(-2).forEach((swing: any) => {
         const time = containingCandleTime(formatted, swing.time);
         if (time) markers.push({ time, position: 'aboveBar', color: '#a78bfa', shape: 'circle', text: `SWING H ${price(swing.price, displaySymbol)}` });
       });
-      [...(selectedMarket?.swingLows || [])].forEach((swing: any) => {
+      [...(selectedMarket?.swingLows || [])].slice(-2).forEach((swing: any) => {
         const time = containingCandleTime(formatted, swing.time);
         if (time) markers.push({ time, position: 'belowBar', color: '#38bdf8', shape: 'circle', text: `SWING L ${price(swing.price, displaySymbol)}` });
       });
@@ -357,8 +367,8 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
       addLine(trade.takeProfit, '#22c55e', 'TAKE PROFIT');
     });
     if (layers.levels) {
-      (selectedMarket?.supportLevels || []).slice(0, 3).forEach((level: number, index: number) => addLine(level, '#38bdf8', `SUPPORT ${index + 1}`, LineStyle.Dotted));
-      (selectedMarket?.resistanceLevels || []).slice(0, 3).forEach((level: number, index: number) => addLine(level, '#a78bfa', `RESISTANCE ${index + 1}`, LineStyle.Dotted));
+      dedupeLevels(selectedMarket?.supportLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#38bdf8', `S${index + 1}`, LineStyle.Dotted));
+      dedupeLevels(selectedMarket?.resistanceLevels || [], displaySymbol, selectedMarket?.atr).forEach((level: number, index: number) => addLine(level, '#a78bfa', `R${index + 1}`, LineStyle.Dotted));
       addLine(selectedMarket?.fairValueGapZone?.low, '#f59e0b', 'FVG LOW', LineStyle.Dotted);
       addLine(selectedMarket?.fairValueGapZone?.high, '#f59e0b', 'FVG HIGH', LineStyle.Dotted);
     }
@@ -460,8 +470,14 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
           </article>
 
           <section className="scenario-grid">
-            <ScenarioCard title={`SCENARIO ${selectedPair?.main?.action || 'MAIN'}`} lane={selectedPair?.main} pair={selectedPair} symbol={displaySymbol} stopLoss={mainScenarioStop} takeProfit={mainScenarioTakeProfit} />
-            <ScenarioCard title={`SCENARIO ${selectedPair?.inverse?.action || 'INVERSE'}`} lane={selectedPair?.inverse} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
+            <ScenarioCard title="SCENARIO BUY" lane={{ ...(selectedPair?.main || {}), action: 'BUY' }} pair={selectedPair} symbol={displaySymbol} stopLoss={mainScenarioStop} takeProfit={mainScenarioTakeProfit} />
+            <ScenarioCard title="SCENARIO SELL" lane={{ ...(selectedPair?.inverse || {}), action: 'SELL' }} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
+          </section>
+
+          <section className="cockpit-panel final-decision-panel">
+            <span>DECISIONE FINALE</span>
+            <strong>{selectedPair?.main?.action || 'HOLD'}</strong>
+            <small>Confronto informativo BUY/SELL · nessun doppio ordine</small>
           </section>
 
           <section className="cockpit-panel target-ladder-panel">

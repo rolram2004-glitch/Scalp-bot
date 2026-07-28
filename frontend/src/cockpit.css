@@ -2906,3 +2906,32 @@ a:focus-visible {
     animation: none;
   }
 }
+
+.final-decision-panel { display: flex; align-items: baseline; gap: 14px; padding: 14px 18px; border-color: rgba(248,200,78,.35); }
+.final-decision-panel span, .final-decision-panel small { color: var(--cockpit-muted); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.final-decision-panel strong { color: var(--cockpit-yellow); font-size: 24px; }
+.negative { color: #ff7c98 !important; }
+@media (max-width: 700px) {
+  .cockpit-header { min-height: 62px; padding: 8px 12px; }
+  .cockpit-header__identity span { display: none; }
+  .cockpit-header__identity strong { font-size: 12px; }
+  .cockpit-header__telemetry { display: flex; gap: 8px; overflow-x: auto; }
+  .header-telemetry { min-width: 74px; padding: 0 5px; }
+  .header-telemetry span { font-size: 8px; }
+  .header-telemetry strong { font-size: 10px; }
+  .trading-room-page { padding-bottom: calc(82px + env(safe-area-inset-bottom)); }
+  .trading-room-grid { display: flex; flex-direction: column; gap: 10px; }
+  .trading-room-center { display: flex; flex-direction: column; }
+  .pro-chart-panel { order: 0; }
+  .pro-chart-frame, .pro-chart-frame .chart-canvas { min-height: 360px; height: 360px; }
+  .scenario-grid { order: 1; grid-template-columns: 1fr; }
+  .final-decision-panel { order: 2; }
+  .target-ladder-panel { order: 3; }
+  .mtf-command-strip { order: 4; }
+  .structure-rail { display: flex; flex-direction: column; }
+  .trading-room-status { bottom: 0; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+  .chart-control-row { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; }
+  .chart-control-row button { flex: 0 0 auto; min-height: 34px; }
+  .scenario-card { min-height: 0; }
+  .scenario-card footer { max-height: 64px; overflow: auto; }
+}

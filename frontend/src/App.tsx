@@ -23,6 +23,13 @@ function clock(value?: string) {
   return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleTimeString();
 }
 
+function feedAgeSeconds(value?: string) {
+  if (!value) return undefined;
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return undefined;
+  return Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+}
+
 function NavIcon({ name }: { name: 'dashboard' | 'chart' | 'history' | 'analytics' | 'xau' | 'setup' }) {
   const paths: Record<typeof name, ReactNode> = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
@@ -72,6 +79,9 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
         : status.priceFeedStatus === 'PARTIAL'
           ? 'PARTIAL'
           : isFresh(status.lastPriceAt) ? 'PARTIAL / STALE' : 'STALE / N/A';
+  const feedAge = feedAgeSeconds(status?.lastPriceAt);
+  const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 15 ? 'STALE' : feedConnected ? 'LIVE' : 'PARTIAL';
+  const ordersEnabled = Boolean(status?.liveTradingEnabled && mode.oanda && mode.ready);
   const navigation = [
     { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
     { to: '/chart', label: 'Grafico', icon: 'chart' as const },
@@ -96,8 +106,8 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
       <aside className="cockpit-sidebar">
         <div className="cockpit-brand">
           <span className="cockpit-brand__bolt">◆</span>
-          <strong>GEMMO</strong>
-          <small>BOT</small>
+          <strong>SCALP.BOT</strong>
+          <small>REAL-MARKET COMMAND CENTER</small>
         </div>
         <nav className="cockpit-nav" aria-label="Navigazione principale">
           {navigation.map((item) => (
@@ -115,7 +125,7 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
 
       <header className="cockpit-header">
         <div className="cockpit-header__identity">
-          <strong>GEMMO REMONDATA BOT</strong>
+          <strong>SCALP.BOT</strong>
           <span>REAL-MARKET COMMAND CENTER</span>
         </div>
 
@@ -125,20 +135,24 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
             <strong className={status?.isRunning ? 'positive' : ''}>{status === null ? 'N/A' : status.isRunning ? 'ONLINE' : 'STOPPED'}</strong>
           </div>
           <div className="header-telemetry">
-            <span>OANDA</span>
-            <strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'AUTH' : accountStatusUnavailable ? 'N/A' : 'OFFLINE'}</strong>
+            <span>ACCOUNT</span>
+            <strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'CONNECTED' : accountStatusUnavailable ? 'N/A' : 'DISCONNECTED'}</strong>
           </div>
           <div className="header-telemetry header-telemetry--mode">
             <span>MODE</span>
             <strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong>
           </div>
           <div className="header-telemetry">
-            <span>FEED</span>
-            <strong className={feedConnected ? 'positive' : 'warning-text'}>{feedLabel}</strong>
+            <span>PRICE FEED</span>
+            <strong className={feedState === 'LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong>
           </div>
           <div className="header-telemetry">
-            <span>LAST TICK</span>
-            <strong>{clock(status?.lastPriceAt)}</strong>
+            <span>FEED AGE</span>
+            <strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong>
+          </div>
+          <div className="header-telemetry">
+            <span>ORDERS</span>
+            <strong className={ordersEnabled ? 'positive' : 'warning-text'}>{ordersEnabled ? 'ENABLED' : 'DISABLED'}</strong>
           </div>
         </div>
 
