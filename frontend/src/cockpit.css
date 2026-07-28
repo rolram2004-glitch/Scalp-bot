@@ -1849,6 +1849,12 @@ a:focus-visible {
 }
 
 /* XAUUSD intelligence room */
+.target-ladder-panel { margin-top: 16px; }
+.target-ladder-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.target-ladder-grid > div { border: 1px solid rgba(76, 109, 151, .38); border-radius: 10px; padding: 12px; background: rgba(7, 17, 31, .72); }
+.target-ladder-grid span, .target-ladder-grid small { display: block; color: var(--muted, #8ea2bf); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; }
+.target-ladder-grid strong { display: block; margin: 8px 0 4px; color: #55e69b; font-size: 18px; }
+@media (max-width: 700px) { .target-ladder-grid { grid-template-columns: 1fr; } }
 
 .xau-page-pro {
   display: grid;

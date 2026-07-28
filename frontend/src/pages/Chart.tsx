@@ -464,6 +464,18 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
             <ScenarioCard title={`SCENARIO ${selectedPair?.inverse?.action || 'INVERSE'}`} lane={selectedPair?.inverse} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
           </section>
 
+          <section className="cockpit-panel target-ladder-panel">
+            <header className="cockpit-panel__header">
+              <div><span>STRUCTURAL TARGET LADDER</span><h2>TP1 · TP2 · TP3</h2></div>
+              <b>{displaySymbol === 'XAUUSD' ? 'ANALYSIS ONLY' : 'REAL LEVELS ONLY'}</b>
+            </header>
+            <div className="target-ladder-grid">
+              {[xauMarket?.resistanceLevels?.[0], xauMarket?.resistanceLevels?.[1], xauMarket?.resistanceLevels?.[2]].map((level: number | undefined, index: number) => (
+                <div key={`tp-${index + 1}`}><span>TP{index + 1}</span><strong>{displaySymbol === 'XAUUSD' ? price(level, displaySymbol) : 'N/A'}</strong><small>{displaySymbol === 'XAUUSD' ? 'struttura / liquidità OANDA' : 'non configurato per Forex'}</small></div>
+              ))}
+            </div>
+          </section>
+
           <section className="cockpit-panel mtf-command-strip">
             <header className="cockpit-panel__header">
               <div><span>MULTI-TIMEFRAME</span><h2>ALIGNMENT</h2></div>
