@@ -53,8 +53,16 @@ export interface SignalLaneSnapshot {
   variant: StrategyVariant;
   action: SignalAction;
   confidence: number;
+  setupScore?: number;
+  scoreLabel?: "WEAK" | "DEVELOPING" | "VALID" | "STRONG";
+  scoreBreakdown?: TradingDecision["scoreBreakdown"];
   reasoning: string;
   setupType?: string;
+  entryPrice?: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+  structuralTargets?: number[];
+  riskRewardRatio?: number;
   mode: "OANDA DEMO" | "OANDA LIVE" | "PAPER" | "PAPER SHADOW";
   selectedForExecution: boolean;
   executionState: LaneExecutionState;
@@ -94,6 +102,25 @@ function isSignalAction(action: unknown): action is SignalAction {
   return action === "BUY" || action === "SELL" || action === "HOLD";
 }
 
+function finite(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function cleanTargets(values: unknown, action: SignalAction, entry: number) {
+  if (!Array.isArray(values) || action === "HOLD" || !finite(entry)) return [];
+  const direction = action === "BUY" ? 1 : -1;
+  return values
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value > 0 && (value - entry) * direction > 0)
+    .sort((a, b) => direction > 0 ? a - b : b - a)
+    .filter((value, index, array) => index === 0 || Math.abs(value - array[index - 1]) > 1e-10)
+    .slice(0, 3);
+}
+
+function mirrorPrice(value: number | undefined, pivot: number) {
+  return finite(value) && finite(pivot) ? pivot - (value - pivot) : undefined;
+}
+
 export function invertAction(action: unknown): SignalAction {
   if (action === "BUY") return "SELL";
   if (action === "SELL") return "BUY";
@@ -120,13 +147,13 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
     input.market.tradeable === true;
   const requestedMode = String(input.tradingMode || "").toUpperCase();
   const liveRequested = requestedMode === "OANDA_DEMO" || requestedMode === "OANDA_LIVE";
-  const paperMode = String(input.tradingMode || "").toUpperCase() === "PAPER";
+  const paperMode = requestedMode === "PAPER";
   const liveAllowed = liveRequested && input.executionGateVerified === true &&
     validAction && validVariant && realMarketSnapshot;
   const oandaLaneMode = requestedMode === "OANDA_LIVE" ? "OANDA LIVE" : "OANDA DEMO";
   const mainSelected = liveAllowed && variant === "MAIN";
   const inverseSelected = liveAllowed && variant === "INVERSE";
-  const confidence = Number(input.mainDecision?.confidence) || 0;
+  const confidence = Number(input.mainDecision?.setupScore ?? input.mainDecision?.confidence) || 0;
   const requestedThreshold = Number(input.minimumConfidence);
   const minimumConfidence = Number.isFinite(requestedThreshold)
     ? Math.min(100, Math.max(0, requestedThreshold))
@@ -134,6 +161,11 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence;
   const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence;
   const baseReasoning = String(input.mainDecision?.reasoning || "Decisione MAIN non disponibile.");
+  const entry = finite(input.mainDecision?.entryPrice) ? input.mainDecision.entryPrice : input.market.mid;
+  const mainTargets = cleanTargets(input.mainDecision?.structuralTargets, mainAction, entry);
+  const mainTakeProfit = mainTargets[0] ?? (finite(input.mainDecision?.takeProfitPips) ? undefined : undefined);
+  const inverseStop = mirrorPrice(input.mainDecision?.stopLossPrice, entry);
+  const inverseTargets = mainTargets.map((target) => mirrorPrice(target, entry)).filter(finite);
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";
 
@@ -154,8 +186,16 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       variant: "MAIN",
       action: mainAction,
       confidence,
+      setupScore: input.mainDecision?.setupScore ?? confidence,
+      scoreLabel: input.mainDecision?.scoreLabel,
+      scoreBreakdown: input.mainDecision?.scoreBreakdown,
       reasoning: baseReasoning,
       setupType: input.mainDecision?.setupType,
+      entryPrice: mainAction === "HOLD" ? undefined : entry,
+      stopLossPrice: mainAction === "HOLD" ? undefined : input.mainDecision?.stopLossPrice,
+      takeProfitPrice: mainAction === "HOLD" ? undefined : mainTakeProfit,
+      structuralTargets: mainAction === "HOLD" ? [] : mainTargets,
+      riskRewardRatio: input.mainDecision?.riskRewardRatio,
       mode: mainSelected ? oandaLaneMode : paperMode ? "PAPER" : "PAPER SHADOW",
       selectedForExecution: mainSelected,
       executionState: mainSelected ? (mainEligible ? "READY" : "NOT_ELIGIBLE") : paperMode ? "PAPER" : "SHADOW",
@@ -165,8 +205,16 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       variant: "INVERSE",
       action: inverseAction,
       confidence,
-      reasoning: `Derivato dalla decisione MAIN ${mainAction}: azione opposta ${inverseAction}. ${baseReasoning}`,
+      setupScore: input.mainDecision?.setupScore ?? confidence,
+      scoreLabel: input.mainDecision?.scoreLabel,
+      scoreBreakdown: input.mainDecision?.scoreBreakdown,
+      reasoning: `Scenario contrario calcolato sullo stesso snapshot OANDA della MAIN. MAIN ${mainAction}; INVERSE ${inverseAction}. ${baseReasoning}`,
       setupType: input.mainDecision?.setupType ? `INVERSE_${input.mainDecision.setupType}` : "INVERSE",
+      entryPrice: inverseAction === "HOLD" ? undefined : entry,
+      stopLossPrice: inverseAction === "HOLD" ? undefined : inverseStop,
+      takeProfitPrice: inverseAction === "HOLD" ? undefined : inverseTargets[0],
+      structuralTargets: inverseAction === "HOLD" ? [] : inverseTargets,
+      riskRewardRatio: input.mainDecision?.riskRewardRatio,
       mode: inverseSelected ? oandaLaneMode : "PAPER SHADOW",
       selectedForExecution: inverseSelected,
       executionState: inverseSelected ? (inverseEligible ? "READY" : "NOT_ELIGIBLE") : "SHADOW",
