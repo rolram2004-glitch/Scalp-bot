@@ -8,9 +8,8 @@ const oandaEnvironmentValid = tradingMode === "OANDA_LIVE"
   ? oandaEnvironment === "LIVE"
   : oandaEnvironment === "PRACTICE";
 const orderExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED === "true";
-const legacyLiveTradingEnabled = process.env.LIVE_TRADING_ENABLED === "true";
 const oandaLiveConfirmed = process.env.OANDA_LIVE_CONFIRMATION === "I_CONFIRM_REAL_MONEY";
-const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "").trim().toUpperCase();
+const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "MAIN").trim().toUpperCase();
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
 const aiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase() === "GEMINI"
   ? "GEMINI"
@@ -33,7 +32,6 @@ const executionReady = Boolean(
   liveModeRequested &&
   oandaEnvironmentValid &&
   orderExecutionEnabled &&
-  legacyLiveTradingEnabled &&
   liveModeSafetyConfirmed
 );
 
@@ -78,7 +76,7 @@ module.exports = {
   OANDA_ORDER_EXECUTION_ENABLED: orderExecutionEnabled,
   OANDA_LIVE_CONFIRMED: oandaLiveConfirmed,
   LIVE_TRADING_ENABLED: executionReady,
-  LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "INVALID",
+  LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "MAIN",
   LIVE_EXECUTION_VARIANT_VALID: liveExecutionVariantValid,
   DEFAULT_UNITS: boundedNumber(process.env.DEFAULT_UNITS, 1000, 0.000001, 100000000),
   XAUUSD_UNITS: boundedNumber(process.env.XAUUSD_UNITS, 1, 0.000001, 1000000),
