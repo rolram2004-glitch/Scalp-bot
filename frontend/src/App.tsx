@@ -9,6 +9,7 @@ import { XauPage } from './pages/Xau';
 import { fetchStatus, fetchAnalytics, fetchMarketData, fetchNews, fetchOandaStatus, startBot } from './services/api';
 import { OandaStatus, StatusSnapshot } from './types';
 import { executionView, hasFullFreshCoverage } from './trading-state';
+import './setup-v2.css';
 
 function isFresh(value?: string, maximumAgeMs = 15000) {
   if (!value) return false;
@@ -49,36 +50,9 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
   const accountConnected = oandaStatus.connected === true;
   const accountStatusUnavailable = oandaStatus.reason === 'checking' || oandaStatus.reason === 'status_request_failed';
   const fullCoverage = hasFullFreshCoverage(status);
-  const feedConnected = Boolean(
-    accountConnected &&
-    fullCoverage &&
-    isFresh(status?.lastPriceAt)
-  );
-  const oandaExecutionReady = Boolean(
-    mode.oanda &&
-    mode.ready &&
-    status?.reconciliationStatus === 'VERIFIED' &&
-    accountConnected &&
-    feedConnected
-  );
-  const modeLabel = !mode.known
-    ? 'MODE UNAVAILABLE'
-    : mode.paper
-      ? 'PAPER'
-      : oandaExecutionReady
-        ? mode.label
-        : mode.demo
-          ? 'OANDA DEMO BLOCKED'
-          : 'OANDA LIVE BLOCKED';
-  const feedLabel = status === null
-    ? 'UNAVAILABLE'
-    : !accountConnected
-      ? accountStatusUnavailable ? 'UNAVAILABLE' : 'DISCONNECTED'
-      : feedConnected
-        ? 'FULL / FRESH'
-        : status.priceFeedStatus === 'PARTIAL'
-          ? 'PARTIAL'
-          : isFresh(status.lastPriceAt) ? 'PARTIAL / STALE' : 'STALE / N/A';
+  const feedConnected = Boolean(accountConnected && fullCoverage && isFresh(status?.lastPriceAt));
+  const oandaExecutionReady = Boolean(mode.oanda && mode.ready && status?.reconciliationStatus === 'VERIFIED' && accountConnected && feedConnected);
+  const modeLabel = !mode.known ? 'MODE UNAVAILABLE' : mode.paper ? 'PAPER' : oandaExecutionReady ? mode.label : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
   const feedAge = feedAgeSeconds(status?.lastPriceAt);
   const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 15 ? 'STALE' : feedConnected ? 'LIVE' : 'PARTIAL';
   const ordersEnabled = Boolean(status?.liveTradingEnabled && mode.oanda && mode.ready);
@@ -130,37 +104,17 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
         </div>
 
         <div className="cockpit-header__telemetry">
-          <div className="header-telemetry">
-            <span>SCANNER</span>
-            <strong className={status?.isRunning ? 'positive' : ''}>{status === null ? 'N/A' : status.isRunning ? 'ONLINE' : 'STOPPED'}</strong>
-          </div>
-          <div className="header-telemetry">
-            <span>ACCOUNT</span>
-            <strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'CONNECTED' : accountStatusUnavailable ? 'N/A' : 'DISCONNECTED'}</strong>
-          </div>
-          <div className="header-telemetry header-telemetry--mode">
-            <span>MODE</span>
-            <strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong>
-          </div>
-          <div className="header-telemetry">
-            <span>PRICE FEED</span>
-            <strong className={feedState === 'LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong>
-          </div>
-          <div className="header-telemetry">
-            <span>FEED AGE</span>
-            <strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong>
-          </div>
-          <div className="header-telemetry">
-            <span>ORDERS</span>
-            <strong className={ordersEnabled ? 'positive' : 'warning-text'}>{ordersEnabled ? 'ENABLED' : 'DISABLED'}</strong>
-          </div>
+          <div className="header-telemetry"><span>SCANNER</span><strong className={status?.isRunning ? 'positive' : ''}>{status === null ? 'N/A' : status.isRunning ? 'ONLINE' : 'STOPPED'}</strong></div>
+          <div className="header-telemetry"><span>ACCOUNT</span><strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'CONNECTED' : accountStatusUnavailable ? 'N/A' : 'DISCONNECTED'}</strong></div>
+          <div className="header-telemetry header-telemetry--mode"><span>MODE</span><strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong></div>
+          <div className="header-telemetry"><span>PRICE FEED</span><strong className={feedState === 'LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong></div>
+          <div className="header-telemetry"><span>FEED AGE</span><strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong></div>
+          <div className="header-telemetry"><span>ORDERS</span><strong className={ordersEnabled ? 'positive' : 'warning-text'}>{ordersEnabled ? 'ENABLED' : 'DISABLED'}</strong></div>
         </div>
 
         <div className="cockpit-header__actions">
           <button className="touch-button accent-button" onClick={handleStart} disabled={!localControls || starting || status?.isRunning === true}>
-            {!localControls
-              ? status?.isRunning ? 'SCANNER ATTIVO' : 'CONTROLLO RAILWAY'
-              : starting ? 'AVVIO…' : status?.isRunning ? 'SCANNER ATTIVO' : 'AVVIA'}
+            {!localControls ? status?.isRunning ? 'SCANNER ATTIVO' : 'CONTROLLO RAILWAY' : starting ? 'AVVIO…' : status?.isRunning ? 'SCANNER ATTIVO' : 'AVVIA'}
           </button>
           <button className="touch-button icon-button" onClick={reload} aria-label="Aggiorna dati">↻</button>
         </div>
@@ -187,18 +141,12 @@ export default function App() {
 
   const loadSecondary = useCallback(async () => {
     const [analyticsResult, marketResult, newsResult, oandaResult] = await Promise.allSettled([
-      fetchAnalytics(),
-      fetchMarketData(true),
-      fetchNews(),
-      fetchOandaStatus()
+      fetchAnalytics(), fetchMarketData(true), fetchNews(), fetchOandaStatus()
     ]);
-
     setAnalytics(analyticsResult.status === 'fulfilled' ? analyticsResult.value : null);
     setMarketData(marketResult.status === 'fulfilled' ? marketResult.value || {} : {});
     setNews(newsResult.status === 'fulfilled' ? newsResult.value || [] : []);
-    setOandaStatus(oandaResult.status === 'fulfilled'
-      ? oandaResult.value || { connected: false, reason: 'empty_status' }
-      : { connected: false, reason: 'status_request_failed' });
+    setOandaStatus(oandaResult.status === 'fulfilled' ? oandaResult.value || { connected: false, reason: 'empty_status' } : { connected: false, reason: 'status_request_failed' });
   }, []);
 
   const reload = useCallback(() => {
@@ -210,26 +158,16 @@ export default function App() {
     let disposed = false;
     let statusBusy = false;
     let secondaryBusy = false;
-
     const refreshStatus = async () => {
       if (disposed || statusBusy) return;
       statusBusy = true;
-      try {
-        await loadStatus();
-      } finally {
-        statusBusy = false;
-      }
+      try { await loadStatus(); } finally { statusBusy = false; }
     };
     const refreshSecondary = async () => {
       if (disposed || secondaryBusy) return;
       secondaryBusy = true;
-      try {
-        await loadSecondary();
-      } finally {
-        secondaryBusy = false;
-      }
+      try { await loadSecondary(); } finally { secondaryBusy = false; }
     };
-
     void refreshStatus();
     void refreshSecondary();
     const statusTimer = window.setInterval(() => void refreshStatus(), 5000);
@@ -237,13 +175,8 @@ export default function App() {
     const events = new EventSource('/events');
     events.onmessage = (event) => {
       if (disposed) return;
-      try {
-        setStatus(JSON.parse(event.data));
-      } catch (_error) {
-        // The polling channel remains active if one event is malformed.
-      }
+      try { setStatus(JSON.parse(event.data)); } catch (_error) { /* polling remains active */ }
     };
-
     return () => {
       disposed = true;
       window.clearInterval(statusTimer);
