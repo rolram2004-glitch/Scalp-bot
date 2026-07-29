@@ -27,6 +27,16 @@ function boundedNumber(value, fallback, minimum, maximum, integer = false) {
   return Math.min(maximum, Math.max(minimum, normalized));
 }
 
+const liveModeRequested = tradingMode === "OANDA_DEMO" || tradingMode === "OANDA_LIVE";
+const liveModeSafetyConfirmed = tradingMode === "OANDA_DEMO" || oandaLiveConfirmed;
+const executionReady = Boolean(
+  liveModeRequested &&
+  oandaEnvironmentValid &&
+  orderExecutionEnabled &&
+  legacyLiveTradingEnabled &&
+  liveModeSafetyConfirmed
+);
+
 module.exports = {
   SYMBOLS: [
     "XAU_USD",
@@ -57,7 +67,8 @@ module.exports = {
 
   MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 65, 0, 100),
 
-  SCAN_INTERVAL: 2 * 60 * 1000,
+  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 30_000, 300_000, true),
+  POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),
   MAX_DAILY_LOSS: boundedNumber(process.env.MAX_DAILY_LOSS, 50, 0.01, 100000),
@@ -66,7 +77,7 @@ module.exports = {
   OANDA_ENVIRONMENT_VALID: oandaEnvironmentValid,
   OANDA_ORDER_EXECUTION_ENABLED: orderExecutionEnabled,
   OANDA_LIVE_CONFIRMED: oandaLiveConfirmed,
-  LIVE_TRADING_ENABLED: tradingMode !== "PAPER" && legacyLiveTradingEnabled,
+  LIVE_TRADING_ENABLED: executionReady,
   LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "INVALID",
   LIVE_EXECUTION_VARIANT_VALID: liveExecutionVariantValid,
   DEFAULT_UNITS: boundedNumber(process.env.DEFAULT_UNITS, 1000, 0.000001, 100000000),
