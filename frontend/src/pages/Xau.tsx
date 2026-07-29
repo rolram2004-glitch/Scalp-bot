@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { RealMiniChart } from '../components/RealMiniChart';
 import { fetchIntelligence } from '../services/api';
 import { executionView } from '../trading-state';
-import { StatusSnapshot } from '../types';
+import { SignalLaneSnapshot, StatusSnapshot } from '../types';
 
 const XAU = 'XAUUSD';
 const XAU_TIMEFRAMES = ['M1', 'M5', 'M15', 'H1'];
@@ -31,6 +31,36 @@ function setupScore(source: { setupScore?: unknown; confidence?: unknown } | nul
 function dateTime(value: unknown) {
   const parsed = new Date(String(value || ''));
   return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleString();
+}
+
+function directionClass(action?: string) {
+  return action === 'BUY' ? 'positive' : action === 'SELL' ? 'negative' : 'neutral';
+}
+
+function TradePlan({ title, lane, timestamp }: { title: string; lane?: SignalLaneSnapshot; timestamp?: string }) {
+  const targets = lane?.structuralTargets || [];
+  return (
+    <article className={`cockpit-panel xau-trade-plan ${lane?.variant?.toLowerCase() || ''}`}>
+      <header className="cockpit-panel__header">
+        <div><span>{title}</span><h2 className={directionClass(lane?.action)}>{lane?.action || 'N/A'}</h2></div>
+        <b>{setupScore(lane)}</b>
+      </header>
+      <div className="xau-plan-grid">
+        <div><span>ENTRY</span><strong>{price(lane?.entryPrice)}</strong></div>
+        <div><span>STOP LOSS</span><strong className="negative">{price(lane?.stopLossPrice)}</strong></div>
+        <div><span>TP1</span><strong className="positive">{price(targets[0] ?? lane?.takeProfitPrice)}</strong></div>
+        <div><span>TP2</span><strong className="positive">{price(targets[1])}</strong></div>
+        <div><span>TP3</span><strong className="positive">{price(targets[2])}</strong></div>
+        <div><span>R:R</span><strong>{Number.isFinite(Number(lane?.riskRewardRatio)) ? `1:${Number(lane?.riskRewardRatio).toFixed(2)}` : 'N/A'}</strong></div>
+      </div>
+      <div className="xau-plan-meta">
+        <span>{lane?.mode || 'N/A'}</span>
+        <span>{lane?.executionState || 'N/A'}</span>
+        <span>{dateTime(timestamp)}</span>
+      </div>
+      <p>{lane?.reasoning || 'PIANO NON DISPONIBILE'}</p>
+    </article>
+  );
 }
 
 export function XauPage({ status }: { status: StatusSnapshot | null }) {
@@ -92,21 +122,21 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <span>XAUUSD · DEDICATED STRUCTURE ENGINE</span>
           <h1>{price(currentPrice)}</h1>
-          <p>Analisi reale OANDA separata dal motore Forex. Nessun ordine XAU viene simulato o inviato da questa pagina.</p>
+          <p>Dati reali OANDA. MAIN e INVERSE usano lo stesso snapshot. TP1, TP2 e TP3 vengono mostrati solo quando derivano da livelli strutturali reali.</p>
         </div>
         <div className="analysis-only-seal">
           <span>EXECUTION</span>
           <strong>ANALYSIS ONLY</strong>
-          <small>{modeLabel}</small>
+          <small>{modeLabel} · MULTI-TP OANDA NON ANCORA VERIFICATO</small>
         </div>
       </header>
 
       <section className="xau-kpi-grid">
+        <article><span>Bot</span><strong>{status?.isRunning ? 'RUNNING' : 'STOPPED'}</strong><small>{dateTime(status?.startedAt)}</small></article>
+        <article><span>OANDA</span><strong>{status?.oandaConnected ? 'CONNECTED' : 'DISCONNECTED'}</strong><small>{status?.oandaReason || status?.dataSource || 'N/A'}</small></article>
         <article><span>Market structure</span><strong>{market?.structureBias || 'N/A'}</strong><small>{market?.structureSource || 'SOURCE N/A'}</small></article>
-        <article><span>Signal</span><strong>{signal?.action || 'N/A'}</strong><small>SETUP SCORE {setupScore(signal)}</small></article>
-        <article><span>Trend</span><strong>{market?.trend || 'N/A'}</strong><small>EMA 20 / 50 / 200</small></article>
-        <article><span>Momentum</span><strong>RSI {numeric(market?.rsi, 1)}</strong><small>MACD hist {numeric(market?.macdHistogram, 5)}</small></article>
-        <article><span>Volatility</span><strong>{market?.volatility || 'N/A'}</strong><small>ATR {price(market?.atr)}</small></article>
+        <article><span>Main signal</span><strong className={directionClass(signal?.action)}>{signal?.action || 'N/A'}</strong><small>SETUP SCORE {setupScore(signal)}</small></article>
+        <article><span>Inverse signal</span><strong className={directionClass(pair?.inverse?.action)}>{pair?.inverse?.action || 'N/A'}</strong><small>SAME SNAPSHOT</small></article>
         <article><span>Last quote</span><strong>{quote?.tradeable === true ? 'TRADEABLE' : 'N/A'}</strong><small>{dateTime(quote?.time)}</small></article>
       </section>
 
@@ -134,8 +164,8 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
             <b>{pair?.pairId ? pair.pairId.slice(-12) : 'PAIR N/A'}</b>
           </header>
           <div className="xau-blueprint__signal">
-            <span>MAIN DIRECTION</span>
-            <strong className={signal?.action === 'BUY' ? 'positive' : signal?.action === 'SELL' ? 'negative' : 'neutral'}>{signal?.action || 'N/A'}</strong>
+            <span>FINAL DECISION</span>
+            <strong className={directionClass(signal?.action)}>{signal?.action || 'N/A'}</strong>
             <small>{signal?.setupType || 'SETUP N/A'}</small>
           </div>
           <dl>
@@ -148,8 +178,13 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
             <div><dt>Equal low</dt><dd>{price(market?.equalLow)}</dd></div>
             <div><dt>Candle count</dt><dd>{typeof market?.candleCount === 'number' ? market.candleCount : 'N/A'}</dd></div>
           </dl>
-          <p>{signal?.reasoning || 'RAGIONAMENTO STRUTTURALE NON DISPONIBILE'}</p>
+          <p>{pair?.executionBlockedReason || signal?.executionReason || signal?.reasoning || 'RAGIONAMENTO STRUTTURALE NON DISPONIBILE'}</p>
         </aside>
+      </section>
+
+      <section className="xau-plan-compare">
+        <TradePlan title="SCENARIO MAIN" lane={pair?.main} timestamp={pair?.evaluatedAt} />
+        <TradePlan title="SCENARIO INVERSE" lane={pair?.inverse} timestamp={pair?.evaluatedAt} />
       </section>
 
       <section className="xau-detail-grid">

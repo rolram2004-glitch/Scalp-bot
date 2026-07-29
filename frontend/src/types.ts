@@ -81,8 +81,23 @@ export interface SignalLaneSnapshot {
   confidence: number;
   setupScore?: number;
   scoreLabel?: 'WEAK' | 'DEVELOPING' | 'VALID' | 'STRONG';
+  scoreBreakdown?: {
+    trend: number;
+    momentum: number;
+    structure: number;
+    liquidity: number;
+    volatility: number;
+    spread: number;
+    session: number;
+    risk: number;
+  };
   reasoning: string;
   setupType?: string;
+  entryPrice?: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
+  structuralTargets?: number[];
+  riskRewardRatio?: number;
   mode: string;
   selectedForExecution: boolean;
   executionState: 'SHADOW' | 'PAPER' | 'NOT_ELIGIBLE' | 'READY' | 'SUBMITTING' | 'SKIPPED' | 'REJECTED' | 'OPEN_VERIFIED';
