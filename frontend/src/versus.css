@@ -1,0 +1,781 @@
+.versus-page {
+  display: grid;
+  gap: 12px;
+  max-width: 2200px;
+}
+
+.panel-header-tags a {
+  align-items: center;
+  border: 1px solid rgba(58, 140, 255, 0.28);
+  border-radius: 4px;
+  color: #8ab8ff;
+  display: inline-flex;
+  font-size: 8px;
+  font-weight: 900;
+  min-height: 28px;
+  padding: 0 8px;
+  text-decoration: none;
+}
+
+.panel-header-tags a:hover {
+  background: rgba(58, 140, 255, 0.08);
+  border-color: rgba(58, 140, 255, 0.5);
+}
+
+.vs-hero {
+  align-items: center;
+  background:
+    radial-gradient(circle at 4% 0%, rgba(21, 214, 143, 0.12), transparent 30rem),
+    radial-gradient(circle at 96% 100%, rgba(255, 79, 120, 0.12), transparent 32rem),
+    linear-gradient(135deg, rgba(7, 18, 32, 0.98), rgba(4, 10, 21, 0.98));
+  border-color: rgba(77, 111, 151, 0.28);
+  display: flex;
+  justify-content: space-between;
+  min-height: 178px;
+  overflow: hidden;
+  padding: 28px;
+  position: relative;
+}
+
+.vs-hero::after {
+  color: rgba(139, 163, 195, 0.045);
+  content: "VS";
+  font-size: clamp(120px, 17vw, 270px);
+  font-weight: 1000;
+  left: 50%;
+  line-height: 0.8;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.vs-hero > div {
+  position: relative;
+  z-index: 1;
+}
+
+.vs-eyebrow {
+  color: var(--cockpit-blue);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  margin: 0 0 10px;
+}
+
+.vs-hero h1 {
+  font-size: clamp(26px, 3.1vw, 52px);
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+  margin: 0;
+  max-width: 900px;
+}
+
+.vs-hero p:not(.vs-eyebrow) {
+  color: #8da0b9;
+  font-size: 12px;
+  line-height: 1.65;
+  margin: 14px 0 0;
+  max-width: 780px;
+}
+
+.vs-hero__state {
+  backdrop-filter: blur(16px);
+  background: rgba(4, 12, 23, 0.74);
+  border: 1px solid rgba(58, 140, 255, 0.28);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 20px;
+  text-align: right;
+}
+
+.vs-hero__state span,
+.vs-hero__state small {
+  color: var(--cockpit-muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.vs-hero__state strong {
+  color: var(--cockpit-blue);
+  font-size: 34px;
+  letter-spacing: -0.04em;
+  margin: 7px 0;
+}
+
+.vs-profile-strip {
+  background: rgba(5, 13, 25, 0.95);
+  border: 1px solid var(--cockpit-line);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(110px, 1fr));
+  overflow: hidden;
+}
+
+.vs-profile-strip > div {
+  border-right: 1px solid var(--cockpit-line-soft);
+  display: flex;
+  flex-direction: column;
+  min-height: 68px;
+  padding: 14px 16px;
+}
+
+.vs-profile-strip > div:last-child {
+  border-right: 0;
+}
+
+.vs-profile-strip span {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.vs-profile-strip strong {
+  color: #dce8f8;
+  font-size: 17px;
+  margin-top: 7px;
+}
+
+.vs-scoreboard {
+  align-items: stretch;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr);
+}
+
+.vs-lane-card {
+  background: linear-gradient(145deg, rgba(9, 20, 35, 0.98), rgba(4, 11, 21, 0.98));
+  border: 1px solid var(--cockpit-line);
+  border-radius: 9px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 20px;
+  position: relative;
+}
+
+.vs-lane-card::before {
+  content: "";
+  height: 3px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.vs-lane-card.main::before {
+  background: var(--cockpit-green);
+}
+
+.vs-lane-card.inverse::before {
+  background: var(--cockpit-red);
+}
+
+.vs-lane-card.main {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(21, 214, 143, 0.1), transparent 22rem),
+    linear-gradient(145deg, rgba(9, 20, 35, 0.98), rgba(4, 11, 21, 0.98));
+}
+
+.vs-lane-card.inverse {
+  background:
+    radial-gradient(circle at 0 0, rgba(255, 79, 120, 0.1), transparent 22rem),
+    linear-gradient(145deg, rgba(9, 20, 35, 0.98), rgba(4, 11, 21, 0.98));
+}
+
+.vs-lane-card.selected {
+  border-color: rgba(58, 140, 255, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(58, 140, 255, 0.12), 0 18px 45px rgba(0, 0, 0, 0.22);
+}
+
+.vs-lane-card > header {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.vs-lane-card > header span {
+  color: var(--cockpit-muted);
+  display: block;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+}
+
+.vs-lane-card > header h2 {
+  font-size: 32px;
+  letter-spacing: -0.04em;
+  margin: 5px 0 0;
+}
+
+.vs-lane-card > header > b {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--cockpit-line-soft);
+  border-radius: 5px;
+  color: #aebed2;
+  font-size: 8px;
+  letter-spacing: 0.07em;
+  max-width: 190px;
+  padding: 8px 9px;
+  text-align: right;
+}
+
+.vs-lane-kpis {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 17px;
+}
+
+.vs-lane-kpis > div {
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(83, 112, 147, 0.16);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  min-height: 76px;
+  padding: 12px;
+}
+
+.vs-lane-kpis span,
+.vs-pnl-block > span {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.vs-lane-kpis strong {
+  font-size: 19px;
+  margin-top: 9px;
+}
+
+.vs-pnl-block {
+  border-top: 1px solid var(--cockpit-line-soft);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.vs-pnl-block > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 9px;
+}
+
+.vs-pnl-block > div b {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--cockpit-line-soft);
+  border-radius: 5px;
+  font-size: 11px;
+  padding: 7px 9px;
+}
+
+.vs-pnl-block small {
+  color: #65758b;
+  display: block;
+  font-size: 8px;
+  margin-top: 9px;
+}
+
+.vs-scoreboard__center {
+  align-items: center;
+  color: var(--cockpit-muted);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+}
+
+.vs-scoreboard__center > span {
+  align-items: center;
+  background: linear-gradient(145deg, #101e31, #07101d);
+  border: 1px solid #2b425e;
+  border-radius: 50%;
+  color: #f2f7ff;
+  display: flex;
+  font-size: 22px;
+  font-weight: 1000;
+  height: 64px;
+  justify-content: center;
+  width: 64px;
+}
+
+.vs-scoreboard__center strong {
+  color: #d5e1f1;
+  font-size: 10px;
+  line-height: 1.45;
+  margin-top: 12px;
+}
+
+.vs-scoreboard__center small {
+  font-size: 8px;
+  line-height: 1.45;
+  margin-top: 5px;
+}
+
+.vs-paired-ledger,
+.vs-live-signals,
+.vs-trade-ledger {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.vs-paired-table,
+.vs-signal-list,
+.vs-trade-list {
+  min-width: 0;
+}
+
+.vs-paired-head,
+.vs-paired-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(170px, 1fr) minmax(170px, 1fr) minmax(135px, 0.7fr);
+}
+
+.vs-paired-head {
+  background: rgba(255, 255, 255, 0.018);
+  border-bottom: 1px solid var(--cockpit-line);
+}
+
+.vs-paired-head span {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.11em;
+  padding: 11px 14px;
+  text-transform: uppercase;
+}
+
+.vs-paired-row {
+  border-bottom: 1px solid rgba(83, 112, 147, 0.14);
+}
+
+.vs-paired-row:last-child {
+  border-bottom: 0;
+}
+
+.vs-paired-row > div {
+  border-right: 1px solid rgba(83, 112, 147, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 13px 14px;
+}
+
+.vs-paired-row > div:last-child {
+  border-right: 0;
+}
+
+.vs-paired-row strong,
+.vs-paired-row b {
+  font-size: 11px;
+  font-style: normal;
+}
+
+.vs-paired-row span,
+.vs-paired-row small {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-signal-list > article {
+  align-items: stretch;
+  border-bottom: 1px solid rgba(83, 112, 147, 0.14);
+  display: grid;
+  grid-template-columns: minmax(115px, 0.75fr) minmax(125px, 0.7fr) 40px minmax(125px, 0.7fr) minmax(200px, 1.25fr);
+}
+
+.vs-signal-list > article:last-child {
+  border-bottom: 0;
+}
+
+.vs-signal-list > article > div,
+.vs-signal-list > article > b {
+  align-items: flex-start;
+  border-right: 1px solid rgba(83, 112, 147, 0.12);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 68px;
+  min-width: 0;
+  padding: 10px 13px;
+}
+
+.vs-signal-list > article > b {
+  align-items: center;
+  color: var(--cockpit-muted);
+  font-size: 10px;
+  padding: 0;
+}
+
+.vs-signal-list > article > div:last-child {
+  border-right: 0;
+}
+
+.vs-signal-list strong {
+  font-size: 11px;
+}
+
+.vs-signal-list span,
+.vs-signal-list small {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.vs-signal-list .buy strong {
+  color: var(--cockpit-green);
+}
+
+.vs-signal-list .sell strong {
+  color: var(--cockpit-red);
+}
+
+.vs-signal-list .hold strong {
+  color: #95a4b8;
+}
+
+.vs-ledger-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vs-trade-ledger.main {
+  border-top: 2px solid var(--cockpit-green);
+}
+
+.vs-trade-ledger.inverse {
+  border-top: 2px solid var(--cockpit-red);
+}
+
+.vs-trade-list {
+  max-height: 760px;
+  overflow-y: auto;
+}
+
+.vs-trade-row {
+  border-bottom: 1px solid rgba(83, 112, 147, 0.14);
+  padding: 14px;
+}
+
+.vs-trade-row:last-child {
+  border-bottom: 0;
+}
+
+.vs-trade-row__lead {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+}
+
+.vs-trade-row__lead > b {
+  font-size: 10px;
+}
+
+.vs-trade-row__lead > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.vs-trade-row__lead strong {
+  font-size: 12px;
+}
+
+.vs-trade-row__lead span {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  margin-top: 3px;
+}
+
+.vs-trade-row__lead em {
+  border: 1px solid var(--cockpit-line-soft);
+  border-radius: 4px;
+  color: #8fa0b7;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 5px 7px;
+}
+
+.vs-trade-row__lead em.open {
+  border-color: rgba(21, 214, 143, 0.26);
+  color: var(--cockpit-green);
+}
+
+.vs-trade-row__prices {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.vs-trade-row__prices span {
+  background: rgba(255, 255, 255, 0.022);
+  border: 1px solid rgba(83, 112, 147, 0.13);
+  border-radius: 5px;
+  color: var(--cockpit-muted);
+  display: flex;
+  flex-direction: column;
+  font-size: 7px;
+  padding: 8px;
+  text-transform: uppercase;
+}
+
+.vs-trade-row__prices b {
+  color: #c8d6e8;
+  font-size: 9px;
+  margin-top: 4px;
+}
+
+.vs-trade-row__result {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.vs-trade-row__result strong {
+  font-size: 14px;
+}
+
+.vs-trade-row__result span {
+  color: var(--cockpit-muted);
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-trade-row footer {
+  color: #65758a;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 7px;
+  gap: 7px 12px;
+  margin-top: 10px;
+}
+
+.vs-safety-note {
+  align-items: center;
+  background: rgba(245, 165, 36, 0.06);
+  border: 1px solid rgba(245, 165, 36, 0.2);
+  border-radius: 7px;
+  display: flex;
+  gap: 16px;
+  min-height: 54px;
+  padding: 12px 16px;
+}
+
+.vs-safety-note strong {
+  color: var(--cockpit-amber);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.vs-safety-note span {
+  color: #8797ab;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1180px) {
+  .vs-scoreboard {
+    grid-template-columns: minmax(0, 1fr) 100px minmax(0, 1fr);
+  }
+
+  .vs-lane-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vs-profile-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vs-profile-strip > div:nth-child(3n) {
+    border-right: 0;
+  }
+
+  .vs-profile-strip > div:nth-child(-n + 3) {
+    border-bottom: 1px solid var(--cockpit-line-soft);
+  }
+}
+
+@media (max-width: 860px) {
+  .vs-hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .vs-hero__state {
+    min-width: 0;
+    text-align: left;
+    width: 100%;
+  }
+
+  .vs-scoreboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vs-scoreboard__center {
+    min-height: 90px;
+  }
+
+  .vs-scoreboard__center > span {
+    height: 48px;
+    width: 48px;
+  }
+
+  .vs-ledger-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vs-paired-table {
+    overflow-x: auto;
+  }
+
+  .vs-paired-head,
+  .vs-paired-row {
+    min-width: 710px;
+  }
+
+  .vs-signal-list {
+    overflow-x: auto;
+  }
+
+  .vs-signal-list > article {
+    min-width: 740px;
+  }
+}
+
+@media (max-width: 680px) {
+  .versus-page {
+    gap: 7px;
+    padding-bottom: 4px;
+  }
+
+  .vs-hero {
+    min-height: 0;
+    padding: 20px 17px;
+  }
+
+  .vs-hero::after {
+    font-size: 150px;
+    left: 82%;
+    top: 35%;
+  }
+
+  .vs-eyebrow {
+    font-size: 8px;
+  }
+
+  .vs-hero h1 {
+    font-size: 29px;
+  }
+
+  .vs-hero p:not(.vs-eyebrow) {
+    font-size: 10px;
+  }
+
+  .vs-hero__state strong {
+    font-size: 28px;
+  }
+
+  .vs-profile-strip {
+    display: grid;
+    grid-auto-columns: minmax(122px, 1fr);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+  }
+
+  .vs-profile-strip > div,
+  .vs-profile-strip > div:nth-child(3n),
+  .vs-profile-strip > div:nth-child(-n + 3) {
+    border-bottom: 0;
+    border-right: 1px solid var(--cockpit-line-soft);
+  }
+
+  .vs-profile-strip > div:last-child {
+    border-right: 0;
+  }
+
+  .vs-lane-card {
+    padding: 16px;
+  }
+
+  .vs-lane-card > header {
+    flex-direction: column;
+  }
+
+  .vs-lane-card > header > b {
+    max-width: none;
+    text-align: left;
+  }
+
+  .vs-lane-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vs-lane-kpis > div {
+    min-height: 68px;
+  }
+
+  .vs-safety-note {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .vs-trade-row__prices {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vs-trade-row__result {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .vs-paired-ledger .cockpit-panel__header,
+  .vs-live-signals .cockpit-panel__header,
+  .vs-trade-ledger .cockpit-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 420px) {
+  .vs-lane-kpis {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .vs-trade-row__lead {
+    grid-template-columns: 36px minmax(0, 1fr);
+  }
+
+  .vs-trade-row__lead em {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+}

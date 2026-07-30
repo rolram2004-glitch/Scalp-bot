@@ -4,6 +4,7 @@ import { TerminalPage } from './pages/Terminal';
 import { ChartPage } from './pages/Chart';
 import { HistoryPage } from './pages/History';
 import { AnalyticsPage } from './pages/Analytics';
+import { VersusPage } from './pages/Versus';
 import { CommandSetupPage } from './pages/CommandSetup';
 import { XauPage } from './pages/Xau';
 import { fetchStatus, fetchAnalytics, fetchMarketData, fetchNews, fetchOandaStatus, startBot } from './services/api';
@@ -25,9 +26,10 @@ function feedAgeSeconds(value?: string) {
   return Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
 }
 
-function NavIcon({ name }: { name: 'dashboard' | 'chart' | 'history' | 'analytics' | 'xau' | 'setup' }) {
+function NavIcon({ name }: { name: 'dashboard' | 'versus' | 'chart' | 'history' | 'analytics' | 'xau' | 'setup' }) {
   const paths: Record<typeof name, ReactNode> = {
     dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>,
+    versus: <><path d="M4 7h11" /><path d="m12 4 3 3-3 3" /><path d="M20 17H9" /><path d="m12 14-3 3 3 3" /></>,
     chart: <><path d="M4 19V9" /><path d="M9 16V5" /><path d="M14 20V11" /><path d="M19 14V3" /></>,
     history: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
     analytics: <><path d="M4 20V10" /><path d="M10 20V4" /><path d="M16 20v-7" /><path d="M22 20H2" /></>,
@@ -52,6 +54,7 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
   const ordersEnabled = Boolean(status?.liveTradingEnabled && mode.oanda && mode.ready);
   const navigation = [
     { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
+    { to: '/vs', label: 'VS', icon: 'versus' as const },
     { to: '/chart', label: 'Grafico', icon: 'chart' as const },
     { to: '/history', label: 'Storico', icon: 'history' as const },
     { to: '/analytics', label: 'Analisi', icon: 'analytics' as const },
@@ -186,6 +189,7 @@ export default function App() {
         <main className="main-content cockpit-content">
           <Routes>
             <Route path="/" element={<TerminalPage status={status} marketData={marketData} news={news} oandaStatus={oandaStatus} />} />
+            <Route path="/vs" element={<VersusPage status={status} />} />
             <Route path="/chart" element={<ChartPage status={status} marketData={marketData} />} />
             <Route path="/history" element={<HistoryPage status={status} />} />
             <Route path="/analytics" element={<AnalyticsPage analytics={analytics} status={status} />} />

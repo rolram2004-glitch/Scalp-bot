@@ -389,7 +389,10 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <section className="signal-duel cockpit-panel">
           <header className="cockpit-panel__header">
             <div><span>SAME SNAPSHOT</span><h2>MAIN / INVERSE</h2></div>
-            <b>{primaryPair?.pairId ? primaryPair.pairId.slice(-12) : 'PAIR N/A'}</b>
+            <div className="panel-header-tags">
+              <b>{primaryPair?.pairId ? primaryPair.pairId.slice(-12) : 'PAIR N/A'}</b>
+              <Link to="/vs">APRI VS</Link>
+            </div>
           </header>
           <div className="signal-duel__body">
             <SignalLaneCard lane={primaryPair?.main} title="MAIN LANE" />

@@ -174,7 +174,7 @@ export interface StatusSnapshot {
   liveTradingEnabled: boolean;
   liveExecutionVariant: 'MAIN' | 'INVERSE' | 'INVALID';
   liveExecutionVariantValid: boolean;
-  aiProvider?: 'DISABLED' | 'GEMINI';
+  aiProvider?: 'DISABLED' | 'GEMINI' | 'OPENAI';
   aiConfirmationRequired?: boolean;
   aiStatus?: 'DISABLED' | 'NOT_CHECKED' | 'APPROVED' | 'REJECTED' | 'ERROR';
   lastAiReason?: string;
@@ -185,6 +185,9 @@ export interface StatusSnapshot {
   maxDailyTrades: number;
   minimumConfidence?: number;
   maxOpenPositions: number;
+  maxNewTradesPerCycle?: number;
+  maxTradesPerSymbol?: number;
+  scanIntervalMs?: number;
   maxDailyLoss?: number;
   currentSymbol?: string;
   currentAction?: string;

@@ -9,7 +9,7 @@ const oandaEnvironmentValid = tradingMode === "OANDA_LIVE"
   : oandaEnvironment === "PRACTICE";
 const orderExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED === "true";
 const oandaLiveConfirmed = process.env.OANDA_LIVE_CONFIRMATION === "I_CONFIRM_REAL_MONEY";
-const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "MAIN").trim().toUpperCase();
+const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "").trim().toUpperCase();
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
 const aiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase() === "GEMINI"
   ? "GEMINI"
@@ -32,6 +32,7 @@ const executionReady = Boolean(
   liveModeRequested &&
   oandaEnvironmentValid &&
   orderExecutionEnabled &&
+  liveExecutionVariantValid &&
   liveModeSafetyConfirmed
 );
 
@@ -67,9 +68,9 @@ module.exports = {
   NORMAL_TAKE_PROFIT_PIPS: boundedNumber(process.env.NORMAL_TAKE_PROFIT_PIPS, 20, 1, 200),
 
   // Aggressive demo threshold; trades are still opened only on qualifying signals.
-  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 60, 60, 100),
+  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 60, 50, 100),
 
-  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 60_000, 300_000, true),
+  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 30_000, 300_000, true),
   POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),
@@ -80,7 +81,7 @@ module.exports = {
   OANDA_ORDER_EXECUTION_ENABLED: orderExecutionEnabled,
   OANDA_LIVE_CONFIRMED: oandaLiveConfirmed,
   LIVE_TRADING_ENABLED: executionReady,
-  LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "MAIN",
+  LIVE_EXECUTION_VARIANT: liveExecutionVariantValid ? liveExecutionVariantRaw : "INVALID",
   LIVE_EXECUTION_VARIANT_VALID: liveExecutionVariantValid,
   DEFAULT_UNITS: boundedNumber(process.env.DEFAULT_UNITS, 1000, 0.000001, 100000000),
   XAUUSD_UNITS: boundedNumber(process.env.XAUUSD_UNITS, 1, 0.000001, 1000000),

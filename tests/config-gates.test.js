@@ -12,6 +12,8 @@ function readConfig(env) {
     MAX_OPEN_POSITIONS: process.env.MAX_OPEN_POSITIONS,
     MAX_NEW_TRADES_PER_CYCLE: process.env.MAX_NEW_TRADES_PER_CYCLE,
     MAX_DAILY_TRADES: process.env.MAX_DAILY_TRADES,
+    SCAN_INTERVAL_MS: process.env.SCAN_INTERVAL_MS,
+    MIN_SIGNAL_CONFIDENCE: process.env.MIN_SIGNAL_CONFIDENCE,
     MAX_RISK_PERCENT: process.env.MAX_RISK_PERCENT,
     MAX_DAILY_LOSS: process.env.MAX_DAILY_LOSS,
     AI_PROVIDER: process.env.AI_PROVIDER,
@@ -50,7 +52,7 @@ test("OANDA_DEMO requires Practice, enable flag and one explicit execution varia
     LIVE_TRADING_ENABLED: "true",
     LIVE_EXECUTION_VARIANT: "BOTH"
   });
-  assert.equal(invalid.LIVE_TRADING_ENABLED, true);
+  assert.equal(invalid.LIVE_TRADING_ENABLED, false);
   assert.equal(invalid.LIVE_EXECUTION_VARIANT, "INVALID");
   assert.equal(invalid.LIVE_EXECUTION_VARIANT_VALID, false);
 
@@ -104,10 +106,32 @@ test("invalid numeric risk limits fall back to bounded safe values", () => {
   });
 
   assert.equal(config.MAX_OPEN_TRADES, 15);
-  assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 6);
+  assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 7);
   assert.equal(config.MAX_DAILY_TRADES, 1);
   assert.equal(config.RISK_PERCENT, 0.25);
   assert.equal(config.MAX_DAILY_LOSS, 50);
+});
+
+test("aggressive Practice profile accepts 30 second scans without removing risk caps", () => {
+  const config = readConfig({
+    TRADING_MODE: "OANDA_DEMO",
+    OANDA_ENVIRONMENT: "PRACTICE",
+    OANDA_ORDER_EXECUTION_ENABLED: "true",
+    LIVE_EXECUTION_VARIANT: "MAIN",
+    SCAN_INTERVAL_MS: "30000",
+    MIN_SIGNAL_CONFIDENCE: "55",
+    MAX_NEW_TRADES_PER_CYCLE: "7",
+    MAX_OPEN_POSITIONS: "15",
+    MAX_DAILY_TRADES: "1000"
+  });
+
+  assert.equal(config.LIVE_TRADING_ENABLED, true);
+  assert.equal(config.SCAN_INTERVAL, 30000);
+  assert.equal(config.MIN_CONFIDENCE, 55);
+  assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 7);
+  assert.equal(config.MAX_OPEN_TRADES, 15);
+  assert.equal(config.MAX_DAILY_TRADES, 1000);
+  assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
 });
 
 test("Gemini remains disabled by default and parses only explicit safe configuration", () => {
@@ -133,4 +157,3 @@ test("Gemini remains disabled by default and parses only explicit safe configura
   assert.equal(configured.AI_MIN_CONFIDENCE, 72);
   assert.equal(configured.GEMINI_MODEL, "gemini-3.6-flash");
 });
-
