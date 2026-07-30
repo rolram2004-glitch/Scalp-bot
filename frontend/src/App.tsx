@@ -4,7 +4,7 @@ import { TerminalPage } from './pages/Terminal';
 import { ChartPage } from './pages/Chart';
 import { HistoryPage } from './pages/History';
 import { AnalyticsPage } from './pages/Analytics';
-import { SetupPage } from './pages/Setup';
+import { CommandSetupPage } from './pages/CommandSetup';
 import { XauPage } from './pages/Xau';
 import { fetchStatus, fetchAnalytics, fetchMarketData, fetchNews, fetchOandaStatus, startBot } from './services/api';
 import { OandaStatus, StatusSnapshot } from './types';
@@ -16,12 +16,6 @@ function isFresh(value?: string, maximumAgeMs = 15000) {
   const parsed = Date.parse(value);
   const age = Date.now() - parsed;
   return Number.isFinite(parsed) && age >= -5000 && age <= maximumAgeMs;
-}
-
-function clock(value?: string) {
-  if (!value) return 'N/A';
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? 'N/A' : parsed.toLocaleTimeString();
 }
 
 function feedAgeSeconds(value?: string) {
@@ -49,12 +43,12 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
   const mode = executionView(status);
   const accountConnected = oandaStatus.connected === true;
   const accountStatusUnavailable = oandaStatus.reason === 'checking' || oandaStatus.reason === 'status_request_failed';
-  const fullCoverage = hasFullFreshCoverage(status);
-  const feedConnected = Boolean(accountConnected && fullCoverage && isFresh(status?.lastPriceAt));
+  const usableCoverage = hasFullFreshCoverage(status);
+  const feedConnected = Boolean(accountConnected && usableCoverage && isFresh(status?.lastPriceAt, 30000));
   const oandaExecutionReady = Boolean(mode.oanda && mode.ready && status?.reconciliationStatus === 'VERIFIED' && accountConnected && feedConnected);
   const modeLabel = !mode.known ? 'MODE UNAVAILABLE' : mode.paper ? 'PAPER' : oandaExecutionReady ? mode.label : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
   const feedAge = feedAgeSeconds(status?.lastPriceAt);
-  const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 15 ? 'STALE' : feedConnected ? 'LIVE' : 'PARTIAL';
+  const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 30 ? 'STALE' : feedConnected ? status?.priceFeedStatus === 'PARTIAL' ? 'PARTIAL LIVE' : 'LIVE' : 'PARTIAL';
   const ordersEnabled = Boolean(status?.liveTradingEnabled && mode.oanda && mode.ready);
   const navigation = [
     { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
@@ -107,7 +101,7 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
           <div className="header-telemetry"><span>SCANNER</span><strong className={status?.isRunning ? 'positive' : ''}>{status === null ? 'N/A' : status.isRunning ? 'ONLINE' : 'STOPPED'}</strong></div>
           <div className="header-telemetry"><span>ACCOUNT</span><strong className={accountConnected ? 'positive' : 'warning-text'}>{accountConnected ? 'CONNECTED' : accountStatusUnavailable ? 'N/A' : 'DISCONNECTED'}</strong></div>
           <div className="header-telemetry header-telemetry--mode"><span>MODE</span><strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong></div>
-          <div className="header-telemetry"><span>PRICE FEED</span><strong className={feedState === 'LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong></div>
+          <div className="header-telemetry"><span>PRICE FEED</span><strong className={feedState === 'LIVE' || feedState === 'PARTIAL LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong></div>
           <div className="header-telemetry"><span>FEED AGE</span><strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong></div>
           <div className="header-telemetry"><span>ORDERS</span><strong className={ordersEnabled ? 'positive' : 'warning-text'}>{ordersEnabled ? 'ENABLED' : 'DISABLED'}</strong></div>
         </div>
@@ -196,7 +190,7 @@ export default function App() {
             <Route path="/history" element={<HistoryPage status={status} />} />
             <Route path="/analytics" element={<AnalyticsPage analytics={analytics} status={status} />} />
             <Route path="/xauusd" element={<XauPage status={status} />} />
-            <Route path="/setup" element={<SetupPage status={status} news={news} oandaStatus={oandaStatus} />} />
+            <Route path="/setup" element={<CommandSetupPage status={status} marketData={marketData} oandaStatus={oandaStatus} />} />
           </Routes>
         </main>
       </div>
