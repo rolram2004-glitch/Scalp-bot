@@ -523,14 +523,32 @@ test("same-symbol pending entry order blocks submission but protective orders do
   const protectiveOnly = buildOandaMock({
     pendingOrders: [{
       id: "701",
-      instrument: "EUR_USD",
       type: "STOP_LOSS",
+      tradeID: "existing-trade-1",
       state: "PENDING"
     }]
   });
   const opened = await executeVerifiedMarketOrder(request(protectiveOnly.oanda));
   assert.equal(opened.status, "OPENED");
   assert.equal(protectiveOnly.calls.createMarketOrder, 1);
+});
+
+test("entry-capable pending orders without an instrument fail closed", async () => {
+  const { oanda, calls } = buildOandaMock({
+    pendingOrders: [{
+      id: "702",
+      type: "LIMIT",
+      state: "PENDING"
+    }]
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda));
+
+  assert.deepEqual(result, {
+    status: "REJECTED",
+    reason: "OANDA_PENDING_ORDER_DATA_INCOMPLETE"
+  });
+  assert.equal(calls.createMarketOrder, 0);
 });
 
 test("missing OANDA unit or price precision fails before submission", async () => {

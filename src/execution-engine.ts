@@ -115,6 +115,17 @@ const PROTECTIVE_PENDING_ORDER_TYPES = new Set([
   "GUARANTEED_STOP_LOSS"
 ]);
 
+function pendingOrderDataComplete(order: any) {
+  const type = String(order?.type || "").trim().toUpperCase();
+  if (!order?.id || !type) return false;
+
+  // OANDA dependent TP/SL orders are attached to a trade and legitimately do
+  // not include `instrument`. Entry-capable pending orders must include it so
+  // the one-position-per-symbol gate can compare them safely.
+  if (PROTECTIVE_PENDING_ORDER_TYPES.has(type)) return true;
+  return Boolean(order?.instrument);
+}
+
 function hasPendingEntryOrder(instrument: string, orders: any[]) {
   const normalized = normalizeOandaSymbol(instrument);
   if (!Array.isArray(orders)) return true;
@@ -257,7 +268,7 @@ export async function executeVerifiedMarketOrder(
     if (hasInstrumentExposure(instrument, openTrades, openPositions)) {
       return { status: "SKIPPED", reason: "POSITION_ALREADY_OPEN_ON_OANDA" };
     }
-    if (pendingOrders.some((order: any) => !order?.instrument || !order?.type)) {
+    if (pendingOrders.some((order: any) => !pendingOrderDataComplete(order))) {
       return { status: "REJECTED", reason: "OANDA_PENDING_ORDER_DATA_INCOMPLETE" };
     }
     if (hasPendingEntryOrder(instrument, pendingOrders)) {
