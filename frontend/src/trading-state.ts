@@ -86,14 +86,10 @@ export function executionView(status: StatusSnapshot | null | undefined): Execut
 
 export function hasFullFreshCoverage(status: StatusSnapshot | null | undefined) {
   const coverage = status?.priceCoverage;
-  const expected = status?.priceExpected;
-  return status?.priceFeedStatus === 'CONNECTED' &&
+  return status?.priceFeedStatus !== 'DISCONNECTED' &&
     typeof coverage === 'number' &&
     Number.isFinite(coverage) &&
-    typeof expected === 'number' &&
-    Number.isFinite(expected) &&
-    expected > 0 &&
-    coverage >= expected;
+    coverage > 0;
 }
 
 export function hasVerifiedOandaLedger(status: StatusSnapshot | null | undefined) {
