@@ -1,6 +1,8 @@
 # Railway - deploy sicuro di Gemmo Remondata Bot
 
 Dashboard corrente: https://scalp-bot-production-761a.up.railway.app/
+Confronto MAIN/INVERSE: https://scalp-bot-production-761a.up.railway.app/vs
+Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
 
 ## Collegamento rapido
 
@@ -16,10 +18,11 @@ Dashboard corrente: https://scalp-bot-production-761a.up.railway.app/
    - `OANDA_ORDER_EXECUTION_ENABLED=false`;
    - `LIVE_TRADING_ENABLED=false`;
    - `LIVE_EXECUTION_VARIANT=MAIN` (unico valore alternativo valido: `INVERSE`);
-   - `MAX_NEW_TRADES_PER_CYCLE=6`;
+   - `SCAN_INTERVAL_MS=30000`;
+   - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
-   - `MAX_DAILY_TRADES=50`;
-   - `MIN_SIGNAL_CONFIDENCE=65`;
+   - `MAX_DAILY_TRADES=1000`;
+   - `MIN_SIGNAL_CONFIDENCE=55`;
    - `DEFAULT_UNITS=1000` o il valore approvato dall'utente;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
@@ -39,9 +42,9 @@ Con `OANDA_ENVIRONMENT=PRACTICE` il wrapper usa `https://api-fxpractice.oanda.co
 Prima dell'attivazione devono essere tutti veri:
 
 - OANDA Practice connesso e account/currency verificati;
-- 15 coppie FX scansionate ogni 2 minuti;
+- 15 coppie FX scansionate ogni 30 secondi, senza sovrapporre due cicli;
 - size, precisione, minimum trade size e conversione verso la valuta conto disponibili;
-- massimo 6 nuovi ingressi validi per ciclo (mai una quota obbligatoria);
+- massimo 7 nuovi ingressi validi per ciclo (mai una quota obbligatoria);
 - nessuna posizione gia aperta sul simbolo, verificata su trade e posizioni OANDA;
 - ordine considerato aperto soltanto dopo order ID, trade ID e rilettura `OPEN` coerente;
 - XAUUSD escluso dall'esecuzione OANDA finche la strategia dedicata non e validata;

@@ -12,7 +12,8 @@ const config = require("./config");
 
 const SYMBOLS = (config.SYMBOLS || []).map((symbol: string) => String(symbol).replace("_", ""));
 
-// Market data uses M5 candles; evaluate the latest real OANDA data every two minutes.
+// Market data uses M5 candles; the configured interval controls how often the
+// latest completed OANDA context is evaluated. Concurrent scans are blocked.
 const SIGNAL_INTERVAL = Number(config.SCAN_INTERVAL || 2 * 60 * 1000);
 const CLOSE_INTERVAL = 15000;
 const PRICE_INTERVAL = 1000;
@@ -79,7 +80,7 @@ export interface BotSnapshot {
   liveTradingEnabled: boolean;
   liveExecutionVariant: StrategyVariant | "INVALID";
   liveExecutionVariantValid: boolean;
-  aiProvider: "DISABLED" | "GEMINI";
+  aiProvider: "DISABLED" | "GEMINI" | "OPENAI";
   aiConfirmationRequired: boolean;
   aiStatus: AiConfirmationStatus | "NOT_CHECKED";
   lastAiReason?: string;
@@ -90,6 +91,9 @@ export interface BotSnapshot {
   maxDailyTrades: number;
   minimumConfidence: number;
   maxOpenPositions: number;
+  maxNewTradesPerCycle: number;
+  maxTradesPerSymbol: number;
+  scanIntervalMs: number;
   maxDailyLoss: number;
   currentSymbol?: string;
   currentAction?: "BUY" | "SELL" | "HOLD";
@@ -171,6 +175,9 @@ const botState: BotSnapshot = {
   maxDailyTrades: MAX_DAILY_TRADES,
   minimumConfidence: MIN_CONFIDENCE,
   maxOpenPositions: MAX_OPEN_POSITIONS,
+  maxNewTradesPerCycle: MAX_NEW_TRADES_PER_CYCLE,
+  maxTradesPerSymbol: Number(config.MAX_TRADES_PER_SYMBOL || 1),
+  scanIntervalMs: SIGNAL_INTERVAL,
   maxDailyLoss: MAX_DAILY_LOSS,
   dailyTradeCount: 0,
   signalsAnalyzed: 0,

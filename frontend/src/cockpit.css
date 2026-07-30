@@ -2565,7 +2565,7 @@ a:focus-visible {
     display: grid;
     flex-direction: row;
     gap: 3px;
-    grid-auto-columns: minmax(64px, 1fr);
+    grid-auto-columns: minmax(52px, 1fr);
     grid-auto-flow: column;
     overflow-x: auto;
     overflow-y: hidden;
@@ -2576,7 +2576,7 @@ a:focus-visible {
   .cockpit-nav a {
     font-size: 7px;
     min-height: 58px;
-    min-width: 64px;
+    min-width: 52px;
   }
 
   .cockpit-nav a.active {

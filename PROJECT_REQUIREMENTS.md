@@ -40,6 +40,7 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 - Grafici solo con candele OANDA e timestamp originali; nessun marker riposizionato.
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
+- La pagina `VS` deve mantenere MAIN e INVERSE in corsie separate, mostrare risultati, win rate, operazioni aperte/chiuse e confronti per signal ID, senza sommare valute PAPER SHADOW differenti.
 - Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
 - Il riferimento visivo definitivo unisce le due immagini fornite: il contenuto dashboard denso con sidebar diventa la pagina principale; il contenuto chart/control-room diventa Grafico/Setup. Griglia dark navy coerente, proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
 - La dashboard principale include soltanto metriche derivabili da dati reali: P&L, win rate, trade oggi, posizioni, balance, equity/NAV, profit factor, drawdown, rischio, ultimo segnale e timestamp; quando non calcolabili mostra N/A.
@@ -48,6 +49,7 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 ## Strategia e qualita segnali
 
 - Non forzare un numero di trade. Se manca un setup completo, usare `HOLD`.
+- Il profilo OANDA Practice aggressivo puo scansionare ogni 30 secondi con setup score minimo 55, massimo 7 nuovi ingressi validi per ciclo, 15 posizioni e una sola posizione per simbolo. Un ciclo gia in corso blocca quello successivo.
 - Forex: mantenere la logica esistente salvo bug reali; rischio economico previsto 1.20 e target previsto 2.40 nella valuta correttamente dichiarata.
 - Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
 - Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.
