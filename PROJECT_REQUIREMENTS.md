@@ -38,6 +38,9 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 - Storici LIVE OANDA, PAPER e PAPER SHADOW sempre separati.
 - Calendario senza fonte configurata: `ECONOMIC CALENDAR NOT CONFIGURED`.
 - Grafici solo con candele OANDA e timestamp originali; nessun marker riposizionato.
+- Il grafico XAUUSD deve avere resa professionale: candele e volume OANDA,
+  crosshair OHLC, EMA 20/50/200, livelli strategia/struttura attivabili,
+  marker segnali e layout responsive. Nessun livello sintetico.
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
 - La pagina `VS` deve mantenere MAIN e INVERSE in corsie separate, mostrare risultati, win rate, operazioni aperte/chiuse e confronti per signal ID, senza sommare valute PAPER SHADOW differenti.
@@ -49,7 +52,12 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 ## Strategia e qualita segnali
 
 - Non forzare un numero di trade. Se manca un setup completo, usare `HOLD`.
-- Il profilo OANDA Practice aggressivo puo scansionare ogni 30 secondi con setup score minimo 55, massimo 7 nuovi ingressi validi per ciclo, 15 posizioni e una sola posizione per simbolo. Un ciclo gia in corso blocca quello successivo.
+- Il profilo `AGGRESSIVE_25` scansiona le 15 coppie ogni 30 secondi,
+  riconosce trend completi e continuazioni/rotture strutturali confermate, usa
+  setup score minimo 55, massimo 7 nuovi ingressi validi per ciclo, 15
+  posizioni e una sola posizione per simbolo. Il tetto account-wide e rigido:
+  massimo 25 operazioni totali al giorno UTC, anche se Railway conserva una
+  vecchia variabile piu alta. Un ciclo gia in corso blocca quello successivo.
 - Forex: mantenere la logica esistente salvo bug reali; rischio economico previsto 1.20 e target previsto 2.40 nella valuta correttamente dichiarata.
 - Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
 - Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.

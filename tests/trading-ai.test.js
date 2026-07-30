@@ -90,3 +90,37 @@ test("setup score changes only when verified market evidence changes", async () 
   assert.equal(alignedMacdAndLiquidity.setupScore, 96);
   assert.ok(alignedMacdAndLiquidity.setupScore > base.setupScore);
 });
+
+test("AGGRESSIVE_25 accepts a confirmed fast-trend continuation before the slow EMA stack", async () => {
+  const decision = await getScalpingSignal(marketData({
+    ema20: 1.19,
+    ema50: 1.18,
+    ema200: 1.185,
+    rsi: 52.5,
+    macdHistogram: 0.0002,
+    structureBias: "BULLISH"
+  }));
+
+  assert.equal(decision.action, "BUY");
+  assert.equal(decision.setupType, "AGGRESSIVE_CONTINUATION");
+  assert.ok(decision.confidence >= 55);
+  assert.match(decision.reasoning, /AGGRESSIVE_25/);
+});
+
+test("AGGRESSIVE_25 remains HOLD when fast trend has no directional confirmation", async () => {
+  const decision = await getScalpingSignal(marketData({
+    ema20: 1.19,
+    ema50: 1.18,
+    ema200: 1.185,
+    rsi: 52.5,
+    macdHistogram: 0.0002,
+    structureBias: "RANGE",
+    killzone: false,
+    breakOfStructure: "NONE",
+    changeOfCharacter: "NONE",
+    liquiditySweep: "NONE",
+    fairValueGap: undefined
+  }));
+
+  assert.equal(decision.action, "HOLD");
+});

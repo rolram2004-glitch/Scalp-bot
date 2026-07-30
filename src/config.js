@@ -15,6 +15,12 @@ const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim()
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
   : "DISABLED";
+const requestedForexSignalProfile = String(
+  process.env.FOREX_SIGNAL_PROFILE || "AGGRESSIVE_25"
+).trim().toUpperCase();
+const forexSignalProfile = ["AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
+  ? requestedForexSignalProfile
+  : "AGGRESSIVE_25";
 const geminiModelRaw = String(process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 const geminiModel = /^gemini-[a-z0-9.-]+$/i.test(geminiModelRaw)
   ? geminiModelRaw
@@ -64,14 +70,16 @@ module.exports = {
   MAX_OPEN_TRADES: boundedNumber(process.env.MAX_OPEN_POSITIONS, 15, 1, 15, true),
   MAX_NEW_TRADES_PER_CYCLE: boundedNumber(process.env.MAX_NEW_TRADES_PER_CYCLE, 7, 1, 7, true),
   MAX_TRADES_PER_SYMBOL: 1,
-  MAX_DAILY_TRADES: boundedNumber(process.env.MAX_DAILY_TRADES, 1000, 1, 1000, true),
+  // Account-wide hard ceiling: a stale Railway value can never raise it.
+  MAX_DAILY_TRADES: boundedNumber(process.env.MAX_DAILY_TRADES, 25, 1, 25, true),
   NORMAL_STOP_LOSS_PIPS: boundedNumber(process.env.NORMAL_STOP_LOSS_PIPS, 10, 1, 100),
   NORMAL_TAKE_PROFIT_PIPS: boundedNumber(process.env.NORMAL_TAKE_PROFIT_PIPS, 20, 1, 200),
 
   // Aggressive demo threshold; trades are still opened only on qualifying signals.
-  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 60, 50, 100),
+  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 55, 50, 100),
+  FOREX_SIGNAL_PROFILE: forexSignalProfile,
 
-  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 30_000, 300_000, true),
+  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 30_000, 30_000, 300_000, true),
   POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),

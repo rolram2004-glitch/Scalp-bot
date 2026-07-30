@@ -95,6 +95,7 @@ export interface BotSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
+  signalProfile: "AGGRESSIVE_25" | "BALANCED";
   maxDailyTrades: number;
   minimumConfidence: number;
   maxOpenPositions: number;
@@ -180,6 +181,7 @@ const botState: BotSnapshot = {
   aiConfirmationRequired: config.AI_CONFIRMATION_REQUIRED,
   aiStatus: config.AI_PROVIDER === "DISABLED" ? "DISABLED" : "NOT_CHECKED",
   symbols: SYMBOLS,
+  signalProfile: config.FOREX_SIGNAL_PROFILE,
   maxDailyTrades: MAX_DAILY_TRADES,
   minimumConfidence: MIN_CONFIDENCE,
   maxOpenPositions: MAX_OPEN_POSITIONS,
@@ -1748,6 +1750,7 @@ export function startAutonomousBot() {
   pushLog("AUTONOMOUS BOT STARTED");
   pushLog(`Symbols: ${SYMBOLS.length}`);
   pushLog(`Max Daily Trades: ${MAX_DAILY_TRADES}`);
+  pushLog(`Forex Signal Profile: ${config.FOREX_SIGNAL_PROFILE}`);
   pushLog(`Minimum Signal Confidence: ${MIN_CONFIDENCE}%`);
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
   pushLog(`Max New Trades Per Cycle: ${MAX_NEW_TRADES_PER_CYCLE}`);

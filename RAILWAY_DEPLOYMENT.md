@@ -21,8 +21,9 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
-   - `MAX_DAILY_TRADES=1000`;
+   - `MAX_DAILY_TRADES=25`;
    - `MIN_SIGNAL_CONFIDENCE=55`;
+   - `FOREX_SIGNAL_PROFILE=AGGRESSIVE_25`;
    - `DEFAULT_UNITS=1000` o il valore approvato dall'utente;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
@@ -45,6 +46,8 @@ Prima dell'attivazione devono essere tutti veri:
 - 15 coppie FX scansionate ogni 30 secondi, senza sovrapporre due cicli;
 - size, precisione, minimum trade size e conversione verso la valuta conto disponibili;
 - massimo 7 nuovi ingressi validi per ciclo (mai una quota obbligatoria);
+- massimo 25 operazioni totali al giorno UTC; il limite resta 25 anche se
+  Railway conserva per errore un valore precedente piu alto;
 - nessuna posizione gia aperta sul simbolo, verificata su trade e posizioni OANDA;
 - ordine considerato aperto soltanto dopo order ID, trade ID e rilettura `OPEN` coerente;
 - XAUUSD escluso dall'esecuzione OANDA finche la strategia dedicata non e validata;
