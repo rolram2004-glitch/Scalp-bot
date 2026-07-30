@@ -2,6 +2,9 @@
 
 require("dotenv").config();
 
+const fs = require("fs");
+const path = require("path");
+
 const environment = String(process.env.OANDA_ENVIRONMENT || "PRACTICE").trim().toUpperCase();
 const requestedMode = String(process.env.TRADING_MODE || "PAPER").trim().toUpperCase();
 const hasPracticeCredentials = Boolean(
@@ -27,13 +30,54 @@ if (
     : "MAIN";
 }
 
-// Authoritative runtime limits requested for the autonomous demo bot.
+// Authoritative aggressive-demo limits. These cannot be silently replaced by
+// older Railway variables left from previous versions.
 process.env.MAX_DAILY_TRADES = "1000";
 process.env.MAX_NEW_TRADES_PER_CYCLE = "7";
 process.env.MAX_OPEN_POSITIONS = "15";
 process.env.SCAN_INTERVAL_MS = "60000";
+process.env.MIN_SIGNAL_CONFIDENCE = "60";
 process.env.NORMAL_STOP_LOSS_PIPS = "10";
 process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
+
+// The original autonomous loop closed a verified OANDA position whenever a
+// later scan returned HOLD or a weaker score. That produced the premature
+// "Chiudi operazione" entries visible in OANDA. Patch only that block at load
+// time: broker-side SL/TP remain authoritative; manual and emergency safety
+// closures remain available.
+const originalReadFileSync = fs.readFileSync.bind(fs);
+const protectedExitMarker = "PROTECTED_EXIT_ONLY";
+const signalExitStart = "      const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);";
+const signalExitEnd = "      pushLog(";
+
+function patchAutonomousBotSource(source) {
+  if (source.includes(protectedExitMarker)) return source;
+
+  const start = source.indexOf(signalExitStart);
+  if (start < 0) {
+    throw new Error("AUTONOMOUS_SIGNAL_EXIT_BLOCK_NOT_FOUND");
+  }
+
+  const end = source.indexOf(signalExitEnd, start);
+  if (end <= start) {
+    throw new Error("AUTONOMOUS_SIGNAL_EXIT_END_NOT_FOUND");
+  }
+
+  const replacement =
+    "      // PROTECTED_EXIT_ONLY: a later HOLD/weak scan never closes an OANDA trade.\n" +
+    "      // The verified broker Stop Loss and Take Profit manage the exit.\n\n";
+
+  return source.slice(0, start) + replacement + source.slice(end);
+}
+
+fs.readFileSync = function protectedSourceRead(file, ...args) {
+  const result = originalReadFileSync(file, ...args);
+  if (!String(file || "").endsWith(`${path.sep}autonomous-bot.ts`)) return result;
+
+  const text = Buffer.isBuffer(result) ? result.toString("utf8") : String(result);
+  const patched = patchAutonomousBotSource(text);
+  return Buffer.isBuffer(result) ? Buffer.from(patched, "utf8") : patched;
+};
 
 // execution-engine.ts is loaded here before autonomous-bot.ts so the verified
 // fixed-pip wrapper is the implementation used by every later named import.
@@ -162,5 +206,5 @@ executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarke
 console.log(
   `[BOOTSTRAP] mode=${process.env.TRADING_MODE || "PAPER"} environment=${environment} ` +
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
-  "scan=60s forex=15 maxNew=7 maxOpen=15 sl=10p tp=20p maxDaily=1000"
+  "scan=60s forex=15 confidence=60 maxNew=7 maxOpen=15 sl=10p tp=20p exits=SL_TP_ONLY maxDaily=1000"
 );
