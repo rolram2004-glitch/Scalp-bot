@@ -36,6 +36,7 @@ const executionReady = Boolean(
 );
 
 module.exports = {
+  // 15 forex pairs plus XAUUSD as a separate analysis-only instrument.
   SYMBOLS: [
     "XAU_USD",
     "EUR_USD",
@@ -58,16 +59,17 @@ module.exports = {
   TIMEFRAME: "M5",
 
   MAX_SPREAD: 35.0,
-  MAX_OPEN_TRADES: boundedNumber(process.env.MAX_OPEN_POSITIONS, 15, 1, 20, true),
-  MAX_NEW_TRADES_PER_CYCLE: boundedNumber(process.env.MAX_NEW_TRADES_PER_CYCLE, 7, 1, 15, true),
+  MAX_OPEN_TRADES: boundedNumber(process.env.MAX_OPEN_POSITIONS, 15, 1, 15, true),
+  MAX_NEW_TRADES_PER_CYCLE: boundedNumber(process.env.MAX_NEW_TRADES_PER_CYCLE, 7, 1, 7, true),
   MAX_TRADES_PER_SYMBOL: 1,
   MAX_DAILY_TRADES: boundedNumber(process.env.MAX_DAILY_TRADES, 1000, 1, 1000, true),
   NORMAL_STOP_LOSS_PIPS: boundedNumber(process.env.NORMAL_STOP_LOSS_PIPS, 10, 1, 100),
   NORMAL_TAKE_PROFIT_PIPS: boundedNumber(process.env.NORMAL_TAKE_PROFIT_PIPS, 20, 1, 200),
 
-  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 65, 0, 100),
+  // Aggressive demo threshold; trades are still opened only on qualifying signals.
+  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 60, 60, 100),
 
-  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 30_000, 300_000, true),
+  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 60_000, 60_000, 300_000, true),
   POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),
