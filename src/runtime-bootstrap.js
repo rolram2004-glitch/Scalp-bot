@@ -42,13 +42,13 @@ process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
 
 // The original autonomous loop closed a verified OANDA position whenever a
 // later scan returned HOLD or a weaker score. That produced the premature
-// "Chiudi operazione" entries visible in OANDA. Patch only that block at load
-// time: broker-side SL/TP remain authoritative; manual and emergency safety
-// closures remain available.
+// "Chiudi operazione" entries visible in OANDA. Patch only that complete block
+// at load time: broker-side SL/TP remain authoritative; manual and emergency
+// safety closures remain available.
 const originalReadFileSync = fs.readFileSync.bind(fs);
 const protectedExitMarker = "PROTECTED_EXIT_ONLY";
 const signalExitStart = "      const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);";
-const signalExitEnd = "      pushLog(";
+const signalExitEnd = "      pushLog(\n        `[${symbol}] ${rankedDecision.action} | setup score";
 
 function patchAutonomousBotSource(source) {
   if (source.includes(protectedExitMarker)) return source;
