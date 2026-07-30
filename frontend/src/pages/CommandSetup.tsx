@@ -174,13 +174,21 @@ export function CommandSetupPage({
       <section className="elite-metrics">
         <Metric label="P&L TODAY" value={dailyRisk?.complete ? money(dailyRisk.pnl, dailyRisk.currency || accountCurrency) : 'N/A'} detail={dailyRisk?.complete ? `UTC ${dailyRisk.dateUTC}` : dailyRisk?.reason || 'Ledger non verificato'} tone="green" />
         <Metric label="WIN RATE" value={winRate === undefined ? 'N/A' : `${winRate.toFixed(1)}%`} detail={decided.length ? `${wins}W · ${decided.length - wins}L` : 'Nessun trade chiuso verificato'} tone="purple" />
-        <Metric label="TRADES TODAY" value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'} detail={`Limite ${dailyRisk?.maxTrades ?? status?.maxDailyTrades ?? 1000}`} tone="amber" />
+        <Metric
+          label="TRADES TODAY"
+          value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'}
+          detail={`${status?.signalProfile || 'PROFILE N/A'} · limite ${dailyRisk?.maxTrades ?? status?.maxDailyTrades ?? 25} UTC`}
+          tone="amber"
+        />
         <Metric label="OPEN POSITIONS" value={openTrades.length} detail={`${status?.maxOpenPositions ?? 15} massime · ${accountCurrency || 'currency N/A'}`} tone="green" />
       </section>
 
       <section className="elite-workspace">
         <aside className="elite-scanner elite-panel">
-          <header><div><span>MARKET SCANNER</span><h2>INSTRUMENTS</h2></div><b>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? symbols.length}</b></header>
+          <header>
+            <div><span>MARKET SCANNER</span><h2>15 FX · {status?.signalProfile || 'PROFILE N/A'}</h2></div>
+            <b>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? symbols.length}</b>
+          </header>
           <div className="elite-scanner-list">
             {scannerRows.map(({ symbol, market, signal, quote }) => (
               <div key={symbol}>

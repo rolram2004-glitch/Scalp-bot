@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ChartPriceLine, ChartSignalMarker, RealMiniChart } from '../components/RealMiniChart';
+import { ChartPriceLine, ChartSignalMarker } from '../components/RealMiniChart';
+import { ProfessionalXauChart } from '../components/ProfessionalXauChart';
 import { fetchIntelligence } from '../services/api';
 import { executionView } from '../trading-state';
 import { SignalLaneSnapshot, StatusSnapshot, XauSignalRecord } from '../types';
@@ -86,6 +87,13 @@ function TradePlan({ title, lane, timestamp }: { title: string; lane?: SignalLan
 
 export function XauPage({ status }: { status: StatusSnapshot | null }) {
   const [timeframe, setTimeframe] = useState('M5');
+  const [layers, setLayers] = useState({
+    ema: true,
+    volume: true,
+    strategy: true,
+    structure: true,
+    signals: true
+  });
   const [intelligence, setIntelligence] = useState<any>(null);
   const [intelligenceError, setIntelligenceError] = useState('');
   const requestRef = useRef(0);
@@ -101,30 +109,59 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
   const configured = Boolean(status?.symbols?.map(cleanSymbol).includes(XAU));
   const chartLevels = useMemo<ChartPriceLine[]>(() => {
     const lines: ChartPriceLine[] = [];
+    const addLine = (value: unknown, label: string, color: string, style: ChartPriceLine['style'] = 'dashed') => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed) || parsed <= 0) return;
+      if (lines.some((line) => Math.abs(line.price - parsed) < 0.001 && line.label === label)) return;
+      lines.push({ price: parsed, label, color, style });
+    };
     const entry = activeSignal?.entryPrice ?? candidate?.entryPrice;
     const stop = activeSignal?.activeStop ?? candidate?.stopLoss;
     const targets = activeSignal?.takeProfits ?? candidate?.takeProfits ?? [];
     const prefix = activeSignal ? '' : 'WATCH ';
-    if (Number.isFinite(Number(entry))) lines.push({ price: Number(entry), label: `${prefix}ENTRY`, color: '#3b82f6', style: 'solid' });
-    if (Number.isFinite(Number(stop))) lines.push({ price: Number(stop), label: activeSignal?.protectedAtBreakEven ? 'BE' : `${prefix}SL`, color: '#ff4f78' });
-    targets.slice(0, 3).forEach((target, index) => {
-      lines.push({ price: Number(target), label: `${prefix}TP${index + 1}`, color: index === 2 ? '#f6c453' : '#15d68f' });
-    });
-    (market?.resistanceLevels || []).slice(0, 2).forEach((level: number, index: number) => {
-      lines.push({ price: level, label: `R${index + 1}`, color: '#7d6cff', style: 'dotted' });
-    });
-    (market?.supportLevels || []).slice(0, 2).forEach((level: number, index: number) => {
-      lines.push({ price: level, label: `S${index + 1}`, color: '#4dd6ff', style: 'dotted' });
-    });
+    if (layers.strategy) {
+      addLine(entry, `${prefix}ENTRY`, '#4d8dff', 'solid');
+      addLine(stop, activeSignal?.protectedAtBreakEven ? 'BREAK EVEN' : `${prefix}STOP`, '#ff4c70');
+      targets.slice(0, 3).forEach((target, index) => {
+        addLine(target, `${prefix}TP${index + 1}`, index === 2 ? '#e2a93f' : '#1ed391');
+      });
+    }
+    if (layers.structure) {
+      (market?.resistanceLevels || []).slice(0, 3).forEach((level: number, index: number) => {
+        addLine(level, `RESISTANCE ${index + 1}`, '#ff7690', 'dotted');
+      });
+      (market?.supportLevels || []).slice(0, 3).forEach((level: number, index: number) => {
+        addLine(level, `SUPPORT ${index + 1}`, '#42c8ff', 'dotted');
+      });
+      addLine(market?.swingHigh, 'SWING HIGH', '#e2a93f', 'dotted');
+      addLine(market?.swingLow, 'SWING LOW', '#e2a93f', 'dotted');
+      addLine(market?.equalHigh, 'EQUAL HIGH', '#b78cff', 'dotted');
+      addLine(market?.equalLow, 'EQUAL LOW', '#b78cff', 'dotted');
+      addLine(market?.fairValueGapZone?.high, 'FVG HIGH', '#8a6cff', 'dotted');
+      addLine(market?.fairValueGapZone?.low, 'FVG LOW', '#8a6cff', 'dotted');
+    }
     return lines;
-  }, [activeSignal, candidate, market?.resistanceLevels, market?.supportLevels]);
+  }, [
+    activeSignal,
+    candidate,
+    layers.strategy,
+    layers.structure,
+    market?.equalHigh,
+    market?.equalLow,
+    market?.fairValueGapZone?.high,
+    market?.fairValueGapZone?.low,
+    market?.resistanceLevels,
+    market?.supportLevels,
+    market?.swingHigh,
+    market?.swingLow
+  ]);
   const chartMarkers = useMemo<ChartSignalMarker[]>(() => (
-    (lab?.signals || []).slice(0, 12).map((item) => ({
+    layers.signals ? (lab?.signals || []).slice(0, 12).map((item) => ({
       time: item.candleTime,
       side: item.side,
       label: `${item.side} ${item.closedAt ? rValue(item.resultR) : 'LIVE'}`
-    }))
-  ), [lab?.signals]);
+    })) : []
+  ), [lab?.signals, layers.signals]);
 
   useEffect(() => {
     const requestId = ++requestRef.current;
@@ -191,17 +228,46 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
       </section>
 
       <section className="xau-main-grid">
-        <article className="cockpit-panel xau-chart-card">
+        <article className="cockpit-panel xau-chart-card xau-chart-card--institutional">
           <header className="cockpit-panel__header">
-            <div><span>REAL CANDLES</span><h2>XAUUSD MARKET MAP</h2></div>
+            <div><span>INSTITUTIONAL CHART · REAL OANDA DATA</span><h2>XAUUSD PROFESSIONAL MARKET MAP</h2></div>
             <div className="xau-timeframe-tabs">
               {XAU_TIMEFRAMES.map((item) => <button key={item} className={timeframe === item ? 'active' : ''} onClick={() => setTimeframe(item)}>{item}</button>)}
             </div>
           </header>
-          <RealMiniChart
+
+          <div className="xau-chart-toolbar">
+            <div className="xau-chart-toolbar__status">
+              <span className={quote?.tradeable ? 'online' : ''}><i />{quote?.tradeable ? 'OANDA LIVE' : 'FEED N/A'}</span>
+              <b>{market?.session || status?.session || 'SESSION N/A'}</b>
+              <b>SPREAD {numeric(market?.spread, 2)}</b>
+              <b>{dateTime(quote?.time)}</b>
+            </div>
+            <div className="xau-layer-controls" aria-label="Livelli grafico">
+              {([
+                ['ema', 'EMA 20/50/200'],
+                ['volume', 'VOLUME'],
+                ['strategy', 'ENTRY · SL · TP'],
+                ['structure', 'STRUCTURE'],
+                ['signals', 'AI SIGNALS']
+              ] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  className={layers[key] ? 'active' : ''}
+                  onClick={() => setLayers((current) => ({ ...current, [key]: !current[key] }))}
+                  aria-pressed={layers[key]}
+                >
+                  <i />{label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <ProfessionalXauChart
             symbol={configured ? XAU : undefined}
             timeframe={timeframe}
-            showEma
+            showEma={layers.ema}
+            showVolume={layers.volume}
             priceLines={chartLevels}
             markers={chartMarkers}
           />

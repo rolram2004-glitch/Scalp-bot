@@ -296,6 +296,7 @@ export interface StatusSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
+  signalProfile?: 'AGGRESSIVE_25' | 'BALANCED';
   maxDailyTrades: number;
   minimumConfidence?: number;
   maxOpenPositions: number;

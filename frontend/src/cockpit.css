@@ -2072,38 +2072,38 @@ a:focus-visible {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.xau-mtf-grid > article {
+.xau-mtf-grid > div {
   border-bottom: 1px solid var(--cockpit-line-soft);
   border-right: 1px solid var(--cockpit-line-soft);
   min-width: 0;
   padding: 10px 12px;
 }
 
-.xau-mtf-grid > article:nth-child(even) {
+.xau-mtf-grid > div:nth-child(even) {
   border-right: 0;
 }
 
-.xau-mtf-grid article span,
-.xau-mtf-grid article strong,
-.xau-mtf-grid article small {
+.xau-mtf-grid div span,
+.xau-mtf-grid div strong,
+.xau-mtf-grid div small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.xau-mtf-grid article span {
+.xau-mtf-grid div span {
   color: #67798f;
   font-size: 7px;
   font-weight: 950;
 }
 
-.xau-mtf-grid article strong {
+.xau-mtf-grid div strong {
   font-size: 9px;
   margin-top: 4px;
 }
 
-.xau-mtf-grid article small {
+.xau-mtf-grid div small {
   color: #718399;
   font-size: 8px;
   margin-top: 3px;
@@ -2821,7 +2821,7 @@ a:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .xau-mtf-grid > article {
+  .xau-mtf-grid > div {
     border-right: 0;
   }
 

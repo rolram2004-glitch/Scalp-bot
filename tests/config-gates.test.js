@@ -14,6 +14,7 @@ function readConfig(env) {
     MAX_DAILY_TRADES: process.env.MAX_DAILY_TRADES,
     SCAN_INTERVAL_MS: process.env.SCAN_INTERVAL_MS,
     MIN_SIGNAL_CONFIDENCE: process.env.MIN_SIGNAL_CONFIDENCE,
+    FOREX_SIGNAL_PROFILE: process.env.FOREX_SIGNAL_PROFILE,
     MAX_RISK_PERCENT: process.env.MAX_RISK_PERCENT,
     MAX_DAILY_LOSS: process.env.MAX_DAILY_LOSS,
     AI_PROVIDER: process.env.AI_PROVIDER,
@@ -112,7 +113,7 @@ test("invalid numeric risk limits fall back to bounded safe values", () => {
   assert.equal(config.MAX_DAILY_LOSS, 50);
 });
 
-test("aggressive Practice profile accepts 30 second scans without removing risk caps", () => {
+test("aggressive Practice profile accepts 30 second scans and hard caps the day at 25", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
@@ -122,7 +123,8 @@ test("aggressive Practice profile accepts 30 second scans without removing risk 
     MIN_SIGNAL_CONFIDENCE: "55",
     MAX_NEW_TRADES_PER_CYCLE: "7",
     MAX_OPEN_POSITIONS: "15",
-    MAX_DAILY_TRADES: "1000"
+    MAX_DAILY_TRADES: "1000",
+    FOREX_SIGNAL_PROFILE: "AGGRESSIVE_25"
   });
 
   assert.equal(config.LIVE_TRADING_ENABLED, true);
@@ -130,8 +132,18 @@ test("aggressive Practice profile accepts 30 second scans without removing risk 
   assert.equal(config.MIN_CONFIDENCE, 55);
   assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 7);
   assert.equal(config.MAX_OPEN_TRADES, 15);
-  assert.equal(config.MAX_DAILY_TRADES, 1000);
+  assert.equal(config.MAX_DAILY_TRADES, 25);
   assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
+  assert.equal(config.FOREX_SIGNAL_PROFILE, "AGGRESSIVE_25");
+});
+
+test("daily trade cap cannot be raised above 25 by a stale Railway variable", () => {
+  const config = readConfig({
+    TRADING_MODE: "PAPER",
+    MAX_DAILY_TRADES: "999999"
+  });
+
+  assert.equal(config.MAX_DAILY_TRADES, 25);
 });
 
 test("Gemini remains disabled by default and parses only explicit safe configuration", () => {

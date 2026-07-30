@@ -8,6 +8,10 @@ type ForexSide = "BUY" | "SELL";
 type ScoreBreakdown = NonNullable<TradingDecision["scoreBreakdown"]>;
 
 const FOREX_MAX_SPREAD = 25;
+const config = require("./config");
+const AGGRESSIVE_FOREX = config.FOREX_SIGNAL_PROFILE === "AGGRESSIVE_25";
+const FOREX_RSI_BUY = AGGRESSIVE_FOREX ? 52 : 55;
+const FOREX_RSI_SELL = AGGRESSIVE_FOREX ? 48 : 45;
 
 function clampScore(value: number, maximum: number) {
   if (!Number.isFinite(value)) return 0;
@@ -27,10 +31,13 @@ function aligned(value: unknown, side: ForexSide) {
 
 function forexScenarioScore(data: MarketData, side: ForexSide): ScoreBreakdown {
   const bullish = side === "BUY";
-  const emaAligned = bullish
+  const fullEmaStack = bullish
     ? data.bid > data.ema20 && data.ema20 > data.ema50 && data.ema50 > data.ema200
     : data.bid < data.ema20 && data.ema20 < data.ema50 && data.ema50 < data.ema200;
-  const rsiAligned = bullish ? data.rsi > 55 : data.rsi < 45;
+  const fastTrendAligned = bullish
+    ? data.bid > data.ema20 && data.ema20 > data.ema50 && data.bid > data.ema200
+    : data.bid < data.ema20 && data.ema20 < data.ema50 && data.bid < data.ema200;
+  const rsiAligned = bullish ? data.rsi >= FOREX_RSI_BUY : data.rsi <= FOREX_RSI_SELL;
   const macdAligned = bullish ? data.macdHistogram > 0 : data.macdHistogram < 0;
   const structureAligned = aligned(data.structureBias, side);
 
@@ -62,7 +69,7 @@ function forexScenarioScore(data: MarketData, side: ForexSide): ScoreBreakdown {
     data.tradeable !== false;
 
   return {
-    trend: emaAligned ? 20 : 0,
+    trend: fullEmaStack ? 20 : AGGRESSIVE_FOREX && fastTrendAligned ? 14 : 0,
     momentum: clampScore((rsiAligned ? 10 : 0) + (macdAligned ? 5 : 0), 15),
     structure: structureAligned ? 20 : data.killzone ? 8 : 0,
     liquidity: clampScore(liquidity, 10),
@@ -100,11 +107,41 @@ export async function getScalpingSignal(
 
   const bullishStructure = data.structureBias === "BULLISH";
   const bearishStructure = data.structureBias === "BEARISH";
-  // Preserve the original Forex entry logic: EMA stack + RSI. MACD remains
-  // visible in the reasoning, but an opposite lagging histogram must not turn
-  // an otherwise valid real-data setup into HOLD.
-  const bullishMomentum = data.bid > data.ema20 && data.ema20 > data.ema50 && data.ema50 > data.ema200 && data.rsi > 55;
-  const bearishMomentum = data.bid < data.ema20 && data.ema20 < data.ema50 && data.ema50 < data.ema200 && data.rsi < 45;
+  const bullishFullStack = data.bid > data.ema20 &&
+    data.ema20 > data.ema50 &&
+    data.ema50 > data.ema200 &&
+    data.rsi > 55;
+  const bearishFullStack = data.bid < data.ema20 &&
+    data.ema20 < data.ema50 &&
+    data.ema50 < data.ema200 &&
+    data.rsi < 45;
+  const bullishFastTrend = data.bid > data.ema20 &&
+    data.ema20 > data.ema50 &&
+    data.bid > data.ema200 &&
+    data.rsi >= FOREX_RSI_BUY;
+  const bearishFastTrend = data.bid < data.ema20 &&
+    data.ema20 < data.ema50 &&
+    data.bid < data.ema200 &&
+    data.rsi <= FOREX_RSI_SELL;
+  const bullishImpulse = [
+    data.breakOfStructure,
+    data.changeOfCharacter,
+    data.liquiditySweep,
+    data.fairValueGap
+  ].some((value) => aligned(value, "BUY"));
+  const bearishImpulse = [
+    data.breakOfStructure,
+    data.changeOfCharacter,
+    data.liquiditySweep,
+    data.fairValueGap
+  ].some((value) => aligned(value, "SELL"));
+  // The aggressive profile can enter a confirmed continuation before the
+  // slower EMA stack is fully rebuilt. It still needs real directional
+  // structure, a real structural impulse, or an active killzone.
+  const bullishMomentum = bullishFullStack ||
+    (AGGRESSIVE_FOREX && bullishFastTrend && (bullishStructure || bullishImpulse || data.killzone));
+  const bearishMomentum = bearishFullStack ||
+    (AGGRESSIVE_FOREX && bearishFastTrend && (bearishStructure || bearishImpulse || data.killzone));
   const buyBreakdown = forexScenarioScore(data, "BUY");
   const sellBreakdown = forexScenarioScore(data, "SELL");
   const buyScore = totalScore(buyBreakdown);
@@ -129,7 +166,7 @@ export async function getScalpingSignal(
 
   if (
     bullishMomentum &&
-    (bullishStructure || data.killzone)
+    (bullishStructure || bullishImpulse || data.killzone)
   ) {
     const score = buyScore;
     return {
@@ -140,8 +177,12 @@ export async function getScalpingSignal(
       scoreBreakdown: buyBreakdown,
       scenarioScores,
       riskRewardRatio: 2,
-      setupType: bullishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
-      reasoning: `BUY accepted on real OANDA data. Setup score ${score}/100 (${scoreSummary(buyBreakdown)}). Price above EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
+      setupType: bullishFullStack
+        ? "EMA_TREND"
+        : bullishImpulse
+          ? "AGGRESSIVE_STRUCTURE_BREAK"
+          : "AGGRESSIVE_CONTINUATION",
+      reasoning: `BUY accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(buyBreakdown)}). Fast trend ${bullishFastTrend}, full EMA stack ${bullishFullStack}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, structural impulse ${bullishImpulse}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
     };
   }
 
@@ -149,7 +190,7 @@ export async function getScalpingSignal(
 
   if (
     bearishMomentum &&
-    (bearishStructure || data.killzone)
+    (bearishStructure || bearishImpulse || data.killzone)
   ) {
     const score = sellScore;
     return {
@@ -160,8 +201,12 @@ export async function getScalpingSignal(
       scoreBreakdown: sellBreakdown,
       scenarioScores,
       riskRewardRatio: 2,
-      setupType: bearishStructure ? "EMA_TREND" : "KILLZONE_MOMENTUM",
-      reasoning: `SELL accepted on real OANDA data. Setup score ${score}/100 (${scoreSummary(sellBreakdown)}). Price below EMA20/50/200, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
+      setupType: bearishFullStack
+        ? "EMA_TREND"
+        : bearishImpulse
+          ? "AGGRESSIVE_STRUCTURE_BREAK"
+          : "AGGRESSIVE_CONTINUATION",
+      reasoning: `SELL accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(sellBreakdown)}). Fast trend ${bearishFastTrend}, full EMA stack ${bearishFullStack}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, structural impulse ${bearishImpulse}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
     };
   }
 
@@ -175,6 +220,6 @@ export async function getScalpingSignal(
     scoreLabel: scoreLabel(bestScore),
     scoreBreakdown: bestBreakdown,
     scenarioScores,
-    reasoning: `HOLD: no complete setup on real OANDA data. Best scenario ${bestSide} scores ${bestScore}/100 (${scoreSummary(bestBreakdown)}). EMA stack buy=${bullishMomentum}, sell=${bearishMomentum}, structure=${data.structureBias || "UNKNOWN"}, RSI=${data.rsi.toFixed(1)}.`
+    reasoning: `HOLD: no complete ${config.FOREX_SIGNAL_PROFILE} setup on real OANDA data. Best scenario ${bestSide} scores ${bestScore}/100 (${scoreSummary(bestBreakdown)}). Buy trigger=${bullishMomentum}, sell trigger=${bearishMomentum}, structure=${data.structureBias || "UNKNOWN"}, RSI=${data.rsi.toFixed(1)}.`
   };
 }

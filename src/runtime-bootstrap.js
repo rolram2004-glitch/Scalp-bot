@@ -31,14 +31,16 @@ if (
     : "MAIN";
 }
 
-// Aggressive OANDA Practice profile. The bot scans all configured pairs twice per minute,
-// while broker verification, one-position-per-symbol, open-position caps and SL/TP remain mandatory.
-process.env.MAX_DAILY_TRADES = "1000";
+// AGGRESSIVE_25 scans all configured pairs twice per minute while broker
+// verification, one-position-per-symbol, open-position caps and SL/TP remain mandatory.
+// The daily ceiling is intentionally forced here as well as in config.js.
+process.env.MAX_DAILY_TRADES = "25";
 process.env.MAX_NEW_TRADES_PER_CYCLE = "7";
 process.env.MAX_OPEN_POSITIONS = "15";
 process.env.SCAN_INTERVAL_MS = "30000";
 process.env.POSITION_MANAGEMENT_INTERVAL_MS = "5000";
 process.env.MIN_SIGNAL_CONFIDENCE = hasOpenAiKey ? "50" : "55";
+process.env.FOREX_SIGNAL_PROFILE = "AGGRESSIVE_25";
 process.env.NORMAL_STOP_LOSS_PIPS = "10";
 process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
 
@@ -205,6 +207,6 @@ console.log(
   `[BOOTSTRAP] mode=${process.env.TRADING_MODE || "PAPER"} environment=${environment} ` +
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
-  `scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} maxNew=7 maxOpen=15 ` +
-  "sl=10p tp=20p exits=SL_TP_ONLY maxDaily=1000"
+  `profile=${config.FOREX_SIGNAL_PROFILE} scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
+  "maxNew=7 maxOpen=15 sl=10p tp=20p exits=SL_TP_ONLY maxDaily=25"
 );
