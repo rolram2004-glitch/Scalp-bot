@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
-import { RealMiniChart } from '../components/RealMiniChart';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ChartPriceLine, ChartSignalMarker, RealMiniChart } from '../components/RealMiniChart';
 import { fetchIntelligence } from '../services/api';
 import { executionView } from '../trading-state';
-import { SignalLaneSnapshot, StatusSnapshot } from '../types';
+import { SignalLaneSnapshot, StatusSnapshot, XauSignalRecord } from '../types';
 
 const XAU = 'XAUUSD';
 const XAU_TIMEFRAMES = ['M1', 'M5', 'M15', 'H1'];
@@ -35,6 +35,27 @@ function dateTime(value: unknown) {
 
 function directionClass(action?: string) {
   return action === 'BUY' ? 'positive' : action === 'SELL' ? 'negative' : 'neutral';
+}
+
+function rValue(value: unknown, live = false) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 'N/A';
+  const sign = parsed > 0 ? '+' : '';
+  return `${sign}${parsed.toFixed(2)}R${live ? ' LIVE' : ''}`;
+}
+
+function XauResultRow({ signal }: { signal: XauSignalRecord }) {
+  const result = signal.closedAt ? signal.resultR : signal.liveR;
+  return (
+    <div className="xau-result-row">
+      <time>{dateTime(signal.openedAt)}</time>
+      <b className={directionClass(signal.side)}>{signal.side}</b>
+      <span>{signal.status.replace(/_/g, ' ')}</span>
+      <span>{price(signal.entryPrice)} → {price(signal.currentPrice)}</span>
+      <strong className={result > 0 ? 'positive' : result < 0 ? 'negative' : 'neutral'}>{rValue(result, !signal.closedAt)}</strong>
+      <em>{signal.ai.provider} {signal.ai.status}</em>
+    </div>
+  );
 }
 
 function TradePlan({ title, lane, timestamp }: { title: string; lane?: SignalLaneSnapshot; timestamp?: string }) {
@@ -73,8 +94,37 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
   const quote = status?.livePrices?.[XAU];
   const pair = status?.pairedSignals?.[XAU];
   const signal = pair?.main;
+  const lab = status?.xauSignalLab;
+  const candidate = lab?.latestCandidate;
+  const activeSignal = lab?.signals?.find((item) => !item.closedAt);
   const currentPrice = quote?.mid ?? market?.closePrice;
   const configured = Boolean(status?.symbols?.map(cleanSymbol).includes(XAU));
+  const chartLevels = useMemo<ChartPriceLine[]>(() => {
+    const lines: ChartPriceLine[] = [];
+    const entry = activeSignal?.entryPrice ?? candidate?.entryPrice;
+    const stop = activeSignal?.activeStop ?? candidate?.stopLoss;
+    const targets = activeSignal?.takeProfits ?? candidate?.takeProfits ?? [];
+    const prefix = activeSignal ? '' : 'WATCH ';
+    if (Number.isFinite(Number(entry))) lines.push({ price: Number(entry), label: `${prefix}ENTRY`, color: '#3b82f6', style: 'solid' });
+    if (Number.isFinite(Number(stop))) lines.push({ price: Number(stop), label: activeSignal?.protectedAtBreakEven ? 'BE' : `${prefix}SL`, color: '#ff4f78' });
+    targets.slice(0, 3).forEach((target, index) => {
+      lines.push({ price: Number(target), label: `${prefix}TP${index + 1}`, color: index === 2 ? '#f6c453' : '#15d68f' });
+    });
+    (market?.resistanceLevels || []).slice(0, 2).forEach((level: number, index: number) => {
+      lines.push({ price: level, label: `R${index + 1}`, color: '#7d6cff', style: 'dotted' });
+    });
+    (market?.supportLevels || []).slice(0, 2).forEach((level: number, index: number) => {
+      lines.push({ price: level, label: `S${index + 1}`, color: '#4dd6ff', style: 'dotted' });
+    });
+    return lines;
+  }, [activeSignal, candidate, market?.resistanceLevels, market?.supportLevels]);
+  const chartMarkers = useMemo<ChartSignalMarker[]>(() => (
+    (lab?.signals || []).slice(0, 12).map((item) => ({
+      time: item.candleTime,
+      side: item.side,
+      label: `${item.side} ${item.closedAt ? rValue(item.resultR) : 'LIVE'}`
+    }))
+  ), [lab?.signals]);
 
   useEffect(() => {
     const requestId = ++requestRef.current;
@@ -122,12 +172,12 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <span>XAUUSD · DEDICATED STRUCTURE ENGINE</span>
           <h1>{price(currentPrice)}</h1>
-          <p>Dati reali OANDA. MAIN e INVERSE usano lo stesso snapshot. TP1, TP2 e TP3 vengono mostrati solo quando derivano da livelli strutturali reali.</p>
+          <p>Laboratorio segnali XAUUSD su dati reali OANDA. L’AI può approvare o rifiutare, ma non può inviare ordini. TP e SL compaiono solo da livelli strutturali reali.</p>
         </div>
         <div className="analysis-only-seal">
           <span>EXECUTION</span>
           <strong>ANALYSIS ONLY</strong>
-          <small>{modeLabel} · MULTI-TP OANDA NON ANCORA VERIFICATO</small>
+          <small>{modeLabel} · ORDER COUNT {lab?.orderCount ?? 0} · SEMPRE ZERO</small>
         </div>
       </header>
 
@@ -135,8 +185,8 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
         <article><span>Bot</span><strong>{status?.isRunning ? 'RUNNING' : 'STOPPED'}</strong><small>{dateTime(status?.startedAt)}</small></article>
         <article><span>OANDA</span><strong>{status?.oandaConnected ? 'CONNECTED' : 'DISCONNECTED'}</strong><small>{status?.oandaReason || status?.dataSource || 'N/A'}</small></article>
         <article><span>Market structure</span><strong>{market?.structureBias || 'N/A'}</strong><small>{market?.structureSource || 'SOURCE N/A'}</small></article>
-        <article><span>Main signal</span><strong className={directionClass(signal?.action)}>{signal?.action || 'N/A'}</strong><small>SETUP SCORE {setupScore(signal)}</small></article>
-        <article><span>Inverse signal</span><strong className={directionClass(pair?.inverse?.action)}>{pair?.inverse?.action || 'N/A'}</strong><small>SAME SNAPSHOT</small></article>
+        <article><span>AI signal</span><strong className={directionClass(candidate?.side)}>{candidate?.ai?.approved ? candidate.side : candidate?.eligible ? 'AI CHECK' : 'WAIT'}</strong><small>{candidate?.ai ? `${candidate.ai.provider} ${candidate.ai.status}` : 'GATES IN ANALISI'}</small></article>
+        <article><span>Signals today</span><strong>{lab ? `${lab.todaySignals}/${lab.strategy.maxSignalsPerDay}` : 'N/A'}</strong><small>{lab ? `${lab.remainingToday} DISPONIBILI · NON FORZATI` : 'LEDGER N/A'}</small></article>
         <article><span>Last quote</span><strong>{quote?.tradeable === true ? 'TRADEABLE' : 'N/A'}</strong><small>{dateTime(quote?.time)}</small></article>
       </section>
 
@@ -148,7 +198,13 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
               {XAU_TIMEFRAMES.map((item) => <button key={item} className={timeframe === item ? 'active' : ''} onClick={() => setTimeframe(item)}>{item}</button>)}
             </div>
           </header>
-          <RealMiniChart symbol={configured ? XAU : undefined} timeframe={timeframe} />
+          <RealMiniChart
+            symbol={configured ? XAU : undefined}
+            timeframe={timeframe}
+            showEma
+            priceLines={chartLevels}
+            markers={chartMarkers}
+          />
           <footer className="market-proof-strip">
             <div><span>BOS</span><strong>{market?.breakOfStructure || 'N/A'}</strong></div>
             <div><span>CHoCH</span><strong>{market?.changeOfCharacter || 'N/A'}</strong></div>
@@ -182,9 +238,57 @@ export function XauPage({ status }: { status: StatusSnapshot | null }) {
         </aside>
       </section>
 
+      <section className="xau-signal-lab-grid">
+        <article className="cockpit-panel xau-ai-gate">
+          <header className="cockpit-panel__header">
+            <div><span>PROFESSIONAL FILTER</span><h2>AI SIGNAL GATE</h2></div>
+            <b className={candidate?.ai?.approved ? 'positive' : candidate?.ai?.status === 'REJECTED' || candidate?.ai?.status === 'ERROR' ? 'negative' : 'neutral'}>
+              {candidate?.ai?.status || candidate?.runtimeBlocker || candidate?.blocker || 'WAITING'}
+            </b>
+          </header>
+          <div className="xau-ai-verdict">
+            <div>
+              <span>DECISIONE</span>
+              <strong className={directionClass(candidate?.side)}>{candidate?.ai?.approved ? candidate.side : 'NO SIGNAL'}</strong>
+            </div>
+            <div><span>SCORE</span><strong>{candidate ? `${Math.round(candidate.setupScore)}/100` : 'N/A'}</strong></div>
+            <div><span>MTF</span><strong>{candidate ? `${candidate.multiTimeframeConsensus} · ${candidate.multiTimeframeAlignment ?? 'N/A'}%` : 'N/A'}</strong></div>
+            <div><span>MIN R:R</span><strong>1:{lab?.strategy.minimumRiskReward ?? 2}</strong></div>
+          </div>
+          <p>{candidate?.ai?.reason || candidate?.reasoning || 'Il motore attende uno snapshot XAUUSD completo.'}</p>
+          <div className="xau-gate-list">
+            {(candidate?.gates || []).map((item) => (
+              <div key={item.key} className={item.passed ? 'pass' : 'fail'}>
+                <i>{item.passed ? '✓' : '—'}</i>
+                <span><strong>{item.label}</strong><small>{item.detail}</small></span>
+              </div>
+            ))}
+            {!candidate?.gates?.length && <div className="dense-empty">CHECKLIST IN ATTESA DI DATI OANDA</div>}
+          </div>
+        </article>
+
+        <article className="cockpit-panel xau-performance">
+          <header className="cockpit-panel__header">
+            <div><span>SIGNAL-ONLY LEDGER</span><h2>RISULTATI XAUUSD</h2></div>
+            <b>{lab?.historyScope === 'CURRENT_BOT_RUNTIME' ? 'SESSIONE BOT' : 'N/A'}</b>
+          </header>
+          <div className="xau-performance-kpis">
+            <div><span>TOTAL R</span><strong className={(lab?.totalR || 0) >= 0 ? 'positive' : 'negative'}>{lab ? rValue(lab.totalR) : 'N/A'}</strong></div>
+            <div><span>WIN RATE</span><strong>{lab?.winRate === undefined ? 'N/A' : `${lab.winRate.toFixed(1)}%`}</strong></div>
+            <div><span>W / L / BE</span><strong>{lab ? `${lab.wins} / ${lab.losses} / ${lab.breakevens}` : 'N/A'}</strong></div>
+            <div><span>OPEN</span><strong>{lab?.openSignals ?? 'N/A'}</strong></div>
+          </div>
+          <div className="xau-result-list">
+            {(lab?.signals || []).slice(0, 10).map((item) => <XauResultRow key={item.id} signal={item} />)}
+            {!lab?.signals?.length && <div className="dense-empty">NESSUN SEGNALE AI VALIDATO IN QUESTA SESSIONE BOT</div>}
+          </div>
+          <footer className="xau-ledger-note">Risultati da quote OANDA bid/ask, espressi in R. Nessun ordine, nessuna commissione nascosta e nessun rendimento garantito.</footer>
+        </article>
+      </section>
+
       <section className="xau-plan-compare">
-        <TradePlan title="SCENARIO MAIN" lane={pair?.main} timestamp={pair?.evaluatedAt} />
-        <TradePlan title="SCENARIO INVERSE" lane={pair?.inverse} timestamp={pair?.evaluatedAt} />
+        <TradePlan title="SCENARIO MAIN · ANALISI" lane={pair?.main} timestamp={pair?.evaluatedAt} />
+        <TradePlan title="SCENARIO INVERSE · CONTROLLO" lane={pair?.inverse} timestamp={pair?.evaluatedAt} />
       </section>
 
       <section className="xau-detail-grid">

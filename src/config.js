@@ -11,8 +11,9 @@ const orderExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED === "tru
 const oandaLiveConfirmed = process.env.OANDA_LIVE_CONFIRMATION === "I_CONFIRM_REAL_MONEY";
 const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "").trim().toUpperCase();
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
-const aiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase() === "GEMINI"
-  ? "GEMINI"
+const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
+const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
+  ? requestedAiProvider
   : "DISABLED";
 const geminiModelRaw = String(process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 const geminiModel = /^gemini-[a-z0-9.-]+$/i.test(geminiModelRaw)
@@ -109,5 +110,7 @@ module.exports = {
   AI_CONFIRMATION_REQUIRED: process.env.AI_CONFIRMATION_REQUIRED === "true",
   AI_MIN_CONFIDENCE: boundedNumber(process.env.AI_MIN_CONFIDENCE, 65, 0, 100),
   GEMINI_MODEL: geminiModel,
-  GEMINI_API_KEY: process.env.GEMINI_API_KEY
+  GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+  OPENAI_MODEL: String(process.env.OPENAI_MODEL || "gpt-5-mini").trim(),
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY
 };

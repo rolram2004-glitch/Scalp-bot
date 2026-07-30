@@ -125,8 +125,12 @@ function installOpenAiTradeBrain({ aiConfirmation, config }) {
       structure: input.structure || "UNKNOWN",
       session: input.session || "UNKNOWN",
       risk_status: input.riskStatus,
+      analysis_only: input.analysisOnly === true,
+      multi_timeframe: input.multiTimeframe,
+      strategy_gates: input.strategyGates,
       deterministic_reasoning: input.reasoning
     };
+    const analysisOnly = input.analysisOnly === true;
 
     try {
       const response = await axios.post(
@@ -136,19 +140,25 @@ function installOpenAiTradeBrain({ aiConfirmation, config }) {
           store: false,
           reasoning: { effort: "low" },
           instructions: [
-            "You are the final decision gate for an OANDA Practice forex scalping bot.",
+            analysisOnly
+              ? "You are the final validation gate for an XAUUSD signal-only analysis lab. No broker order is allowed."
+              : "You are the final decision gate for an OANDA Practice forex scalping bot.",
             "Use only the supplied verified market snapshot. Never invent prices, news, indicators, levels or account data.",
             "The deterministic engine proposes one side. APPROVE only when trend, structure, spread, timing and reasoning coherently support that exact side.",
             "REJECT stale, contradictory, overextended, range-noise or weak setups. Do not reverse the side and do not propose another order.",
-            "Stop Loss, Take Profit, units, exposure limits and broker verification are controlled by code and cannot be changed by you.",
+            analysisOnly
+              ? "This is analysis only: validate or reject the signal, but never authorize, describe or imply an OANDA order."
+              : "Stop Loss, Take Profit, units, exposure limits and broker verification are controlled by code and cannot be changed by you.",
             "Return only the schema-constrained JSON."
           ].join(" "),
           input: JSON.stringify(marketSnapshot),
           text: {
             format: {
               type: "json_schema",
-              name: "oanda_trade_gate",
-              description: "Final approve or reject decision for one verified forex candidate.",
+              name: analysisOnly ? "xau_signal_gate" : "oanda_trade_gate",
+              description: analysisOnly
+                ? "Final approve or reject decision for one XAUUSD signal-only candidate."
+                : "Final approve or reject decision for one verified forex candidate.",
               strict: true,
               schema
             },

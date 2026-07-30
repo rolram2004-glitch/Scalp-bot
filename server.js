@@ -89,6 +89,11 @@ function createApp() {
     res.json(getBotSnapshot());
   });
 
+  app.get("/api/xauusd/lab", (_req, res) => {
+    const snapshot = getBotSnapshot();
+    res.json(snapshot.xauSignalLab);
+  });
+
   app.get("/api/oanda/status", async (req, res) => {
     try {
       const status = await oanda.getConnectionStatus();

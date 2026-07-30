@@ -26,6 +26,8 @@ export interface TimeframeIntelligence {
   choch?: string;
   fvg?: string;
   liquiditySweep?: string;
+  volumeRatio?: number;
+  rejection?: "BULLISH" | "BEARISH" | "NONE";
 }
 
 export interface MultiTimeframeIntelligence {
@@ -42,6 +44,23 @@ export interface MultiTimeframeIntelligence {
 function normalizeSymbol(symbol: string) {
   const compact = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return compact.length === 6 ? `${compact.slice(0, 3)}_${compact.slice(3)}` : compact;
+}
+
+function rejectionCandle(bar: { open: number; high: number; low: number; close: number } | undefined) {
+  if (!bar) return "NONE" as const;
+  const range = bar.high - bar.low;
+  if (!Number.isFinite(range) || range <= 0) return "NONE" as const;
+  const body = Math.abs(bar.close - bar.open);
+  const upperWick = bar.high - Math.max(bar.open, bar.close);
+  const lowerWick = Math.min(bar.open, bar.close) - bar.low;
+  const minimumWick = Math.max(body * 1.5, range * 0.35);
+  if (lowerWick >= minimumWick && bar.close >= bar.open && bar.close >= bar.low + range * 0.6) {
+    return "BULLISH" as const;
+  }
+  if (upperWick >= minimumWick && bar.close <= bar.open && bar.close <= bar.high - range * 0.6) {
+    return "BEARISH" as const;
+  }
+  return "NONE" as const;
 }
 
 export function analyzeTimeframe(timeframe: IntelligenceTimeframe, candles: any[]): TimeframeIntelligence {
@@ -103,7 +122,9 @@ export function analyzeTimeframe(timeframe: IntelligenceTimeframe, candles: any[
     bos: structure.bos,
     choch: structure.choch,
     fvg: structure.fvg?.direction,
-    liquiditySweep: structure.liquiditySweep
+    liquiditySweep: structure.liquiditySweep,
+    volumeRatio: structure.volumeRatio,
+    rejection: rejectionCandle(bars[bars.length - 1])
   };
 }
 

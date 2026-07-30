@@ -156,4 +156,12 @@ test("Gemini remains disabled by default and parses only explicit safe configura
   assert.equal(configured.AI_CONFIRMATION_REQUIRED, true);
   assert.equal(configured.AI_MIN_CONFIDENCE, 72);
   assert.equal(configured.GEMINI_MODEL, "gemini-3.6-flash");
+
+  const openai = readConfig({
+    TRADING_MODE: "PAPER",
+    AI_PROVIDER: "OPENAI",
+    AI_CONFIRMATION_REQUIRED: "true"
+  });
+  assert.equal(openai.AI_PROVIDER, "OPENAI");
+  assert.equal(openai.AI_CONFIRMATION_REQUIRED, true);
 });
