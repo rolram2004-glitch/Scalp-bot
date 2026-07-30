@@ -36,6 +36,14 @@ La pagina `/setup` e il centro di controllo. Account autenticato, feed prezzi,
 copertura candele ed esecuzione sono gate distinti: un processo Railway sano non
 implica automaticamente che OANDA sia connesso.
 
+## Verifica dopo ogni redeploy
+
+Non considerare concluso un deploy finche `/api/status` non espone
+`signalProfile=AGGRESSIVE_25`, `maxDailyTrades=25`, `scanIntervalMs=30000`,
+`maxOpenPositions=15` e `xauSignalLab.orderCount=0`. Se il contatore OANDA
+giornaliero e gia superiore a 25, il bot conserva le posizioni esistenti ma
+blocca ogni nuovo ingresso fino al reset UTC.
+
 ## Attivazione OANDA_DEMO Practice
 
 Con `OANDA_ENVIRONMENT=PRACTICE` il wrapper usa `https://api-fxpractice.oanda.com/v3`. `OANDA_DEMO` invia quindi ordini al conto **Practice**, non a un conto finanziato. `OANDA_LIVE` richiede invece endpoint live, enable flag e una conferma server-side separata; non deve essere configurato durante il collaudo.
