@@ -31,28 +31,26 @@ if (
     : "MAIN";
 }
 
-// Authoritative aggressive-demo limits. These cannot be silently replaced by
-// older Railway variables left from previous versions.
+// Aggressive OANDA Practice profile. The bot scans all configured pairs twice per minute,
+// while broker verification, one-position-per-symbol, open-position caps and SL/TP remain mandatory.
 process.env.MAX_DAILY_TRADES = "1000";
 process.env.MAX_NEW_TRADES_PER_CYCLE = "7";
 process.env.MAX_OPEN_POSITIONS = "15";
-process.env.SCAN_INTERVAL_MS = "60000";
-process.env.MIN_SIGNAL_CONFIDENCE = hasOpenAiKey ? "55" : "60";
+process.env.SCAN_INTERVAL_MS = "30000";
+process.env.POSITION_MANAGEMENT_INTERVAL_MS = "5000";
+process.env.MIN_SIGNAL_CONFIDENCE = hasOpenAiKey ? "50" : "55";
 process.env.NORMAL_STOP_LOSS_PIPS = "10";
 process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
 
 if (hasOpenAiKey) {
   process.env.AI_PROVIDER = "OPENAI";
   process.env.AI_CONFIRMATION_REQUIRED = "true";
-  process.env.AI_MIN_CONFIDENCE = String(process.env.AI_MIN_CONFIDENCE || "60");
+  process.env.AI_MIN_CONFIDENCE = String(process.env.AI_MIN_CONFIDENCE || "58");
   process.env.OPENAI_MODEL = String(process.env.OPENAI_MODEL || "gpt-5-mini");
 }
 
 // The original autonomous loop closed a verified OANDA position whenever a
-// later scan returned HOLD or a weaker score. That produced the premature
-// "Chiudi operazione" entries visible in OANDA. Patch only that complete block
-// at load time: broker-side SL/TP remain authoritative; manual and emergency
-// safety closures remain available.
+// later scan returned HOLD or a weaker score. Broker-side SL/TP are authoritative.
 const originalReadFileSync = fs.readFileSync.bind(fs);
 const protectedExitMarker = "PROTECTED_EXIT_ONLY";
 const signalExitStart = "      const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);";
@@ -63,19 +61,13 @@ function patchAutonomousBotSource(source) {
 
   if (!patched.includes(protectedExitMarker)) {
     const start = patched.indexOf(signalExitStart);
-    if (start < 0) {
-      throw new Error("AUTONOMOUS_SIGNAL_EXIT_BLOCK_NOT_FOUND");
-    }
-
+    if (start < 0) throw new Error("AUTONOMOUS_SIGNAL_EXIT_BLOCK_NOT_FOUND");
     const end = patched.indexOf(signalExitEnd, start);
-    if (end <= start) {
-      throw new Error("AUTONOMOUS_SIGNAL_EXIT_END_NOT_FOUND");
-    }
+    if (end <= start) throw new Error("AUTONOMOUS_SIGNAL_EXIT_END_NOT_FOUND");
 
     const replacement =
       "      // PROTECTED_EXIT_ONLY: a later HOLD/weak scan never closes an OANDA trade.\n" +
       "      // The verified broker Stop Loss and Take Profit manage the exit.\n\n";
-
     patched = patched.slice(0, start) + replacement + patched.slice(end);
   }
 
@@ -105,14 +97,11 @@ function patchAutonomousBotSource(source) {
 fs.readFileSync = function protectedSourceRead(file, ...args) {
   const result = originalReadFileSync(file, ...args);
   if (!String(file || "").endsWith(`${path.sep}autonomous-bot.ts`)) return result;
-
   const text = Buffer.isBuffer(result) ? result.toString("utf8") : String(result);
   const patched = patchAutonomousBotSource(text);
   return Buffer.isBuffer(result) ? Buffer.from(patched, "utf8") : patched;
 };
 
-// Backend TypeScript is loaded in transpile-only mode. Install the optional
-// OpenAI gate before autonomous-bot.ts imports the confirmation function.
 require("ts-node/register/transpile-only");
 
 const config = require("./config");
@@ -137,9 +126,7 @@ function finitePositive(value) {
 
 function conversionFactors(price, homeConversions, instrument, accountCurrency) {
   const quote = normalizeOandaSymbol(instrument).split("_")[1] || "";
-  if (quote && quote === String(accountCurrency || "").toUpperCase()) {
-    return { loss: 1, gain: 1 };
-  }
+  if (quote && quote === String(accountCurrency || "").toUpperCase()) return { loss: 1, gain: 1 };
 
   const directLoss = finitePositive(price?.quoteHomeConversionFactors?.negativeUnits);
   const directGain = finitePositive(price?.quoteHomeConversionFactors?.positiveUnits);
@@ -153,34 +140,24 @@ function conversionFactors(price, homeConversions, instrument, accountCurrency) 
   return loss && gain ? { loss, gain } : null;
 }
 
-// A bulk pricing request can fail when one account instrument is temporarily
-// unavailable. Recover symbols one by one without inventing prices.
+// Recover symbols one by one if a bulk OANDA pricing call fails. No synthetic prices.
 oanda.getPrices = async function resilientGetPrices(symbols) {
   const requested = Array.isArray(symbols) ? symbols : [symbols];
   const bulk = await originalGetPrices(requested);
   if (Array.isArray(bulk) && bulk.length > 0) return bulk;
-
   const recovered = await Promise.all(
     requested.map(async (symbol) => {
-      try {
-        return await originalGetPrice(symbol);
-      } catch (_error) {
-        return null;
-      }
+      try { return await originalGetPrice(symbol); } catch (_error) { return null; }
     })
   );
-
   return recovered.filter(Boolean);
 };
 
-// Reuse the exact same OANDA pricing context between the fixed-pip calculation
-// and the verified order engine. This prevents conversion drift between calls.
 const pricingContextCache = new Map();
 oanda.getPricingContext = async function cachedPricingContext(symbol) {
   const instrument = normalizeOandaSymbol(symbol);
   const cached = pricingContextCache.get(instrument);
   if (cached && Date.now() - cached.savedAt <= 5000) return cached.value;
-
   const value = await originalGetPricingContext(instrument);
   if (value?.price) pricingContextCache.set(instrument, { savedAt: Date.now(), value });
   return value;
@@ -191,9 +168,7 @@ const originalExecuteVerifiedMarketOrder = executionEngine.executeVerifiedMarket
 
 executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarketOrder(request) {
   const instrument = normalizeOandaSymbol(request?.symbol);
-  if (!instrument || instrument.startsWith("XAU_")) {
-    return originalExecuteVerifiedMarketOrder(request);
-  }
+  if (!instrument || instrument.startsWith("XAU_")) return originalExecuteVerifiedMarketOrder(request);
 
   try {
     const [account, instrumentInfo, pricing] = await Promise.all([
@@ -201,7 +176,6 @@ executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarke
       oanda.getAccountInstrument(instrument),
       oanda.getPricingContext(instrument)
     ]);
-
     if (!account?.currency || !instrumentInfo || !pricing?.price) {
       return { status: "REJECTED", reason: "FIXED_PIP_METADATA_UNAVAILABLE" };
     }
@@ -211,27 +185,14 @@ executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarke
       ? 10 ** pipLocation
       : instrument.endsWith("_JPY") ? 0.01 : 0.0001;
     const units = Math.abs(Number(request?.units));
-    const factors = conversionFactors(
-      pricing.price,
-      pricing.homeConversions || [],
-      instrument,
-      account.currency
-    );
-
+    const factors = conversionFactors(pricing.price, pricing.homeConversions || [], instrument, account.currency);
     if (!Number.isFinite(units) || units <= 0 || !factors) {
       return { status: "REJECTED", reason: "FIXED_PIP_CONVERSION_UNAVAILABLE" };
     }
 
-    const stopLossPips = 10;
-    const takeProfitPips = 20;
-    const riskAmount = units * stopLossPips * pipSize * factors.loss;
-    const rewardAmount = units * takeProfitPips * pipSize * factors.gain;
-
-    return originalExecuteVerifiedMarketOrder({
-      ...request,
-      riskAmount,
-      rewardAmount
-    });
+    const riskAmount = units * 10 * pipSize * factors.loss;
+    const rewardAmount = units * 20 * pipSize * factors.gain;
+    return originalExecuteVerifiedMarketOrder({ ...request, riskAmount, rewardAmount });
   } catch (error) {
     const reason = String(error?.message || "FIXED_PIP_PRECHECK_FAILED")
       .replace(/Bearer\s+[^\s,;]+/gi, "Bearer [REDACTED]")
@@ -244,6 +205,6 @@ console.log(
   `[BOOTSTRAP] mode=${process.env.TRADING_MODE || "PAPER"} environment=${environment} ` +
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
-  `scan=60s forex=15 confidence=${config.MIN_CONFIDENCE} maxNew=7 maxOpen=15 ` +
+  `scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} maxNew=7 maxOpen=15 ` +
   "sl=10p tp=20p exits=SL_TP_ONLY maxDaily=1000"
 );
