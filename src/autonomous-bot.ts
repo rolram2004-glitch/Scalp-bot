@@ -7,6 +7,12 @@ import { MarketData, TradingDecision } from "./types";
 import { executeVerifiedMarketOrder } from "./execution-engine";
 import { createPairedSignalSnapshot, PairedSignalSnapshot, StrategyVariant } from "./signal-pair";
 import { confirmSetupWithAi, AiConfirmationStatus } from "./ai-confirmation";
+import { loadMultiTimeframeIntelligence, MultiTimeframeIntelligence } from "./multi-timeframe";
+import {
+  buildXauSignalCandidate,
+  xauSignalLab,
+  XauSignalLabSnapshot
+} from "./xau-signal-lab";
 const oanda = require("./oanda");
 const config = require("./config");
 
@@ -23,6 +29,7 @@ const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
 const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
 const MAX_DAILY_LOSS = Number(config.MAX_DAILY_LOSS || 50);
+const MINIMUM_SCORE_FOR_XAU_AI = 70;
 
 interface BotTrade {
   id: string;
@@ -133,6 +140,7 @@ export interface BotSnapshot {
   lastSignals?: Record<string, TradingDecision & { scannedAt: string }>;
   pairedSignals?: Record<string, PairedSignalSnapshot>;
   latestPairedSignal?: PairedSignalSnapshot;
+  xauSignalLab: XauSignalLabSnapshot;
   priceCoverage: number;
   priceExpected: number;
   reconciliationStatus: "NOT_RUN" | "VERIFIED" | "FAILED";
@@ -170,7 +178,7 @@ const botState: BotSnapshot = {
   liveExecutionVariantValid: config.LIVE_EXECUTION_VARIANT_VALID,
   aiProvider: config.AI_PROVIDER,
   aiConfirmationRequired: config.AI_CONFIRMATION_REQUIRED,
-  aiStatus: config.AI_PROVIDER === "GEMINI" ? "NOT_CHECKED" : "DISABLED",
+  aiStatus: config.AI_PROVIDER === "DISABLED" ? "DISABLED" : "NOT_CHECKED",
   symbols: SYMBOLS,
   maxDailyTrades: MAX_DAILY_TRADES,
   minimumConfidence: MIN_CONFIDENCE,
@@ -196,6 +204,7 @@ const botState: BotSnapshot = {
   livePrices: {},
   lastSignals: {},
   pairedSignals: {},
+  xauSignalLab: xauSignalLab.getSnapshot(),
   priceCoverage: 0,
   priceExpected: SYMBOLS.length,
   reconciliationStatus: "NOT_RUN",
@@ -230,7 +239,8 @@ function liveExecutionActive() {
   const modeReady = config.TRADING_MODE === "OANDA_DEMO" ||
     (config.TRADING_MODE === "OANDA_LIVE" && config.OANDA_LIVE_CONFIRMED === true);
   const aiGateConfigured = config.AI_CONFIRMATION_REQUIRED !== true ||
-    (config.AI_PROVIDER === "GEMINI" && Boolean(config.GEMINI_API_KEY));
+    (["GEMINI", "OPENAI"].includes(String(config.AI_PROVIDER)) &&
+      Boolean(config.GEMINI_API_KEY || config.OPENAI_API_KEY));
   return modeReady &&
     config.OANDA_ORDER_EXECUTION_ENABLED === true &&
     config.LIVE_TRADING_ENABLED === true &&
@@ -292,6 +302,7 @@ function refreshDerivedState() {
         ? undefined
         : dailyRiskReason || "OANDA_DAILY_RISK_DATA_INCOMPLETE"
   };
+  botState.xauSignalLab = xauSignalLab.getSnapshot();
 }
 
 function emitState() {
@@ -627,6 +638,16 @@ async function refreshLivePrices() {
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
     botState.dataSource = "OANDA MARKET DATA";
+    const xauQuote = nextPrices.XAUUSD;
+    if (xauQuote) {
+      const closedSignals = xauSignalLab.updateQuote(xauQuote);
+      for (const signal of closedSignals) {
+        botState.logs.push(
+          `[XAUUSD] SIGNAL ONLY ${signal.status} | risultato ${signal.resultR >= 0 ? "+" : ""}${signal.resultR.toFixed(2)}R | nessun ordine OANDA`
+        );
+      }
+      if (botState.logs.length > 50) botState.logs = botState.logs.slice(-50);
+    }
     emitState();
   } catch (_error) {
     botState.priceFeedStatus = "DISCONNECTED";
@@ -1058,11 +1079,11 @@ async function closeVerifiedOandaTrade(
 async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened: number }, generation: number) {
   try {
     const analytics = getAnalytics();
-    if (liveModeConfigured() && (!dailyRiskDataComplete || analytics.pnlComplete !== true)) {
+    if (!isGold(symbol) && liveModeConfigured() && (!dailyRiskDataComplete || analytics.pnlComplete !== true)) {
       pushLog(`[${symbol}] skipped: OANDA daily risk data incomplete`);
       return;
     }
-    if (liveExecutionActive() && typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
+    if (!isGold(symbol) && liveExecutionActive() && typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
       pushLog(`[${symbol}] skipped: daily loss guard active`);
       return;
     }
@@ -1206,8 +1227,88 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     }
 
     if (isGold(symbol)) {
-      botState.signalsDiscarded += rankedDecision.action === "HOLD" ? 0 : 1;
-      pushLog(`[${symbol}] ANALYSIS ONLY: struttura XAUUSD aggiornata; nessun trade PAPER, SHADOW o OANDA viene aperto`);
+      let intelligence: MultiTimeframeIntelligence;
+      try {
+        intelligence = await loadMultiTimeframeIntelligence(oanda, symbol);
+      } catch (_error) {
+        intelligence = {
+          symbol: "XAUUSD",
+          evaluatedAt,
+          source: "OANDA",
+          frames: [],
+          availableFrames: 0,
+          consensus: "HOLD",
+          reasoning: "Dati multi-timeframe OANDA non disponibili."
+        };
+      }
+      const candidate = buildXauSignalCandidate({
+        signalId: pairedSignal.pairId,
+        evaluatedAt,
+        decision: rankedDecision,
+        market: enrichedMarketData,
+        intelligence
+      });
+      xauSignalLab.observeCandidate(candidate);
+      const reviewEligibility = xauSignalLab.canRequestAi(candidate, evaluatedAt);
+      if (!reviewEligibility.allowed) {
+        xauSignalLab.setRuntimeBlocker(candidate, reviewEligibility.reason);
+        if (rankedDecision.action !== "HOLD") botState.signalsDiscarded += 1;
+        pushLog(
+          `[${symbol}] SIGNAL ONLY in attesa: ${reviewEligibility.reason || candidate.blocker || "GATES_NOT_PASSED"} | nessun ordine OANDA`
+        );
+        emitState();
+        return;
+      }
+
+      const aiResult = await confirmSetupWithAi({
+        signalId: pairedSignal.pairId,
+        symbol,
+        action: candidate.side as "BUY" | "SELL",
+        setupScore: candidate.setupScore,
+        scoreBreakdown: rankedDecision.scoreBreakdown as Record<string, number> | undefined,
+        snapshotAt: candidate.evaluatedAt,
+        priceTime: candidate.priceTime,
+        bid: pairedSignal.market.bid,
+        ask: pairedSignal.market.ask,
+        spread: Number(enrichedMarketData.spread),
+        timeframe: candidate.timeframe,
+        trend: intelligence.consensus,
+        structure: enrichedMarketData.structureBias,
+        session,
+        riskStatus: "PASS",
+        reasoning: candidate.reasoning,
+        analysisOnly: true,
+        multiTimeframe: intelligence.frames.map((frame) => ({
+          timeframe: frame.timeframe,
+          direction: frame.direction,
+          alignmentScore: frame.alignmentScore,
+          structure: frame.structure,
+          bos: frame.bos,
+          rejection: frame.rejection,
+          volumeRatio: frame.volumeRatio
+        })),
+        strategyGates: candidate.gates
+      }, {
+        provider: config.AI_PROVIDER,
+        required: true,
+        apiKey: config.AI_PROVIDER === "OPENAI" ? config.OPENAI_API_KEY : config.GEMINI_API_KEY,
+        model: config.AI_PROVIDER === "OPENAI" ? config.OPENAI_MODEL : config.GEMINI_MODEL,
+        minimumScore: MINIMUM_SCORE_FOR_XAU_AI,
+        timeoutMs: 10000
+      });
+      if (!botState.isRunning || generation !== runGeneration) {
+        xauSignalLab.setRuntimeBlocker(candidate, "BOT_STOPPED_BEFORE_AI_RESULT");
+        return;
+      }
+      const openedSignal = xauSignalLab.recordAiReview(candidate, aiResult);
+      if (openedSignal) {
+        pushLog(
+          `[${symbol}] AI ${aiResult.status}: segnale ${openedSignal.side} aperto a ${openedSignal.entryPrice.toFixed(3)} | SL ${openedSignal.stopLoss.toFixed(3)} | ${openedSignal.takeProfits.length} target reali | ZERO ordini`
+        );
+      } else {
+        botState.signalsDiscarded += 1;
+        pushLog(`[${symbol}] SIGNAL ONLY AI ${aiResult.status}: ${aiResult.reason} | nessun ordine OANDA`);
+      }
       emitState();
       return;
     }
@@ -1255,8 +1356,9 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           : !config.LIVE_EXECUTION_VARIANT_VALID
             ? "LIVE_EXECUTION_VARIANT must be exactly MAIN or INVERSE"
             : config.AI_CONFIRMATION_REQUIRED === true &&
-              (config.AI_PROVIDER !== "GEMINI" || !config.GEMINI_API_KEY)
-              ? "AI confirmation is required but Gemini is not configured"
+              (!["GEMINI", "OPENAI"].includes(String(config.AI_PROVIDER)) ||
+                !(config.GEMINI_API_KEY || config.OPENAI_API_KEY))
+              ? "AI confirmation is required but the selected provider is not configured"
             : "OANDA safety gates are not verified";
       pushLog(`[${symbol}] OANDA execution blocked: ${reason}`);
     } else if (liveExecutionActive() && pairedSignal.executionBlockedReason) {

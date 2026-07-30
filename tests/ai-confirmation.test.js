@@ -58,6 +58,18 @@ test("required Gemini confirmation fails closed without credentials", async () =
   assert.equal(result.reason, "GEMINI_API_KEY_MISSING");
 });
 
+test("required OpenAI confirmation fails closed when runtime adapter is not installed", async () => {
+  const result = await confirmSetupWithAi({ ...input, analysisOnly: true }, {
+    provider: "OPENAI",
+    required: true,
+    model: "gpt-5-mini",
+    minimumScore: 65
+  });
+  assert.equal(result.status, "ERROR");
+  assert.equal(result.approved, false);
+  assert.equal(result.reason, "AI_PROVIDER_NOT_CONFIGURED");
+});
+
 test("Gemini approval accepts only schema-valid output for the same signal", async () => {
   const originalPost = axios.post;
   let captured;

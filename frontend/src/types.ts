@@ -152,6 +152,120 @@ export interface PairedSignalSnapshot {
   executionBlockedReason?: string;
 }
 
+export interface XauStrategyGate {
+  key: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface XauAiReview {
+  provider: 'DISABLED' | 'GEMINI' | 'OPENAI';
+  model?: string;
+  status: 'DISABLED' | 'APPROVED' | 'REJECTED' | 'ERROR';
+  approved: boolean;
+  reason: string;
+  checkedAt: string;
+}
+
+export interface XauSignalCandidate {
+  signalId: string;
+  signature: string;
+  symbol: 'XAUUSD';
+  timeframe: 'M1';
+  evaluatedAt: string;
+  candleTime: string;
+  priceTime: string;
+  side?: 'BUY' | 'SELL';
+  entryPrice?: number;
+  stopLoss?: number;
+  takeProfits: number[];
+  minimumRiskReward: number;
+  riskRewardRatios: number[];
+  setupScore: number;
+  eligible: boolean;
+  blocker?: string;
+  runtimeBlocker?: string;
+  reasoning: string;
+  session: string;
+  killzone: boolean;
+  multiTimeframeConsensus: 'BUY' | 'SELL' | 'HOLD';
+  multiTimeframeAlignment?: number;
+  gates: XauStrategyGate[];
+  ai?: XauAiReview;
+}
+
+export interface XauSignalRecord {
+  id: string;
+  symbol: 'XAUUSD';
+  timeframe: 'M1';
+  source: 'OANDA_SIGNAL_ONLY';
+  orderSubmitted: false;
+  side: 'BUY' | 'SELL';
+  status: 'OPEN' | 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'STOPPED' | 'PROTECTED' | 'EXPIRED';
+  closeReason?: string;
+  entryPrice: number;
+  currentPrice: number;
+  stopLoss: number;
+  activeStop: number;
+  takeProfits: number[];
+  riskRewardRatios: number[];
+  setupScore: number;
+  openedAt: string;
+  updatedAt: string;
+  closedAt?: string;
+  candleTime: string;
+  priceTime: string;
+  hitTargets: number;
+  protectedAtBreakEven: boolean;
+  liveR: number;
+  resultR: number;
+  maxFavorableR: number;
+  maxAdverseR: number;
+  session: string;
+  reasoning: string;
+  multiTimeframeConsensus: 'BUY' | 'SELL' | 'HOLD';
+  multiTimeframeAlignment?: number;
+  gates: XauStrategyGate[];
+  ai: XauAiReview;
+}
+
+export interface XauSignalLabSnapshot {
+  symbol: 'XAUUSD';
+  mode: 'SIGNAL_ONLY';
+  executionEnabled: false;
+  orderCount: 0;
+  dataSource: 'OANDA';
+  resultUnit: 'R';
+  historyScope: 'CURRENT_BOT_RUNTIME';
+  strategy: {
+    name: string;
+    version: string;
+    triggerTimeframe: 'M1';
+    contextTimeframes: ['M5', 'M15', 'H1'];
+    minimumRiskReward: number;
+    maxSignalsPerDay: number;
+    maxConcurrentSignals: number;
+    cooldownMinutes: number;
+    maxDurationMinutes: number;
+    management: string;
+  };
+  dateUTC: string;
+  todaySignals: number;
+  remainingToday: number;
+  openSignals: number;
+  closedSignals: number;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  winRate?: number;
+  totalR: number;
+  averageR?: number;
+  latestUpdatedAt?: string;
+  latestCandidate?: XauSignalCandidate;
+  signals: XauSignalRecord[];
+}
+
 export interface StatusSnapshot {
   status: string;
   isRunning: boolean;
@@ -217,6 +331,7 @@ export interface StatusSnapshot {
   lastSignals?: Record<string, TradingDecisionSnapshot>;
   pairedSignals?: Record<string, PairedSignalSnapshot>;
   latestPairedSignal?: PairedSignalSnapshot;
+  xauSignalLab?: XauSignalLabSnapshot;
   priceCoverage?: number;
   priceExpected?: number;
   reconciliationStatus?: 'NOT_RUN' | 'VERIFIED' | 'FAILED';

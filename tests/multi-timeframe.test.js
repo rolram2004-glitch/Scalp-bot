@@ -39,6 +39,8 @@ test("timeframe intelligence is calculated only from sufficient OANDA candles", 
   assert.ok(Number.isFinite(result.alignmentScore));
   assert.ok(Number.isFinite(result.ema200));
   assert.ok(Number.isFinite(result.rsi));
+  assert.ok(Number.isFinite(result.volumeRatio));
+  assert.ok(["BULLISH", "BEARISH", "NONE"].includes(result.rejection));
 });
 
 test("multi-timeframe loader reports exact coverage without filling missing frames", async () => {

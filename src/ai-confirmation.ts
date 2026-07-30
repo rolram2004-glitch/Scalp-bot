@@ -20,10 +20,13 @@ export interface AiConfirmationInput {
   session?: string;
   riskStatus: "PASS";
   reasoning: string;
+  analysisOnly?: boolean;
+  multiTimeframe?: unknown;
+  strategyGates?: unknown;
 }
 
 export interface AiConfirmationSettings {
-  provider: "DISABLED" | "GEMINI";
+  provider: "DISABLED" | "GEMINI" | "OPENAI";
   required: boolean;
   apiKey?: string;
   model: string;
@@ -33,7 +36,7 @@ export interface AiConfirmationSettings {
 
 export interface AiConfirmationResult {
   required: boolean;
-  provider: "DISABLED" | "GEMINI";
+  provider: "DISABLED" | "GEMINI" | "OPENAI";
   model?: string;
   status: AiConfirmationStatus;
   approved: boolean;
@@ -185,6 +188,9 @@ export async function confirmSetupWithAi(
       structure: input.structure || "UNKNOWN",
       session: input.session || "UNKNOWN",
       risk_status: input.riskStatus,
+      analysis_only: input.analysisOnly === true,
+      multi_timeframe: input.multiTimeframe,
+      strategy_gates: input.strategyGates,
       deterministic_reasoning: input.reasoning
     })
   ].join("\n\n");

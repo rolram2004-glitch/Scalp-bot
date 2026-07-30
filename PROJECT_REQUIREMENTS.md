@@ -61,19 +61,23 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 
 XAUUSD usa un modulo distinto e originale basato su candele OANDA: swing, struttura, BOS, CHoCH, liquidity sweep, equal high/low, FVG, trend/EMA, volatilita, spread, sessione e momentum.
 
-Prima dell'esecuzione verificare supporto `XAU_USD`, precisione, size minima, unita, spread, conversione P&L e partial close. Rischio massimo equivalente a 7.5 EUR e target complessivo fino a 15 USD solo con conversione reale. TP1/TP2/TP3 devono essere livelli strutturali reali e non possono essere mostrati come gestiti se OANDA non li gestisce. Fino alla verifica completa XAUUSD resta `ANALYSIS ONLY` per l'esecuzione.
+XAUUSD e permanentemente `SIGNAL ONLY`: non invia ordini OANDA, PAPER o PAPER SHADOW. L'engine di esecuzione, il ciclo autonomo e l'endpoint amministrativo devono rifiutare XAUUSD indipendentemente dalla modalita globale.
+
+La strategia `GOLD LIQUIDITY CONFLUENCE` usa trigger M1 e contesto M5/M15/H1. Un segnale richiede quote e candele OANDA fresche, killzone, setup score minimo 70, bias H1/M15, almeno 3 timeframe allineati, trigger M1, conferma strutturale/liquidita, volume ratio minimo 1.15, stop strutturale e TP reale con R:R minimo 1:2. L'AI puo soltanto approvare o rifiutare il candidato e fallisce chiusa.
+
+Massimo 10 segnali validati al giorno UTC, mai forzati; una sola simulazione segnale aperta, cooldown 5 minuti e scadenza 90 minuti. I risultati XAUUSD sono separati dal ledger Forex, espressi in R e limitati alla sessione runtime corrente. Gestione simulata: TP1 parziale, stop a breakeven, poi TP2/TP3. TP1/TP2/TP3 devono sempre derivare da livelli strutturali reali.
 
 ## Railway
 
 Verificare repository e branch, `npm start`, `process.env.PORT`, health endpoint, variabili, persistenza e restart policy `ALWAYS`. Primo deploy sempre PAPER. Non passare a OANDA_DEMO finche connessione, account, valuta, prezzi, candele, dashboard, riconciliazione e protezioni non sono verificati; non passare mai a OANDA_LIVE senza conferma finale esplicita.
 
-Documentare: `TRADING_MODE`, `OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, `OANDA_ENVIRONMENT`, `GEMINI_API_KEY`, `AI_PROVIDER`, `AI_CONFIRMATION_REQUIRED`, `AI_MIN_CONFIDENCE`, `ACCOUNT_TARGET_CURRENCY`, `MAX_OPEN_POSITIONS`, `MAX_DAILY_TRADES`. Segreti esclusivamente in Railway Variables o `.env` locale non tracciato.
+Documentare: `TRADING_MODE`, `OANDA_API_KEY`, `OANDA_ACCOUNT_ID`, `OANDA_ENVIRONMENT`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `AI_PROVIDER`, `AI_CONFIRMATION_REQUIRED`, `AI_MIN_CONFIDENCE`, `ACCOUNT_TARGET_CURRENCY`, `MAX_OPEN_POSITIONS`, `MAX_DAILY_TRADES`. Segreti esclusivamente in Railway Variables o `.env` locale non tracciato.
 
 ## Control panel e AI
 
 Il Control Panel mostra e valida modalita, bot ON/OFF, simboli, sessioni, limiti giornalieri, massimo posizioni, unicita per simbolo, setup score minimo, rischio, target, timeframe e XAUUSD. Le modifiche pericolose richiedono conferma e OANDA_LIVE non puo essere attivato dalla sola interfaccia senza un gate server-side esplicito.
 
-Gemini, se configurato, puo soltanto APPROVE/REJECT dopo analisi tecnica e rischio. Deve restituire JSON validato; non puo creare prezzi, cambiare rischio, rimuovere SL, inviare ordini, cambiare modalita o aggirare gate. Se `AI_CONFIRMATION_REQUIRED=true` e Gemini fallisce, l'esito e SKIP TRADE.
+OpenAI o Gemini, se configurati, possono soltanto APPROVE/REJECT dopo analisi tecnica e rischio. Devono restituire JSON validato; non possono creare prezzi, cambiare rischio, rimuovere SL, inviare ordini, cambiare modalita o aggirare gate. Se `AI_CONFIRMATION_REQUIRED=true` e il provider fallisce, l'esito e SKIP TRADE o NO SIGNAL.
 
 ## Ordine di lavoro
 
