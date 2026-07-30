@@ -1,0 +1,50 @@
+name: Apply fixed-pip seven-trade repair
+
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-fixed-pip-cycle.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Apply deterministic repair
+        run: python3 scripts/apply_fixed_pip_cycle.py
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Test
+        run: npm test
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Remove one-time repair files
+        run: rm -f scripts/apply_fixed_pip_cycle.py .github/workflows/apply-fixed-pip-cycle.yml
+
+      - name: Commit verified repair
+        run: |
+          git config user.name "ChatGPT SCALP.BOT Repair"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: exact 10/20 pip protection and seven-entry cycle" || exit 0
+          git push origin HEAD:main
