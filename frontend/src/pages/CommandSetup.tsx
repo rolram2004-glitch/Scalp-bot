@@ -137,6 +137,8 @@ export function CommandSetupPage({
   const feedAge = ageSeconds(status?.lastPriceAt);
   const feedLive = status?.priceFeedStatus !== 'DISCONNECTED' && typeof status?.priceCoverage === 'number' && status.priceCoverage > 0 && feedAge !== undefined && feedAge <= 30;
   const executionReady = status?.effectiveExecutionState === 'OANDA_DEMO_READY' || status?.effectiveExecutionState === 'OANDA_LIVE_READY';
+  const entryGate = status?.entryGateStatus || (status?.isRunning ? 'CHECKING' : 'SCANNER_STOPPED');
+  const entryReady = executionReady && entryGate === 'READY';
   const modeLabel = status?.effectiveExecutionState || status?.tradingMode || 'N/A';
   const openTrades = (status?.openTrades || []).filter((trade) => trade.status === 'OPEN');
   const closedTrades = status?.closedTrades || [];
@@ -160,14 +162,14 @@ export function CommandSetupPage({
   return (
     <div className="elite-command-center">
       <section className="elite-topbar">
-        <div className="elite-brand"><b>⚡</b><strong>SCALP.BOT</strong><span>REAL-MARKET COMMAND CENTER</span></div>
+        <div className="elite-brand"><b>R</b><strong>$Rohato$🤖111</strong><span>SEL SCALP BOT · PRACTICE COMMAND CENTER</span></div>
         <div className="elite-system-strip">
           <div><span>SCANNER</span><strong className={status?.isRunning ? 'positive' : 'negative'}>{status?.isRunning ? 'ONLINE' : 'STOPPED'}</strong></div>
           <div><span>OANDA</span><strong className={oandaStatus.connected ? 'positive' : 'negative'}>{oandaStatus.connected ? 'CONNECTED' : 'DISCONNECTED'}</strong></div>
           <div><span>MODE</span><strong className={executionReady ? 'positive' : 'warning-text'}>{modeLabel}</strong></div>
           <div><span>FEED</span><strong className={feedLive ? 'positive' : 'negative'}>{feedLive ? 'LIVE' : status?.priceFeedStatus || 'N/A'}</strong></div>
           <div><span>AGE</span><strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong></div>
-          <div><span>ORDERS</span><strong className={executionReady ? 'positive' : 'warning-text'}>{executionReady ? 'ENABLED' : 'BLOCKED'}</strong></div>
+          <div><span>ENTRY GATE</span><strong className={entryReady ? 'positive' : entryGate === 'DAILY_LOSS_LIMIT' ? 'negative' : 'warning-text'}>{entryGate}</strong></div>
         </div>
       </section>
 
@@ -177,7 +179,7 @@ export function CommandSetupPage({
         <Metric
           label="TRADES TODAY"
           value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'}
-          detail={`${status?.signalProfile || 'PROFILE N/A'} · limite ${dailyRisk?.maxTrades ?? status?.maxDailyTrades ?? 25} UTC`}
+          detail={`${status?.signalProfile || 'PROFILE N/A'} · ${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} rimasti · limite ${dailyRisk?.maxTrades ?? status?.maxDailyTrades ?? 'N/A'} UTC`}
           tone="amber"
         />
         <Metric label="OPEN POSITIONS" value={openTrades.length} detail={`${status?.maxOpenPositions ?? 15} massime · ${accountCurrency || 'currency N/A'}`} tone="green" />

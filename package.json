@@ -1,7 +1,7 @@
 {
   "name": "scalp-bot",
   "version": "1.0.0",
-  "description": "Forex Scalping Bot",
+  "description": "SEL SCALP BOT - $Rohato$ 111 professional OANDA Practice cockpit",
   "main": "server.js",
   "scripts": {
     "start": "node -r ./src/runtime-bootstrap.js server.js",

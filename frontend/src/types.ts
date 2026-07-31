@@ -7,8 +7,13 @@ export interface BotTrade {
   currentPrice?: number;
   stopLoss?: number;
   takeProfit?: number;
+  riskAmount?: number;
+  rewardAmount?: number;
   pnl?: number;
   pnlPips?: number;
+  pnlR?: number;
+  riskPips?: number;
+  rewardPips?: number;
   openedAt?: string;
   closedAt?: string;
   setupType?: string;
@@ -40,6 +45,7 @@ export interface BotTrade {
   signalId?: string;
   signalAt?: string;
   priceTime?: string;
+  pairedWithTradeId?: string;
 }
 
 export interface TradingDecisionSnapshot {
@@ -296,7 +302,7 @@ export interface StatusSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile?: 'AGGRESSIVE_25' | 'BALANCED';
+  signalProfile?: 'ROHATO_AGGRESSIVE_100' | 'AGGRESSIVE_25' | 'BALANCED';
   maxDailyTrades: number;
   minimumConfidence?: number;
   maxOpenPositions: number;
@@ -304,6 +310,7 @@ export interface StatusSnapshot {
   maxTradesPerSymbol?: number;
   scanIntervalMs?: number;
   maxDailyLoss?: number;
+  symbolReentryCooldownMs?: number;
   currentSymbol?: string;
   currentAction?: string;
   currentConfidence?: number;
@@ -342,6 +349,16 @@ export interface StatusSnapshot {
   lastOrderReason?: string;
   lastOandaOrderId?: string;
   lastOandaTradeId?: string;
+  entryGateStatus?:
+    | 'READY'
+    | 'SCANNER_STOPPED'
+    | 'EXECUTION_BLOCKED'
+    | 'DAILY_TRADE_LIMIT'
+    | 'DAILY_LOSS_LIMIT'
+    | 'MAX_OPEN_POSITIONS';
+  entryGateReason?: string;
+  dailyRemainingTrades?: number;
+  nextDailyResetAt?: string;
   dailyRiskStatus: {
     dateUTC: string;
     tradeCount: number;
@@ -350,5 +367,7 @@ export interface StatusSnapshot {
     currency?: string;
     complete: boolean;
     reason?: string;
+    remainingTrades?: number;
+    resetAt?: string;
   };
 }

@@ -1,4 +1,4 @@
-# GEMMO REMONDATA BOT - REQUISITI VINCOLANTI
+# SEL SCALP BOT — $Rohato$🤖111 · REQUISITI VINCOLANTI
 
 Questo file deve essere letto integralmente prima di ogni modifica futura al progetto.
 
@@ -43,26 +43,33 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
   marker segnali e layout responsive. Nessun livello sintetico.
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
-- La pagina `VS` deve mantenere MAIN e INVERSE in corsie separate, mostrare risultati, win rate, operazioni aperte/chiuse e confronti per signal ID, senza sommare valute PAPER SHADOW differenti.
+- La pagina `VS` deve mantenere MAIN e INVERSE in corsie separate. Ogni PAPER SHADOW deve nascere soltanto dopo l'apertura verificata del trade operativo corrispondente e condividere lo stesso signal ID. Il confronto primario usa l'unita normalizzata `R`; CHF, JPY, USD e altre valute restano esposte separatamente e non vengono mai sommate.
 - Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
-- Il riferimento visivo definitivo unisce le due immagini fornite: il contenuto dashboard denso con sidebar diventa la pagina principale; il contenuto chart/control-room diventa Grafico/Setup. Griglia dark navy coerente, proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
+- L'identita visiva e `SEL SCALP BOT — $Rohato$🤖111`: cockpit professionale dark forest con verde dominante e menta per INVERSE. Il rosso e riservato a SELL, perdite ed errori; non identifica la corsia INVERSE. Proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
 - La dashboard principale include soltanto metriche derivabili da dati reali: P&L, win rate, trade oggi, posizioni, balance, equity/NAV, profit factor, drawdown, rischio, ultimo segnale e timestamp; quando non calcolabili mostra N/A.
 - Grafico/Setup include Market Scanner, grafico OANDA, layer attivabili, scenari speculari BUY/SELL dallo stesso snapshot e decisione finale BUY/SELL/HOLD motivata.
 
 ## Strategia e qualita segnali
 
 - Non forzare un numero di trade. Se manca un setup completo, usare `HOLD`.
-- Il profilo `AGGRESSIVE_25` scansiona le 15 coppie ogni 30 secondi,
-  riconosce trend completi e continuazioni/rotture strutturali confermate, usa
-  setup score minimo 55, massimo 7 nuovi ingressi validi per ciclo, 15
-  posizioni e una sola posizione per simbolo. Il tetto account-wide e rigido:
-  massimo 25 operazioni totali al giorno UTC, anche se Railway conserva una
-  vecchia variabile piu alta. Un ciclo gia in corso blocca quello successivo.
-- Forex: mantenere la logica esistente salvo bug reali; rischio economico previsto 1.20 e target previsto 2.40 nella valuta correttamente dichiarata.
+- Il profilo `ROHATO_AGGRESSIVE_100` scansiona le 15 coppie ogni 30 secondi,
+  usa setup score minimo 55, massimo 7 nuovi ingressi validi per ciclo, 15
+  posizioni e una sola posizione per simbolo. In PAPER e OANDA Practice il
+  tetto account-wide e 100 ingressi al giorno UTC; `OANDA_LIVE` resta sempre
+  hard-capped a 25. Il contatore usa esclusivamente `openTime` del giorno UTC:
+  chiudere oggi una posizione aperta ieri incide sul P&L ma non consuma un nuovo ingresso.
+- Il profilo rapido accetta un trend completo non esausto oppure una continuazione
+  allineata a struttura e MACD/liquidita. Un breakout anticipato richiede un BOS
+  o CHoCH corrente, MACD concorde e volume ratio almeno 0.95. Killzone o FVG
+  storici da soli non sono trigger; RSI sopra 72 per BUY o sotto 28 per SELL blocca l'inseguimento.
+- Forex usa stop fisso 10 pip, target fisso 20 pip, rapporto 1:2 e cooldown di
+  10 minuti dopo la chiusura della stessa coppia. Gli importi nella valuta conto
+  vengono ricalcolati da size, pip location e conversioni OANDA, non etichettati arbitrariamente.
 - Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
 - Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.
 - Gli scenari BUY e SELL derivano dallo stesso identico snapshot OANDA e dallo stesso timestamp; non effettuano due richieste e non aprono automaticamente trade opposti.
 - Una sola decisione finale puo essere selezionata per l'esecuzione OANDA; lo scenario scartato resta analisi e non invia ordini.
+- La corsia INVERSE di confronto non si apre su segnali grezzi o su trade MAIN bloccati dai gate. Viene registrata uno-a-uno soltanto dopo un ingresso MAIN/PAPER effettivo e resta sempre `PAPER SHADOW` con zero order ID OANDA.
 - Non presentare il punteggio euristico come probabilita: usare `SETUP SCORE`, derivato in modo ripetibile da trend, momentum, struttura, liquidita, volatilita, spread, sessione, rischio e conferma AI.
 
 ## XAUUSD dedicato

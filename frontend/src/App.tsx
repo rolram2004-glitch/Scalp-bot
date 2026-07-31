@@ -51,7 +51,8 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
   const modeLabel = !mode.known ? 'MODE UNAVAILABLE' : mode.paper ? 'PAPER' : oandaExecutionReady ? mode.label : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
   const feedAge = feedAgeSeconds(status?.lastPriceAt);
   const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 30 ? 'STALE' : feedConnected ? status?.priceFeedStatus === 'PARTIAL' ? 'PARTIAL LIVE' : 'LIVE' : 'PARTIAL';
-  const ordersEnabled = Boolean(status?.liveTradingEnabled && mode.oanda && mode.ready);
+  const entryGate = status?.entryGateStatus || (status?.isRunning ? 'CHECKING' : 'SCANNER_STOPPED');
+  const entryReady = entryGate === 'READY';
   const navigation = [
     { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
     { to: '/vs', label: 'VS', icon: 'versus' as const },
@@ -76,9 +77,9 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
     <>
       <aside className="cockpit-sidebar">
         <div className="cockpit-brand">
-          <span className="cockpit-brand__bolt">◆</span>
-          <strong>SCALP.BOT</strong>
-          <small>REAL-MARKET COMMAND CENTER</small>
+          <span className="cockpit-brand__bolt">R</span>
+          <strong>SEL</strong>
+          <small>ROHATO 111</small>
         </div>
         <nav className="cockpit-nav" aria-label="Navigazione principale">
           {navigation.map((item) => (
@@ -96,8 +97,8 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
 
       <header className="cockpit-header">
         <div className="cockpit-header__identity">
-          <strong>SCALP.BOT</strong>
-          <span>REAL-MARKET COMMAND CENTER</span>
+          <strong>$Rohato$🤖111</strong>
+          <span>SEL SCALP BOT · OANDA PRACTICE</span>
         </div>
 
         <div className="cockpit-header__telemetry">
@@ -106,7 +107,7 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
           <div className="header-telemetry header-telemetry--mode"><span>MODE</span><strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong></div>
           <div className="header-telemetry"><span>PRICE FEED</span><strong className={feedState === 'LIVE' || feedState === 'PARTIAL LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong></div>
           <div className="header-telemetry"><span>FEED AGE</span><strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong></div>
-          <div className="header-telemetry"><span>ORDERS</span><strong className={ordersEnabled ? 'positive' : 'warning-text'}>{ordersEnabled ? 'ENABLED' : 'DISABLED'}</strong></div>
+          <div className="header-telemetry"><span>ENTRY GATE</span><strong className={entryReady ? 'positive' : entryGate === 'DAILY_LOSS_LIMIT' ? 'negative' : 'warning-text'}>{entryGate}</strong></div>
         </div>
 
         <div className="cockpit-header__actions">

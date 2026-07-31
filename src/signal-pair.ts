@@ -121,6 +121,17 @@ function mirrorPrice(value: number | undefined, pivot: number) {
   return finite(value) && finite(pivot) ? pivot - (value - pivot) : undefined;
 }
 
+function pipSize(symbol: string) {
+  const normalized = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return normalized.endsWith("JPY") ? 0.01 : 0.0001;
+}
+
+function executableEntry(action: SignalAction, market: SignalMarketSnapshot) {
+  if (action === "BUY" && finite(market.ask)) return market.ask;
+  if (action === "SELL" && finite(market.bid)) return market.bid;
+  return market.mid;
+}
+
 export function invertAction(action: unknown): SignalAction {
   if (action === "BUY") return "SELL";
   if (action === "SELL") return "BUY";
@@ -161,11 +172,35 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence;
   const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence;
   const baseReasoning = String(input.mainDecision?.reasoning || "Decisione MAIN non disponibile.");
-  const entry = finite(input.mainDecision?.entryPrice) ? input.mainDecision.entryPrice : input.market.mid;
+  const entry = finite(input.mainDecision?.entryPrice)
+    ? input.mainDecision.entryPrice
+    : executableEntry(mainAction, input.market);
+  const inverseEntry = executableEntry(inverseAction, input.market);
   const mainTargets = cleanTargets(input.mainDecision?.structuralTargets, mainAction, entry);
-  const mainTakeProfit = mainTargets[0] ?? (finite(input.mainDecision?.takeProfitPips) ? undefined : undefined);
-  const inverseStop = mirrorPrice(input.mainDecision?.stopLossPrice, entry);
-  const inverseTargets = mainTargets.map((target) => mirrorPrice(target, entry)).filter(finite);
+  const unitPip = pipSize(input.symbol);
+  const forexInstrument = !String(input.symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith("XAU");
+  const stopPips = finite(input.mainDecision?.stopLossPips) && input.mainDecision.stopLossPips > 0
+    ? input.mainDecision.stopLossPips
+    : forexInstrument ? 10 : undefined;
+  const targetPips = finite(input.mainDecision?.takeProfitPips) && input.mainDecision.takeProfitPips > 0
+    ? input.mainDecision.takeProfitPips
+    : forexInstrument ? 20 : undefined;
+  const mainDirection = mainAction === "BUY" ? 1 : mainAction === "SELL" ? -1 : 0;
+  const inverseDirection = inverseAction === "BUY" ? 1 : inverseAction === "SELL" ? -1 : 0;
+  const mainStop = finite(input.mainDecision?.stopLossPrice)
+    ? input.mainDecision.stopLossPrice
+    : stopPips && mainDirection ? entry - mainDirection * stopPips * unitPip : undefined;
+  const mainTakeProfit = mainTargets[0] ?? (
+    targetPips && mainDirection ? entry + mainDirection * targetPips * unitPip : undefined
+  );
+  const inverseStop = stopPips && inverseDirection
+    ? inverseEntry - inverseDirection * stopPips * unitPip
+    : mirrorPrice(mainStop, inverseEntry);
+  const inverseTargets = mainTargets.length > 0
+    ? mainTargets.map((target) => mirrorPrice(target, inverseEntry)).filter(finite)
+    : targetPips && inverseDirection
+      ? [inverseEntry + inverseDirection * targetPips * unitPip]
+      : [];
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";
 
@@ -192,7 +227,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       reasoning: baseReasoning,
       setupType: input.mainDecision?.setupType,
       entryPrice: mainAction === "HOLD" ? undefined : entry,
-      stopLossPrice: mainAction === "HOLD" ? undefined : input.mainDecision?.stopLossPrice,
+      stopLossPrice: mainAction === "HOLD" ? undefined : mainStop,
       takeProfitPrice: mainAction === "HOLD" ? undefined : mainTakeProfit,
       structuralTargets: mainAction === "HOLD" ? [] : mainTargets,
       riskRewardRatio: input.mainDecision?.riskRewardRatio,
@@ -210,7 +245,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       scoreBreakdown: input.mainDecision?.scoreBreakdown,
       reasoning: `Scenario contrario calcolato sullo stesso snapshot OANDA della MAIN. MAIN ${mainAction}; INVERSE ${inverseAction}. ${baseReasoning}`,
       setupType: input.mainDecision?.setupType ? `INVERSE_${input.mainDecision.setupType}` : "INVERSE",
-      entryPrice: inverseAction === "HOLD" ? undefined : entry,
+      entryPrice: inverseAction === "HOLD" ? undefined : inverseEntry,
       stopLossPrice: inverseAction === "HOLD" ? undefined : inverseStop,
       takeProfitPrice: inverseAction === "HOLD" ? undefined : inverseTargets[0],
       structuralTargets: inverseAction === "HOLD" ? [] : inverseTargets,

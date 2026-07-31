@@ -348,7 +348,9 @@ class OandaAPI {
     try {
       const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades`, {
         ...this.requestOptions(),
-        params: { state: "CLOSED", count: Math.min(100, Math.max(1, Number(count) || 50)) }
+        // OANDA accepts up to 500 trades per page. Fetching the wider bounded
+        // window keeps the UTC entry counter complete on high-activity demo days.
+        params: { state: "CLOSED", count: Math.min(500, Math.max(1, Number(count) || 50)) }
       });
       if (!Array.isArray(response.data?.trades)) throw new Error("OANDA_CLOSED_TRADES_RESPONSE_INVALID");
       this.rememberSuccess();

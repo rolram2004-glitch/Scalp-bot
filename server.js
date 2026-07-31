@@ -77,7 +77,7 @@ function createApp() {
   app.get("/health", (req, res) => {
     res.json({
       status: "ok",
-      service: "gemmo-remondata-bot",
+      service: "sel-scalp-bot-rohato-111",
       tradingMode: config.TRADING_MODE,
       oandaEnvironment: config.OANDA_ENVIRONMENT,
       timestamp: new Date().toISOString(),
@@ -304,7 +304,7 @@ function startServer() {
 
   const server = app.listen(PORT, HOST, () => {
     console.log("================================");
-    console.log("SCALP BOT STARTED");
+    console.log("SEL SCALP BOT - $Rohato$ 111 STARTED");
     console.log("HOST:", HOST);
     console.log("PORT:", PORT);
     console.log("DASHBOARD: http://localhost:" + PORT + "/");

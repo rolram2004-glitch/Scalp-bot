@@ -113,7 +113,7 @@ test("invalid numeric risk limits fall back to bounded safe values", () => {
   assert.equal(config.MAX_DAILY_LOSS, 50);
 });
 
-test("aggressive Practice profile accepts 30 second scans and hard caps the day at 25", () => {
+test("Rohato Practice profile accepts 30 second scans and caps the demo day at 100", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
@@ -124,7 +124,7 @@ test("aggressive Practice profile accepts 30 second scans and hard caps the day 
     MAX_NEW_TRADES_PER_CYCLE: "7",
     MAX_OPEN_POSITIONS: "15",
     MAX_DAILY_TRADES: "1000",
-    FOREX_SIGNAL_PROFILE: "AGGRESSIVE_25"
+    FOREX_SIGNAL_PROFILE: "ROHATO_AGGRESSIVE_100"
   });
 
   assert.equal(config.LIVE_TRADING_ENABLED, true);
@@ -132,17 +132,31 @@ test("aggressive Practice profile accepts 30 second scans and hard caps the day 
   assert.equal(config.MIN_CONFIDENCE, 55);
   assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 7);
   assert.equal(config.MAX_OPEN_TRADES, 15);
-  assert.equal(config.MAX_DAILY_TRADES, 25);
+  assert.equal(config.MAX_DAILY_TRADES, 100);
   assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
-  assert.equal(config.FOREX_SIGNAL_PROFILE, "AGGRESSIVE_25");
+  assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_AGGRESSIVE_100");
 });
 
-test("daily trade cap cannot be raised above 25 by a stale Railway variable", () => {
+test("PAPER daily trade cap cannot be raised above 100 by a stale Railway variable", () => {
   const config = readConfig({
     TRADING_MODE: "PAPER",
     MAX_DAILY_TRADES: "999999"
   });
 
+  assert.equal(config.MAX_DAILY_TRADES, 100);
+});
+
+test("real-money OANDA_LIVE remains hard capped at 25", () => {
+  const config = readConfig({
+    TRADING_MODE: "OANDA_LIVE",
+    OANDA_ENVIRONMENT: "LIVE",
+    OANDA_ORDER_EXECUTION_ENABLED: "true",
+    OANDA_LIVE_CONFIRMATION: "I_CONFIRM_REAL_MONEY",
+    LIVE_EXECUTION_VARIANT: "MAIN",
+    MAX_DAILY_TRADES: "100"
+  });
+
+  assert.equal(config.LIVE_TRADING_ENABLED, true);
   assert.equal(config.MAX_DAILY_TRADES, 25);
 });
 

@@ -16,11 +16,11 @@ const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
   : "DISABLED";
 const requestedForexSignalProfile = String(
-  process.env.FOREX_SIGNAL_PROFILE || "AGGRESSIVE_25"
+  process.env.FOREX_SIGNAL_PROFILE || "ROHATO_AGGRESSIVE_100"
 ).trim().toUpperCase();
-const forexSignalProfile = ["AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
+const forexSignalProfile = ["ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
   ? requestedForexSignalProfile
-  : "AGGRESSIVE_25";
+  : "ROHATO_AGGRESSIVE_100";
 const geminiModelRaw = String(process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 const geminiModel = /^gemini-[a-z0-9.-]+$/i.test(geminiModelRaw)
   ? geminiModelRaw
@@ -42,6 +42,7 @@ const executionReady = Boolean(
   liveExecutionVariantValid &&
   liveModeSafetyConfirmed
 );
+const maximumDailyTrades = tradingMode === "OANDA_LIVE" ? 25 : 100;
 
 module.exports = {
   // 15 forex pairs plus XAUUSD as a separate analysis-only instrument.
@@ -70,8 +71,15 @@ module.exports = {
   MAX_OPEN_TRADES: boundedNumber(process.env.MAX_OPEN_POSITIONS, 15, 1, 15, true),
   MAX_NEW_TRADES_PER_CYCLE: boundedNumber(process.env.MAX_NEW_TRADES_PER_CYCLE, 7, 1, 7, true),
   MAX_TRADES_PER_SYMBOL: 1,
-  // Account-wide hard ceiling: a stale Railway value can never raise it.
-  MAX_DAILY_TRADES: boundedNumber(process.env.MAX_DAILY_TRADES, 25, 1, 25, true),
+  // Practice/PAPER can run the requested aggressive laboratory. Real-money
+  // mode remains hard-capped at 25 until the owner explicitly redesigns risk.
+  MAX_DAILY_TRADES: boundedNumber(
+    process.env.MAX_DAILY_TRADES,
+    tradingMode === "OANDA_LIVE" ? 25 : 100,
+    1,
+    maximumDailyTrades,
+    true
+  ),
   NORMAL_STOP_LOSS_PIPS: boundedNumber(process.env.NORMAL_STOP_LOSS_PIPS, 10, 1, 100),
   NORMAL_TAKE_PROFIT_PIPS: boundedNumber(process.env.NORMAL_TAKE_PROFIT_PIPS, 20, 1, 200),
 
@@ -81,6 +89,13 @@ module.exports = {
 
   SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 30_000, 30_000, 300_000, true),
   POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
+  SYMBOL_REENTRY_COOLDOWN_MS: boundedNumber(
+    process.env.SYMBOL_REENTRY_COOLDOWN_MS,
+    10 * 60 * 1000,
+    0,
+    60 * 60 * 1000,
+    true
+  ),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),
   MAX_DAILY_LOSS: boundedNumber(process.env.MAX_DAILY_LOSS, 50, 0.01, 100000),

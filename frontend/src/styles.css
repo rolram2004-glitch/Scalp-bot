@@ -1,21 +1,21 @@
 :root {
-  --bg: #050914;
-  --surface: #080d19;
-  --surface-2: #0d1424;
-  --surface-3: #111a2b;
-  --border: #202a3e;
+  --bg: #020a07;
+  --surface: #05130d;
+  --surface-2: #082016;
+  --surface-3: #0b2a1d;
+  --border: #173a2b;
   --border-soft: rgba(148, 163, 184, 0.18);
   --text: #eef4ff;
   --muted: #95a3b8;
   --soft: #c8d3e4;
-  --green: #22c55e;
+  --green: #23f699;
   --green-soft: rgba(34, 197, 94, 0.13);
   --red: #ef476f;
   --red-soft: rgba(239, 71, 111, 0.13);
   --yellow: #f8c84e;
   --yellow-soft: rgba(248, 200, 78, 0.13);
-  --blue: #3b82f6;
-  --blue-soft: rgba(59, 130, 246, 0.16);
+  --blue: #35d993;
+  --blue-soft: rgba(53, 217, 147, 0.16);
   --shadow: 0 18px 60px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
@@ -27,8 +27,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.13), transparent 28rem),
-    linear-gradient(180deg, #050914 0%, #050914 60%, #03060d 100%);
+    radial-gradient(circle at 20% 0%, rgba(35, 246, 153, 0.13), transparent 28rem),
+    linear-gradient(180deg, #020a07 0%, #03110b 60%, #010604 100%);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -67,7 +67,7 @@ button {
 
 .brand-mark {
   align-items: center;
-  background: linear-gradient(135deg, #18e0a4, #4f8cff);
+  background: linear-gradient(135deg, #23f699, #46e6c2);
   border-radius: 8px;
   color: #041019;
   display: flex;
@@ -954,7 +954,7 @@ td {
 }
 
 .signal-lane.shadow {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(70, 230, 194, 0.3);
 }
 
 .signal-lane-head {

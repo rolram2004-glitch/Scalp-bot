@@ -70,6 +70,12 @@ test("MAIN and INVERSE share one OANDA quote and one evaluation timestamp", () =
   assert.equal(result.marketValid, true);
   assert.equal(result.main.action, "BUY");
   assert.equal(result.inverse.action, "SELL");
+  assert.ok(Math.abs(result.main.entryPrice - market.ask) < 1e-10);
+  assert.ok(Math.abs(result.main.stopLossPrice - (market.ask - 0.001)) < 1e-10);
+  assert.ok(Math.abs(result.main.takeProfitPrice - (market.ask + 0.002)) < 1e-10);
+  assert.ok(Math.abs(result.inverse.entryPrice - market.bid) < 1e-10);
+  assert.ok(Math.abs(result.inverse.stopLossPrice - (market.bid + 0.001)) < 1e-10);
+  assert.ok(Math.abs(result.inverse.takeProfitPrice - (market.bid - 0.002)) < 1e-10);
   assert.equal(result.inverse.derivedFrom, "MAIN");
   assert.deepEqual(originalDecision, {
     action: "BUY",
