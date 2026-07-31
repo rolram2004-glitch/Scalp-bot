@@ -53,3 +53,36 @@ test("paper and shadow quote guard rejects stale or non-tradeable prices", () =>
   }), false);
   assert.equal(autonomousTestUtils.isFreshTradeableQuote({ ...fresh, ask: 1.099 }), false);
 });
+
+test("UTC daily cap counts entries only, not positions merely closed today", () => {
+  const dateUTC = "2026-07-31";
+  const trades = [
+    { id: "today-open", openTime: "2026-07-31T08:00:00.000Z" },
+    { id: "today-closed", openTime: "2026-07-31T09:00:00.000Z", closeTime: "2026-07-31T09:10:00.000Z" },
+    { id: "today-closed", openTime: "2026-07-31T09:00:00.000Z", closeTime: "2026-07-31T09:10:00.000Z" },
+    { id: "yesterday-entry", openTime: "2026-07-30T23:55:00.000Z", closeTime: "2026-07-31T00:05:00.000Z" }
+  ];
+
+  assert.equal(autonomousTestUtils.countUtcTradeEntries(trades, dateUTC), 2);
+});
+
+test("fixed pip plan respects JPY precision and keeps 1:2 risk reward", () => {
+  const jpy = autonomousTestUtils.fixedPipPlan("USDJPY", 159.232, "BUY");
+  assert.equal(jpy.riskPips, 10);
+  assert.equal(jpy.rewardPips, 20);
+  assert.ok(Math.abs(jpy.stopLoss - 159.132) < 1e-10);
+  assert.ok(Math.abs(jpy.takeProfit - 159.432) < 1e-10);
+
+  const eur = autonomousTestUtils.fixedPipPlan("EURUSD", 1.1, "SELL");
+  assert.ok(Math.abs(eur.stopLoss - 1.101) < 1e-10);
+  assert.ok(Math.abs(eur.takeProfit - 1.098) < 1e-10);
+  assert.equal(autonomousTestUtils.normalizedR(-10, 10), -1);
+  assert.equal(autonomousTestUtils.normalizedR(20, 10), 2);
+});
+
+test("symbol cooldown prevents immediate repeat entries", () => {
+  const now = Date.parse("2026-07-31T12:00:00.000Z");
+  const closed = [{ symbol: "GBPJPY", closedAt: "2026-07-31T11:55:00.000Z" }];
+  assert.equal(autonomousTestUtils.symbolCooldownRemainingMs("GBP_JPY", closed, now), 5 * 60 * 1000);
+  assert.equal(autonomousTestUtils.symbolCooldownRemainingMs("EURUSD", closed, now), 0);
+});

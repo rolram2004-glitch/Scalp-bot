@@ -1,6 +1,6 @@
-# GEMMO REMONDATA BOT
+# SEL SCALP BOT — $Rohato$🤖111
 
-Cockpit di analisi e trading OANDA Practice con due corsie esclusive, MAIN e INVERSE. La dashboard distingue account, feed, analisi, shadow trading ed esecuzione verificata: un prezzo OANDA non viene mai presentato come un ordine OANDA.
+Cockpit professionale dark-green di analisi e trading OANDA Practice. MAIN e la corsia operativa verificata; INVERSE e una simulazione contraria uno-a-uno aperta soltanto dopo il trade operativo corrispondente. Il confronto usa risultati in R e mantiene separate le valute originali.
 
 ## Run locally
 
@@ -36,6 +36,15 @@ Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` i
 - `TRADING_MODE=OANDA_DEMO`, `OANDA_ENVIRONMENT=PRACTICE` and both execution enable gates: verified orders on OANDA Practice only.
 - `TRADING_MODE=OANDA_LIVE`: real-money mode; blocked unless endpoint, enable flags and explicit real-money confirmation all match. Never enable it during development or automatic tests.
 - `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one real execution lane. The other lane is an explicit paper shadow and never calls OANDA.
+
+Il profilo `ROHATO_AGGRESSIVE_100` scansiona 15 coppie ogni 30 secondi, usa un
+massimo di 7 ingressi validi per ciclo, 15 posizioni, una posizione per simbolo,
+cooldown di 10 minuti e un tetto di 100 ingressi UTC in PAPER/Practice. Non forza
+trade senza setup. `OANDA_LIVE` resta hard-capped a 25 e richiede conferma separata.
+
+Gli identificatori OANDA storici conservano il prefisso tecnico `GEMMO` per
+riconoscere in sicurezza le posizioni gia esistenti; il nome visibile del prodotto
+e `SEL SCALP BOT — $Rohato$🤖111`.
 
 XAUUSD usa il laboratorio dedicato `GOLD LIQUIDITY CONFLUENCE` ed e permanentemente `SIGNAL ONLY`: mostra segnali AI, livelli strutturali e risultati in R, ma non invia ordini OANDA, PAPER o PAPER SHADOW.
 

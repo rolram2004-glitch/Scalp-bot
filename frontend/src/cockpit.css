@@ -1,14 +1,15 @@
 :root {
-  --cockpit-bg: #030812;
-  --cockpit-panel: rgba(6, 14, 26, 0.96);
-  --cockpit-panel-2: rgba(9, 20, 35, 0.96);
-  --cockpit-line: #17283d;
-  --cockpit-line-soft: rgba(83, 112, 147, 0.22);
-  --cockpit-copy: #e9f2ff;
-  --cockpit-muted: #72839a;
-  --cockpit-green: #15d68f;
-  --cockpit-red: #ff4f78;
-  --cockpit-blue: #3a8cff;
+  --cockpit-bg: #020a07;
+  --cockpit-panel: rgba(4, 20, 14, 0.97);
+  --cockpit-panel-2: rgba(6, 29, 20, 0.97);
+  --cockpit-line: #15382a;
+  --cockpit-line-soft: rgba(75, 132, 105, 0.24);
+  --cockpit-copy: #ebfff5;
+  --cockpit-muted: #718f81;
+  --cockpit-green: #23f699;
+  --cockpit-red: #ff5c78;
+  --cockpit-blue: #35d993;
+  --cockpit-cyan: #46e6c2;
   --cockpit-amber: #f5a524;
   --cockpit-purple: #a855f7;
   --sidebar-width: 86px;
@@ -21,8 +22,8 @@ html {
 
 body {
   background:
-    radial-gradient(circle at 72% -10%, rgba(58, 140, 255, 0.12), transparent 32rem),
-    radial-gradient(circle at 12% 80%, rgba(21, 214, 143, 0.05), transparent 28rem),
+    radial-gradient(circle at 72% -10%, rgba(35, 246, 153, 0.12), transparent 32rem),
+    radial-gradient(circle at 12% 80%, rgba(70, 230, 194, 0.06), transparent 28rem),
     var(--cockpit-bg);
   color: var(--cockpit-copy);
   min-width: 320px;
@@ -64,7 +65,7 @@ a:focus-visible {
 
 .cockpit-sidebar {
   align-items: stretch;
-  background: rgba(3, 9, 18, 0.98);
+  background: rgba(2, 12, 8, 0.99);
   border-right: 1px solid var(--cockpit-line);
   display: flex;
   flex-direction: column;
@@ -152,21 +153,21 @@ a:focus-visible {
 }
 
 .cockpit-nav a:hover {
-  background: rgba(58, 140, 255, 0.07);
+  background: rgba(35, 246, 153, 0.07);
   color: #bdcbe0;
 }
 
 .cockpit-nav a.active {
   background:
-    linear-gradient(90deg, rgba(58, 140, 255, 0.15), rgba(58, 140, 255, 0.03));
-  border-color: rgba(58, 140, 255, 0.28);
+    linear-gradient(90deg, rgba(35, 246, 153, 0.15), rgba(35, 246, 153, 0.03));
+  border-color: rgba(35, 246, 153, 0.28);
   box-shadow: inset 2px 0 var(--cockpit-blue);
   color: #dceaff;
 }
 
 .cockpit-nav a.active svg {
   color: var(--cockpit-blue);
-  filter: drop-shadow(0 0 6px rgba(58, 140, 255, 0.38));
+  filter: drop-shadow(0 0 6px rgba(35, 246, 153, 0.38));
 }
 
 .cockpit-sidebar__foot {
@@ -207,7 +208,7 @@ a:focus-visible {
 .cockpit-header {
   align-items: center;
   backdrop-filter: blur(18px);
-  background: rgba(4, 11, 21, 0.92);
+  background: rgba(3, 17, 11, 0.94);
   border-bottom: 1px solid var(--cockpit-line);
   display: grid;
   gap: 18px;
@@ -252,7 +253,7 @@ a:focus-visible {
 .cockpit-header__telemetry {
   align-items: stretch;
   display: grid;
-  grid-template-columns: repeat(5, minmax(78px, 1fr));
+  grid-template-columns: repeat(6, minmax(78px, 1fr));
   height: 40px;
   min-width: 0;
 }
@@ -361,7 +362,7 @@ a:focus-visible {
 
 .cockpit-panel {
   background:
-    linear-gradient(180deg, rgba(10, 21, 37, 0.94), rgba(5, 13, 24, 0.97));
+    linear-gradient(180deg, rgba(7, 31, 21, 0.95), rgba(3, 16, 11, 0.98));
   border: 1px solid var(--cockpit-line);
   border-radius: 6px;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.2);
@@ -428,8 +429,8 @@ a:focus-visible {
 }
 
 .cockpit-panel__header > a:hover {
-  border-color: rgba(58, 140, 255, 0.45);
-  color: #b8d4ff;
+  border-color: rgba(35, 246, 153, 0.45);
+  color: #bfffe0;
 }
 
 .panel-header-tags {
@@ -440,8 +441,8 @@ a:focus-visible {
 }
 
 .panel-header-tags b {
-  background: rgba(58, 140, 255, 0.08);
-  border: 1px solid rgba(58, 140, 255, 0.18);
+  background: rgba(35, 246, 153, 0.08);
+  border: 1px solid rgba(35, 246, 153, 0.18);
   border-radius: 4px;
   color: #93a9c2;
   font-size: 8px;
@@ -480,7 +481,7 @@ a:focus-visible {
 .command-metric {
   align-items: center;
   background:
-    linear-gradient(135deg, rgba(11, 24, 42, 0.96), rgba(5, 13, 24, 0.96));
+    linear-gradient(135deg, rgba(8, 35, 24, 0.97), rgba(3, 16, 11, 0.97));
   border: 1px solid var(--cockpit-line);
   border-radius: 6px;
   display: grid;
@@ -502,7 +503,7 @@ a:focus-visible {
 }
 
 .command-metric::after {
-  background: radial-gradient(circle, var(--metric-glow, rgba(58, 140, 255, 0.15)), transparent 68%);
+  background: radial-gradient(circle, var(--metric-glow, rgba(35, 246, 153, 0.15)), transparent 68%);
   content: "";
   height: 110px;
   pointer-events: none;
@@ -1034,7 +1035,7 @@ a:focus-visible {
 }
 
 .dense-table tbody tr:hover {
-  background: rgba(58, 140, 255, 0.035);
+  background: rgba(35, 246, 153, 0.035);
 }
 
 .dashboard-analytics-card {
@@ -1305,11 +1306,11 @@ a:focus-visible {
 }
 
 .scanner-rail__rows > button:hover {
-  background: rgba(58, 140, 255, 0.04);
+  background: rgba(35, 246, 153, 0.04);
 }
 
 .scanner-rail__rows > button.active {
-  background: linear-gradient(90deg, rgba(58, 140, 255, 0.14), rgba(58, 140, 255, 0.025));
+  background: linear-gradient(90deg, rgba(35, 246, 153, 0.14), rgba(35, 246, 153, 0.025));
   box-shadow: inset 2px 0 var(--cockpit-blue);
 }
 
@@ -1379,9 +1380,9 @@ a:focus-visible {
 .scanner-filter button.active,
 .chart-control-row button.active,
 .xau-timeframe-tabs button.active {
-  background: rgba(58, 140, 255, 0.13);
-  border-color: rgba(58, 140, 255, 0.42);
-  color: #bcd5ff;
+  background: rgba(35, 246, 153, 0.13);
+  border-color: rgba(35, 246, 153, 0.42);
+  color: #c4ffe2;
 }
 
 .rail-positions {
@@ -2340,7 +2341,7 @@ a:focus-visible {
   }
 
   .cockpit-header__telemetry {
-    grid-template-columns: repeat(4, minmax(72px, 1fr));
+    grid-template-columns: repeat(5, minmax(72px, 1fr));
   }
 
   .cockpit-nav a {

@@ -29,6 +29,7 @@ const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
 const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
 const MAX_DAILY_LOSS = Number(config.MAX_DAILY_LOSS || 50);
+const SYMBOL_REENTRY_COOLDOWN_MS = Number(config.SYMBOL_REENTRY_COOLDOWN_MS || 10 * 60 * 1000);
 const MINIMUM_SCORE_FOR_XAU_AI = 70;
 
 interface BotTrade {
@@ -43,12 +44,15 @@ interface BotTrade {
   rewardAmount?: number;
   pnl?: number;
   pnlPips?: number;
+  pnlR?: number;
+  riskPips?: number;
+  rewardPips?: number;
   openedAt: string;
   closedAt?: string;
   setupType?: string;
   confidence?: number;
   reasoning?: string;
-  closeReason?: "TP HIT" | "SL HIT" | "MANUAL" | "SIGNAL EXIT" | "POST-FILL RECONCILIATION FAILURE";
+  closeReason?: "TP HIT" | "SL HIT" | "MANUAL" | "SIGNAL EXIT" | "PAIR CLOSED" | "POST-FILL RECONCILIATION FAILURE";
   status: "OPEN" | "CLOSED";
   source: "PAPER" | "PAPER_SHADOW" | "OANDA" | "LOCAL_ORPHAN";
   units: number;
@@ -63,6 +67,7 @@ interface BotTrade {
   priceTime?: string;
   managedByBot?: boolean;
   clientTag?: string;
+  pairedWithTradeId?: string;
 }
 
 export interface BotSnapshot {
@@ -95,7 +100,7 @@ export interface BotSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile: "AGGRESSIVE_25" | "BALANCED";
+  signalProfile: "ROHATO_AGGRESSIVE_100" | "AGGRESSIVE_25" | "BALANCED";
   maxDailyTrades: number;
   minimumConfidence: number;
   maxOpenPositions: number;
@@ -103,6 +108,7 @@ export interface BotSnapshot {
   maxTradesPerSymbol: number;
   scanIntervalMs: number;
   maxDailyLoss: number;
+  symbolReentryCooldownMs: number;
   currentSymbol?: string;
   currentAction?: "BUY" | "SELL" | "HOLD";
   currentConfidence?: number;
@@ -159,7 +165,19 @@ export interface BotSnapshot {
     currency?: string;
     complete: boolean;
     reason?: string;
+    remainingTrades: number;
+    resetAt: string;
   };
+  entryGateStatus:
+    | "READY"
+    | "SCANNER_STOPPED"
+    | "EXECUTION_BLOCKED"
+    | "DAILY_TRADE_LIMIT"
+    | "DAILY_LOSS_LIMIT"
+    | "MAX_OPEN_POSITIONS";
+  entryGateReason: string;
+  dailyRemainingTrades: number;
+  nextDailyResetAt: string;
 }
 
 const botState: BotSnapshot = {
@@ -189,6 +207,7 @@ const botState: BotSnapshot = {
   maxTradesPerSymbol: Number(config.MAX_TRADES_PER_SYMBOL || 1),
   scanIntervalMs: SIGNAL_INTERVAL,
   maxDailyLoss: MAX_DAILY_LOSS,
+  symbolReentryCooldownMs: SYMBOL_REENTRY_COOLDOWN_MS,
   dailyTradeCount: 0,
   signalsAnalyzed: 0,
   signalsDiscarded: 0,
@@ -216,8 +235,14 @@ const botState: BotSnapshot = {
     maxTrades: MAX_DAILY_TRADES,
     pnl: null,
     complete: config.TRADING_MODE === "PAPER",
-    reason: config.TRADING_MODE === "PAPER" ? undefined : "OANDA_RECONCILIATION_NOT_RUN"
-  }
+    reason: config.TRADING_MODE === "PAPER" ? undefined : "OANDA_RECONCILIATION_NOT_RUN",
+    remainingTrades: MAX_DAILY_TRADES,
+    resetAt: nextUtcResetAt()
+  },
+  entryGateStatus: "SCANNER_STOPPED",
+  entryGateReason: "SCANNER_STOPPED",
+  dailyRemainingTrades: MAX_DAILY_TRADES,
+  nextDailyResetAt: nextUtcResetAt()
 };
 
 const listeners = new Set<(snapshot: BotSnapshot) => void>();
@@ -269,6 +294,33 @@ function effectiveExecutionState(): BotSnapshot["effectiveExecutionState"] {
   return liveExecutionActive() ? "OANDA_LIVE_READY" : "OANDA_LIVE_BLOCKED";
 }
 
+function nextUtcResetAt(reference = new Date()) {
+  return new Date(Date.UTC(
+    reference.getUTCFullYear(),
+    reference.getUTCMonth(),
+    reference.getUTCDate() + 1
+  )).toISOString();
+}
+
+function entryGate(analytics: ReturnType<typeof getAnalytics>) {
+  if (!botState.isRunning) {
+    return { status: "SCANNER_STOPPED" as const, reason: "SCANNER_STOPPED" };
+  }
+  if (liveModeConfigured() && !liveExecutionActive()) {
+    return { status: "EXECUTION_BLOCKED" as const, reason: dailyRiskReason || "OANDA_EXECUTION_GATES_NOT_READY" };
+  }
+  if (botState.dailyTradeCount >= MAX_DAILY_TRADES) {
+    return { status: "DAILY_TRADE_LIMIT" as const, reason: `DAILY_LIMIT_${MAX_DAILY_TRADES}_UTC` };
+  }
+  if (typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
+    return { status: "DAILY_LOSS_LIMIT" as const, reason: `DAILY_LOSS_LIMIT_${MAX_DAILY_LOSS}` };
+  }
+  if (botState.openTrades.length >= MAX_OPEN_POSITIONS) {
+    return { status: "MAX_OPEN_POSITIONS" as const, reason: `MAX_OPEN_POSITIONS_${MAX_OPEN_POSITIONS}` };
+  }
+  return { status: "READY" as const, reason: "ENTRY_GATES_VERIFIED" };
+}
+
 function ensureDailyCounterDate() {
   const today = new Date().toISOString().slice(0, 10);
   if (today === dailyCounterDate) return;
@@ -291,6 +343,13 @@ function refreshDerivedState() {
     : state.endsWith("_READY")
       ? `${config.TRADING_MODE} (${config.LIVE_EXECUTION_VARIANT})`
       : `${config.TRADING_MODE} BLOCKED`;
+  const resetAt = nextUtcResetAt();
+  const remainingTrades = Math.max(0, MAX_DAILY_TRADES - botState.dailyTradeCount);
+  const gate = entryGate(analytics);
+  botState.entryGateStatus = gate.status;
+  botState.entryGateReason = gate.reason;
+  botState.dailyRemainingTrades = remainingTrades;
+  botState.nextDailyResetAt = resetAt;
   botState.dailyRiskStatus = {
     dateUTC: dailyCounterDate,
     tradeCount: botState.dailyTradeCount,
@@ -302,7 +361,9 @@ function refreshDerivedState() {
       ? undefined
       : dailyRiskDataComplete && analytics.pnlComplete
         ? undefined
-        : dailyRiskReason || "OANDA_DAILY_RISK_DATA_INCOMPLETE"
+        : dailyRiskReason || "OANDA_DAILY_RISK_DATA_INCOMPLETE",
+    remainingTrades,
+    resetAt
   };
   botState.xauSignalLab = xauSignalLab.getSnapshot();
 }
@@ -356,8 +417,30 @@ function cashRules(symbol: string) {
       };
 }
 
-function priceDistanceForCash(symbol: string, cashAmount: number) {
-  return cashAmount / Math.max(tradeUnits(symbol), 1);
+function pipSize(symbol: string) {
+  return /JPY$/i.test(cleanSymbol(symbol)) ? 0.01 : 0.0001;
+}
+
+function fixedPipPlan(symbol: string, entryPrice: number, side: "BUY" | "SELL" | "HOLD") {
+  const direction = side === "SELL" ? -1 : 1;
+  const riskPips = Number(config.NORMAL_STOP_LOSS_PIPS || 10);
+  const rewardPips = Number(config.NORMAL_TAKE_PROFIT_PIPS || 20);
+  const unitPip = pipSize(symbol);
+  const units = tradeUnits(symbol);
+  return {
+    riskPips,
+    rewardPips,
+    stopLoss: entryPrice - direction * riskPips * unitPip,
+    takeProfit: entryPrice + direction * rewardPips * unitPip,
+    riskAmount: riskPips * unitPip * units,
+    rewardAmount: rewardPips * unitPip * units
+  };
+}
+
+function normalizedR(pnlPips: unknown, riskPips: unknown) {
+  const pnl = Number(pnlPips);
+  const risk = Number(riskPips);
+  return Number.isFinite(pnl) && Number.isFinite(risk) && risk > 0 ? pnl / risk : undefined;
 }
 
 function calculatePaperPnl(symbol: string, side: "BUY" | "SELL" | "HOLD", entryPrice: number, currentPrice: number) {
@@ -447,12 +530,11 @@ function buildTrade(
 ): BotTrade {
   const entryPrice = paperExecutablePrice(decision.action, marketData);
   const direction = decision.action === "SELL" ? -1 : 1;
-  const { riskAmount, rewardAmount } = cashRules(symbol);
-  const stopLoss = entryPrice - direction * priceDistanceForCash(symbol, riskAmount);
-  const takeProfit = entryPrice + direction * priceDistanceForCash(symbol, rewardAmount);
+  const plan = fixedPipPlan(symbol, entryPrice, decision.action);
   const currentPrice = paperExitPrice(decision.action, marketData);
   const pnl = calculatePaperPnl(symbol, decision.action, entryPrice, currentPrice);
   const multiplier = pipMultiplier(symbol);
+  const pnlPips = direction * (currentPrice - entryPrice) * multiplier;
 
   return {
     id: `PAPER-${symbol}-${Date.now()}`,
@@ -460,16 +542,19 @@ function buildTrade(
     side: decision.action,
     entryPrice,
     currentPrice,
-    stopLoss,
-    takeProfit,
-    riskAmount,
-    rewardAmount,
+    stopLoss: plan.stopLoss,
+    takeProfit: plan.takeProfit,
+    riskAmount: plan.riskAmount,
+    rewardAmount: plan.rewardAmount,
     pnl,
-    pnlPips: direction * (currentPrice - entryPrice) * multiplier,
+    pnlPips,
+    pnlR: normalizedR(pnlPips, plan.riskPips),
+    riskPips: plan.riskPips,
+    rewardPips: plan.rewardPips,
     openedAt: new Date().toISOString(),
     setupType: decision.setupType,
     confidence: decision.confidence,
-    reasoning: `${decision.reasoning}. Paper trading only, units ${tradeUnits(symbol)}, RR 1:2; P&L espresso nella valuta quotata.`,
+    reasoning: `${decision.reasoning}. Paper trading only, units ${tradeUnits(symbol)}, SL ${plan.riskPips} pip, TP ${plan.rewardPips} pip; P&L espresso nella valuta quotata e risultato normalizzato in R.`,
     status: "OPEN",
     source: "PAPER",
     units: tradeUnits(symbol),
@@ -684,11 +769,16 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
   }
   const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
   const unrealizedPL = optionalFinite(remote?.unrealizedPL);
+  const side: "BUY" | "SELL" = signedUnits < 0 ? "SELL" : "BUY";
+  const livePnlPips = currentPrice
+    ? (side === "BUY" ? currentPrice - entryPrice : entryPrice - currentPrice) * pipMultiplier(symbol)
+    : previous?.pnlPips;
+  const riskPips = previous?.riskPips ?? (ownership ? Number(config.NORMAL_STOP_LOSS_PIPS || 10) : undefined);
 
   return {
     id: `OANDA-${remote.id}`,
     symbol,
-    side: signedUnits < 0 ? "SELL" : "BUY",
+    side,
     units: Math.abs(signedUnits),
     entryPrice,
     currentPrice,
@@ -697,12 +787,15 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
     riskAmount: previous?.riskAmount,
     rewardAmount: previous?.rewardAmount,
     pnl: unrealizedPL,
-    pnlPips: previous?.pnlPips,
+    pnlPips: livePnlPips,
+    pnlR: normalizedR(livePnlPips, riskPips),
+    riskPips,
+    rewardPips: previous?.rewardPips ?? (ownership ? Number(config.NORMAL_TAKE_PROFIT_PIPS || 20) : undefined),
     openedAt,
     setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
     confidence: previous?.confidence,
     reasoning: previous?.reasoning || (ownership
-      ? "Posizione GEMMO aperta e verificata direttamente tramite OANDA Practice."
+      ? "Posizione Rohato aperta e verificata direttamente tramite OANDA Practice."
       : "Posizione OANDA verificata ma non gestita dal bot: nessuna chiusura automatica."),
     status: "OPEN",
     source: "OANDA",
@@ -715,7 +808,8 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
     signalAt: previous?.signalAt,
     priceTime: previous?.priceTime,
     managedByBot: Boolean(ownership),
-    clientTag: ownership?.clientTag
+    clientTag: ownership?.clientTag,
+    pairedWithTradeId: previous?.pairedWithTradeId
   };
 }
 
@@ -728,10 +822,16 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     throw new Error("OANDA_CLOSED_TRADE_FIELDS_INCOMPLETE");
   }
   const ownership = parseGemmoClientTag(remote?.clientExtensions?.tag);
+  const symbol = cleanSymbol(remote?.instrument);
+  const side: "BUY" | "SELL" = signedUnits < 0 ? "SELL" : "BUY";
+  const pnlPips = closePrice && closePrice > 0
+    ? (side === "BUY" ? closePrice - entryPrice : entryPrice - closePrice) * pipMultiplier(symbol)
+    : previous?.pnlPips;
+  const riskPips = previous?.riskPips ?? (ownership ? Number(config.NORMAL_STOP_LOSS_PIPS || 10) : undefined);
   return {
     id: `OANDA-${remote.id}`,
-    symbol: cleanSymbol(remote?.instrument),
-    side: signedUnits < 0 ? "SELL" : "BUY",
+    symbol,
+    side,
     units: Math.abs(signedUnits),
     entryPrice,
     currentPrice: closePrice && closePrice > 0 ? closePrice : previous?.currentPrice,
@@ -740,13 +840,16 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     riskAmount: previous?.riskAmount,
     rewardAmount: previous?.rewardAmount,
     pnl: optionalFinite(remote?.realizedPL),
-    pnlPips: previous?.pnlPips,
+    pnlPips,
+    pnlR: normalizedR(pnlPips, riskPips),
+    riskPips,
+    rewardPips: previous?.rewardPips ?? (ownership ? Number(config.NORMAL_TAKE_PROFIT_PIPS || 20) : undefined),
     openedAt,
     closedAt: remote?.closeTime || previous?.closedAt,
     setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
     confidence: previous?.confidence,
     reasoning: previous?.reasoning || (ownership
-      ? "Trade GEMMO chiuso e verificato direttamente tramite OANDA Practice."
+      ? "Trade Rohato chiuso e verificato direttamente tramite OANDA Practice."
       : "Trade OANDA chiuso verificato; origine bot non dimostrata."),
     closeReason: previous?.closeReason,
     status: "CLOSED",
@@ -760,7 +863,8 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     signalAt: previous?.signalAt,
     priceTime: previous?.priceTime,
     managedByBot: Boolean(ownership),
-    clientTag: ownership?.clientTag
+    clientTag: ownership?.clientTag,
+    pairedWithTradeId: previous?.pairedWithTradeId
   };
 }
 
@@ -779,13 +883,38 @@ async function reconcileLiveTrades() {
   }
 }
 
+function countUtcTradeEntries(trades: any[], dateUTC = new Date().toISOString().slice(0, 10)) {
+  return new Set(
+    (Array.isArray(trades) ? trades : [])
+      .filter((trade) => typeof trade?.openTime === "string" && trade.openTime.slice(0, 10) === dateUTC)
+      .map((trade) => String(trade?.id || ""))
+      .filter(Boolean)
+  ).size;
+}
+
+function symbolCooldownRemainingMs(
+  symbol: string,
+  closedTrades: Pick<BotTrade, "symbol" | "closedAt">[] = botState.closedTrades,
+  now = Date.now()
+) {
+  if (SYMBOL_REENTRY_COOLDOWN_MS <= 0) return 0;
+  const normalized = cleanSymbol(symbol);
+  const latestClose = closedTrades
+    .filter((trade) => cleanSymbol(trade.symbol) === normalized)
+    .map((trade) => Date.parse(String(trade.closedAt || "")))
+    .filter(Number.isFinite)
+    .reduce((latest, value) => Math.max(latest, value), 0);
+  if (!latestClose) return 0;
+  return Math.max(0, SYMBOL_REENTRY_COOLDOWN_MS - (now - latestClose));
+}
+
 async function reconcileLiveTradesOnce() {
   try {
     const [account, remoteOpenTrades, remoteOpenPositions, remoteClosedTrades, remotePendingOrders] = await Promise.all([
       oanda.getAccount(),
       oanda.getOpenTrades(),
       oanda.getOpenPositions(),
-      oanda.getClosedTrades(100),
+      oanda.getClosedTrades(500),
       oanda.getPendingOrders()
     ]);
     if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteOpenPositions) ||
@@ -845,6 +974,9 @@ async function reconcileLiveTradesOnce() {
         if (String(verified?.state || "").toUpperCase() === "CLOSED") {
           const realizedPL = optionalFinite(verified?.realizedPL);
           const closePrice = optionalFinite(verified?.averageClosePrice);
+          const closedPips = closePrice
+            ? (local.side === "BUY" ? closePrice - local.entryPrice : local.entryPrice - closePrice) * pipMultiplier(local.symbol)
+            : local.pnlPips;
           const closedAt = typeof verified?.closeTime === "string" && Number.isFinite(Date.parse(verified.closeTime))
             ? verified.closeTime
             : undefined;
@@ -854,6 +986,8 @@ async function reconcileLiveTradesOnce() {
             source: "OANDA",
             verificationStatus: "VERIFIED",
             pnl: realizedPL,
+            pnlPips: closedPips,
+            pnlR: normalizedR(closedPips, local.riskPips),
             currentPrice: closePrice,
             closedAt,
             closeReason: local.closeReason
@@ -890,7 +1024,7 @@ async function reconcileLiveTradesOnce() {
     }
     botState.closedTrades = [...closedById.values()]
       .sort((a, b) => String(b.closedAt || "").localeCompare(String(a.closedAt || "")))
-      .slice(0, 80);
+      .slice(0, 100);
 
     if (newlyClosed.length > 0) {
       newlyClosed.forEach((trade) => pushLog(
@@ -913,12 +1047,12 @@ async function reconcileLiveTradesOnce() {
       };
     });
     dailyCounterDate = new Date().toISOString().slice(0, 10);
-    const todayRemoteTrades = [...remoteOpenTrades, ...remoteClosedTrades].filter((trade: any) =>
-      isToday(trade?.openTime) || isToday(trade?.closeTime)
+    // The daily entry cap counts entries opened today. A position opened
+    // yesterday and merely closed today must affect P&L, not consume a new slot.
+    botState.dailyTradeCount = countUtcTradeEntries(
+      [...remoteOpenTrades, ...remoteClosedTrades],
+      dailyCounterDate
     );
-    botState.dailyTradeCount = new Set(
-      todayRemoteTrades.map((trade: any) => String(trade?.id || "")).filter(Boolean)
-    ).size;
     const todayVerified = [...verifiedOpen, ...botState.closedTrades].filter((trade) =>
       isToday(trade.openedAt) || isToday(trade.closedAt)
     );
@@ -961,7 +1095,8 @@ function buildShadowTrade(
   symbol: string,
   lane: PairedSignalSnapshot["main"],
   marketData: MarketData,
-  pairedSignal: PairedSignalSnapshot
+  pairedSignal: PairedSignalSnapshot,
+  pairedWithTradeId: string
 ): BotTrade {
   const decision: TradingDecision = {
     action: lane.action,
@@ -976,7 +1111,8 @@ function buildShadowTrade(
     source: "PAPER_SHADOW",
     strategyVariant: lane.variant,
     reasoning: `${lane.reasoning}. PAPER SHADOW: nessun ordine OANDA, prezzi bid/ask reali.`,
-    verificationStatus: "NOT_VERIFIED"
+    verificationStatus: "NOT_VERIFIED",
+    pairedWithTradeId
   };
 }
 
@@ -987,49 +1123,49 @@ function shadowLaneForPair(pair: PairedSignalSnapshot) {
   return pair.inverse;
 }
 
-function closeShadowTradeAtMarket(index: number, marketData: MarketData, reason: "SIGNAL EXIT" | "TP HIT" | "SL HIT") {
+function closeShadowTradeAtMarket(index: number, marketData: MarketData, reason: "PAIR CLOSED" | "TP HIT" | "SL HIT") {
   const trade = botState.shadowOpenTrades[index];
   if (!trade) return;
   const exitPrice = paperExitPrice(trade.side, marketData);
   const multiplier = pipMultiplier(trade.symbol);
+  const pnlPips = trade.side === "BUY"
+    ? (exitPrice - trade.entryPrice) * multiplier
+    : (trade.entryPrice - exitPrice) * multiplier;
   const closed: BotTrade = {
     ...trade,
     status: "CLOSED",
     currentPrice: exitPrice,
     pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, exitPrice),
-    pnlPips: trade.side === "BUY"
-      ? (exitPrice - trade.entryPrice) * multiplier
-      : (trade.entryPrice - exitPrice) * multiplier,
+    pnlPips,
+    pnlR: normalizedR(pnlPips, trade.riskPips),
     closedAt: new Date().toISOString(),
     closeReason: reason
   };
   botState.shadowOpenTrades = botState.shadowOpenTrades.filter((_, itemIndex) => itemIndex !== index);
-  botState.shadowClosedTrades = [closed, ...botState.shadowClosedTrades].slice(0, 80);
+  botState.shadowClosedTrades = [closed, ...botState.shadowClosedTrades].slice(0, 100);
   pushLog(`[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${reason} | ${trade.pnlCurrency || "quote currency"} ${Number(closed.pnl).toFixed(2)} | no OANDA order`);
 }
 
-function updateShadowFromSignal(
+function openPairedShadowTrade(
   symbol: string,
   pair: PairedSignalSnapshot,
   marketData: MarketData,
-  cycle: { shadowOpened: number }
+  cycle: { shadowOpened: number },
+  pairedWithTradeId: string
 ) {
   if (liveModeConfigured() && !liveExecutionActive()) return;
   const lane = shadowLaneForPair(pair);
   const existingIndex = botState.shadowOpenTrades.findIndex((trade) => cleanSymbol(trade.symbol) === cleanSymbol(symbol));
 
-  if (lane.action === "HOLD" || lane.confidence < MIN_CONFIDENCE) {
-    if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "SIGNAL EXIT");
-    return;
-  }
-  if (existingIndex >= 0) return;
+  if (lane.action === "HOLD" || lane.confidence < MIN_CONFIDENCE) return;
+  if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "PAIR CLOSED");
   if (cycle.shadowOpened >= MAX_NEW_TRADES_PER_CYCLE || botState.shadowOpenTrades.length >= MAX_OPEN_POSITIONS) return;
 
-  const shadow = buildShadowTrade(symbol, lane, marketData, pair);
+  const shadow = buildShadowTrade(symbol, lane, marketData, pair, pairedWithTradeId);
   botState.shadowOpenTrades = [shadow, ...botState.shadowOpenTrades].slice(0, MAX_OPEN_POSITIONS);
   botState.shadowTradeCount += 1;
   cycle.shadowOpened += 1;
-  pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} opened on OANDA quote ${pair.market.time} | no OANDA order`);
+  pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} paired with ${pairedWithTradeId} | same signal ${pair.pairId} | no OANDA order`);
 }
 
 async function closeVerifiedOandaTrade(
@@ -1037,7 +1173,7 @@ async function closeVerifiedOandaTrade(
   closeReason: NonNullable<BotTrade["closeReason"]> = "SIGNAL EXIT"
 ) {
   if (!canAutoCloseOandaTrade(trade, config.LIVE_EXECUTION_VARIANT)) {
-    pushLog(`[${trade.symbol}] chiusura bloccata: trade OANDA non attribuito alla corsia GEMMO attiva`);
+    pushLog(`[${trade.symbol}] chiusura bloccata: trade OANDA non attribuito alla corsia Rohato attiva`);
     return false;
   }
   if (!trade.oandaTradeId) {
@@ -1057,18 +1193,24 @@ async function closeVerifiedOandaTrade(
     const closeTime = typeof verified?.closeTime === "string" && Number.isFinite(Date.parse(verified.closeTime))
       ? verified.closeTime
       : undefined;
+    const multiplier = pipMultiplier(trade.symbol);
+    const pnlPips = closePrice
+      ? (trade.side === "BUY" ? closePrice - trade.entryPrice : trade.entryPrice - closePrice) * multiplier
+      : trade.pnlPips;
     const closed: BotTrade = {
       ...trade,
       status: "CLOSED",
       source: "OANDA",
       verificationStatus: "VERIFIED",
       pnl: realizedPL,
+      pnlPips,
+      pnlR: normalizedR(pnlPips, trade.riskPips),
       currentPrice: closePrice,
       closedAt: closeTime,
       closeReason
     };
     botState.openTrades = botState.openTrades.filter((item) => item.oandaTradeId !== trade.oandaTradeId);
-    botState.closedTrades = [closed, ...botState.closedTrades].slice(0, 80);
+    botState.closedTrades = [closed, ...botState.closedTrades].slice(0, 100);
     pushLog(`[${trade.symbol}] ${closeReason} verificata da OANDA | P&L ${Number.isFinite(closed.pnl) ? `${trade.accountCurrency || "N/A"} ${Number(closed.pnl).toFixed(2)}` : "N/A"}`);
     return true;
   } catch (error: any) {
@@ -1194,22 +1336,24 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     botState.entryPrice = rankedDecision.action === "HOLD"
       ? undefined
       : rankedDecision.entryPrice ?? pairedSignal.market.mid;
-    const signalDirection = rankedDecision.action === "SELL" ? -1 : 1;
     const cash = cashRules(symbol);
+    const paperPlan = rankedDecision.action === "HOLD"
+      ? undefined
+      : fixedPipPlan(symbol, pairedSignal.market.mid, rankedDecision.action);
     botState.stopLoss = rankedDecision.action === "HOLD"
       ? undefined
       : isGold(symbol)
       ? rankedDecision.stopLossPrice
       : liveModeConfigured()
       ? undefined
-      : enrichedMarketData.closePrice - signalDirection * priceDistanceForCash(symbol, cash.riskAmount);
+      : paperPlan?.stopLoss;
     botState.takeProfit = rankedDecision.action === "HOLD"
       ? undefined
       : isGold(symbol)
       ? rankedDecision.structuralTargets?.[0]
       : liveModeConfigured()
       ? undefined
-      : enrichedMarketData.closePrice + signalDirection * priceDistanceForCash(symbol, cash.rewardAmount);
+      : paperPlan?.takeProfit;
     botState.riskAmount = isGold(symbol) ? undefined : cash.riskAmount;
     botState.rewardAmount = isGold(symbol) ? undefined : cash.rewardAmount;
     botState.profitLoss = undefined;
@@ -1315,36 +1459,13 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       return;
     }
 
-    updateShadowFromSignal(symbol, pairedSignal, enrichedMarketData, cycle);
+    const cooldownRemaining = symbolCooldownRemainingMs(symbol);
 
     if (rankedDecision.action === "HOLD" || rankedDecision.confidence < MIN_CONFIDENCE) {
       botState.signalsDiscarded += 1;
 
-      const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);
-      if (sameSymbolIndex >= 0) {
-        const lastTrade = botState.openTrades[sameSymbolIndex];
-        if (liveExecutionActive() && lastTrade.source === "OANDA") {
-          if (canAutoCloseOandaTrade(lastTrade, config.LIVE_EXECUTION_VARIANT)) {
-            await closeVerifiedOandaTrade(lastTrade);
-          } else {
-            pushLog(`[${symbol}] SIGNAL EXIT ignored: OANDA trade is external or belongs to another GEMMO lane`);
-          }
-        } else if (!liveExecutionActive() && lastTrade.source === "PAPER") {
-          const multiplier = pipMultiplier(lastTrade.symbol);
-          const exitPrice = paperExitPrice(lastTrade.side, enrichedMarketData);
-          lastTrade.status = "CLOSED";
-          lastTrade.currentPrice = exitPrice;
-          lastTrade.pnl = calculatePaperPnl(lastTrade.symbol, lastTrade.side, lastTrade.entryPrice, exitPrice);
-          lastTrade.pnlPips = lastTrade.side === "BUY"
-            ? (exitPrice - lastTrade.entryPrice) * multiplier
-            : (lastTrade.entryPrice - exitPrice) * multiplier;
-          lastTrade.closedAt = new Date().toISOString();
-          lastTrade.closeReason = "SIGNAL EXIT";
-
-          botState.closedTrades = [lastTrade, ...botState.closedTrades].slice(0, 80);
-          botState.openTrades = botState.openTrades.filter((_, index) => index !== sameSymbolIndex);
-        }
-      }
+      // PROTECTED_EXIT_ONLY: a later HOLD or weaker signal never closes a
+      // verified position. Broker-side SL/TP remain authoritative.
 
       pushLog(
         `[${symbol}] ${rankedDecision.action} | setup score ${rankedDecision.confidence}/100 | ${rankedDecision.reasoning}`
@@ -1369,7 +1490,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     } else if (liveExecutionActive() && hasConflictingManagedVariant()) {
       botState.signalsDiscarded += 1;
       updatePairExecution(pairedSignal, "SKIPPED", "OANDA_EXTERNAL_OR_DIFFERENT_GEMMO_VARIANT_OPEN");
-      pushLog(`[${symbol}] OANDA execution skipped: an external/unknown OANDA trade or another GEMMO lane is still open`);
+      pushLog(`[${symbol}] OANDA execution skipped: an external/unknown OANDA trade or another Rohato lane is still open`);
     } else if (hasOpenTradeForSymbol(symbol)) {
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "POSITION_ALREADY_OPEN");
@@ -1378,6 +1499,10 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "CYCLE_CAP_REACHED");
       pushLog(`[${symbol}] valid signal queued: cycle cap ${MAX_NEW_TRADES_PER_CYCLE} reached`);
+    } else if (cooldownRemaining > 0) {
+      botState.signalsDiscarded += 1;
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "SYMBOL_REENTRY_COOLDOWN");
+      pushLog(`[${symbol}] valid signal waiting: re-entry cooldown ${Math.ceil(cooldownRemaining / 60000)}m remaining`);
     } else if (canOpenTrade(botState.dailyTradeCount, botState.openTrades.length)) {
       if (liveExecutionActive()) {
         if (config.AI_CONFIRMATION_REQUIRED === true) {
@@ -1452,6 +1577,8 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
             pnlPips: undefined,
             setupType: decisionForExecution.setupType,
             confidence: decisionForExecution.confidence,
+            riskPips: Number(config.NORMAL_STOP_LOSS_PIPS || 10),
+            rewardPips: Number(config.NORMAL_TAKE_PROFIT_PIPS || 20),
             reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} verificato tramite OANDA ${config.OANDA_ENVIRONMENT}.`,
             status: "OPEN",
             verificationStatus: "VERIFIED",
@@ -1496,6 +1623,13 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           botState.lastOrderStatus = "OPEN_VERIFIED";
           botState.lastOandaOrderId = trade.oandaOrderId;
           botState.lastOandaTradeId = trade.oandaTradeId;
+          openPairedShadowTrade(
+            symbol,
+            pairedSignal,
+            enrichedMarketData,
+            cycle,
+            `OANDA-${trade.oandaTradeId}`
+          );
           pushLog(`[${symbol}] OANDA ${config.LIVE_EXECUTION_VARIANT} OPEN VERIFIED | ${trade.side} ${trade.units} | trade ID ${trade.oandaTradeId}`);
         } else {
           botState.signalsDiscarded += 1;
@@ -1509,6 +1643,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
         botState.dailyTradeCount += 1;
         cycle.opened += 1;
         botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
+        openPairedShadowTrade(symbol, pairedSignal, enrichedMarketData, cycle, trade.id);
         pushLog(
           `[${symbol}] PAPER ${rankedDecision.action} | setup score ${rankedDecision.confidence}/100 | ${rankedDecision.reasoning}`
         );
@@ -1607,6 +1742,7 @@ async function monitorShadowTrades() {
         ? (currentPrice - trade.entryPrice) * multiplier
         : (trade.entryPrice - currentPrice) * multiplier
     };
+    updated.pnlR = normalizedR(updated.pnlPips, trade.riskPips);
 
     if (hitTakeProfit || hitStopLoss) {
       justClosed.push({
@@ -1622,7 +1758,7 @@ async function monitorShadowTrades() {
 
   botState.shadowOpenTrades = stillOpen;
   if (justClosed.length > 0) {
-    botState.shadowClosedTrades = [...justClosed.reverse(), ...botState.shadowClosedTrades].slice(0, 80);
+    botState.shadowClosedTrades = [...justClosed.reverse(), ...botState.shadowClosedTrades].slice(0, 100);
     justClosed.forEach((trade) => pushLog(
       `[${trade.symbol}] ${trade.strategyVariant} PAPER SHADOW ${trade.closeReason} | ${trade.pnlCurrency || "quote currency"} ${Number(trade.pnl).toFixed(2)} | no OANDA order`
     ));
@@ -1670,7 +1806,7 @@ async function monitorTrades() {
       const fillPrice = currentPrice;
       const pnl = calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, fillPrice);
 
-      const updatedTrade = {
+      const updatedTrade: BotTrade = {
         ...trade,
         currentPrice: fillPrice,
         pnl,
@@ -1678,6 +1814,7 @@ async function monitorTrades() {
           ? (fillPrice - trade.entryPrice) * multiplier
           : (trade.entryPrice - fillPrice) * multiplier
       };
+      updatedTrade.pnlR = normalizedR(updatedTrade.pnlPips, trade.riskPips);
 
       if (hitTakeProfit || hitStopLoss) {
         justClosed.push({
@@ -1692,7 +1829,7 @@ async function monitorTrades() {
     }
 
     if (justClosed.length > 0) {
-      botState.closedTrades = [...justClosed.reverse(), ...botState.closedTrades].slice(0, 80);
+      botState.closedTrades = [...justClosed.reverse(), ...botState.closedTrades].slice(0, 100);
       justClosed.forEach((trade) => {
         pushLog(`[${trade.symbol}] ${trade.closeReason} | paper P&L ${trade.pnlCurrency || "quote currency"} ${Number(trade.pnl).toFixed(2)}`);
       });
@@ -1799,5 +1936,9 @@ export const autonomousTestUtils = {
   canAutoCloseOandaTrade,
   paperExecutablePrice,
   paperExitPrice,
-  isFreshTradeableQuote
+  isFreshTradeableQuote,
+  fixedPipPlan,
+  countUtcTradeEntries,
+  symbolCooldownRemainingMs,
+  normalizedR
 };

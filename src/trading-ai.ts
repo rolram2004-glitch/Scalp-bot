@@ -9,9 +9,15 @@ type ScoreBreakdown = NonNullable<TradingDecision["scoreBreakdown"]>;
 
 const FOREX_MAX_SPREAD = 25;
 const config = require("./config");
-const AGGRESSIVE_FOREX = config.FOREX_SIGNAL_PROFILE === "AGGRESSIVE_25";
+const AGGRESSIVE_FOREX = ["ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25"].includes(
+  String(config.FOREX_SIGNAL_PROFILE)
+);
 const FOREX_RSI_BUY = AGGRESSIVE_FOREX ? 52 : 55;
 const FOREX_RSI_SELL = AGGRESSIVE_FOREX ? 48 : 45;
+const FOREX_RSI_MAX_BUY = 72;
+const FOREX_RSI_MIN_SELL = 28;
+const FOREX_STOP_PIPS = Number(config.NORMAL_STOP_LOSS_PIPS || 10);
+const FOREX_TARGET_PIPS = Number(config.NORMAL_TAKE_PROFIT_PIPS || 20);
 
 function clampScore(value: number, maximum: number) {
   if (!Number.isFinite(value)) return 0;
@@ -110,11 +116,13 @@ export async function getScalpingSignal(
   const bullishFullStack = data.bid > data.ema20 &&
     data.ema20 > data.ema50 &&
     data.ema50 > data.ema200 &&
-    data.rsi > 55;
+    data.rsi > 55 &&
+    data.rsi <= FOREX_RSI_MAX_BUY;
   const bearishFullStack = data.bid < data.ema20 &&
     data.ema20 < data.ema50 &&
     data.ema50 < data.ema200 &&
-    data.rsi < 45;
+    data.rsi < 45 &&
+    data.rsi >= FOREX_RSI_MIN_SELL;
   const bullishFastTrend = data.bid > data.ema20 &&
     data.ema20 > data.ema50 &&
     data.bid > data.ema200 &&
@@ -135,13 +143,32 @@ export async function getScalpingSignal(
     data.liquiditySweep,
     data.fairValueGap
   ].some((value) => aligned(value, "SELL"));
-  // The aggressive profile can enter a confirmed continuation before the
-  // slower EMA stack is fully rebuilt. It still needs real directional
-  // structure, a real structural impulse, or an active killzone.
-  const bullishMomentum = bullishFullStack ||
-    (AGGRESSIVE_FOREX && bullishFastTrend && (bullishStructure || bullishImpulse || data.killzone));
-  const bearishMomentum = bearishFullStack ||
-    (AGGRESSIVE_FOREX && bearishFastTrend && (bearishStructure || bearishImpulse || data.killzone));
+  const bullishBreak = aligned(data.breakOfStructure, "BUY") || aligned(data.changeOfCharacter, "BUY");
+  const bearishBreak = aligned(data.breakOfStructure, "SELL") || aligned(data.changeOfCharacter, "SELL");
+  const bullishLiquidity = aligned(data.liquiditySweep, "BUY");
+  const bearishLiquidity = aligned(data.liquiditySweep, "SELL");
+  const volumeRatio = Number(data.volumeRatio);
+  const breakoutVolumeConfirmed = Number.isFinite(volumeRatio) && volumeRatio >= 0.95;
+  const bullishNotExhausted = data.rsi <= FOREX_RSI_MAX_BUY;
+  const bearishNotExhausted = data.rsi >= FOREX_RSI_MIN_SELL;
+  const bullishContinuation = bullishFastTrend && bullishStructure &&
+    (data.macdHistogram > 0 || bullishLiquidity);
+  const bearishContinuation = bearishFastTrend && bearishStructure &&
+    (data.macdHistogram < 0 || bearishLiquidity);
+  const bullishBreakout = bullishFastTrend && !bearishStructure && bullishBreak &&
+    data.macdHistogram > 0 && breakoutVolumeConfirmed;
+  const bearishBreakout = bearishFastTrend && !bullishStructure && bearishBreak &&
+    data.macdHistogram < 0 && breakoutVolumeConfirmed;
+
+  // The fast profile may enter before EMA 200 is fully stacked, but an old FVG,
+  // a killzone by itself, or an opposing/range structure can no longer trigger
+  // a trade. This prevents repeated momentum chasing such as today's JPY burst.
+  const bullishAggressiveSetup = AGGRESSIVE_FOREX && bullishNotExhausted &&
+    (bullishContinuation || bullishBreakout);
+  const bearishAggressiveSetup = AGGRESSIVE_FOREX && bearishNotExhausted &&
+    (bearishContinuation || bearishBreakout);
+  const bullishMomentum = bullishFullStack || bullishAggressiveSetup;
+  const bearishMomentum = bearishFullStack || bearishAggressiveSetup;
   const buyBreakdown = forexScenarioScore(data, "BUY");
   const sellBreakdown = forexScenarioScore(data, "SELL");
   const buyScore = totalScore(buyBreakdown);
@@ -166,7 +193,7 @@ export async function getScalpingSignal(
 
   if (
     bullishMomentum &&
-    (bullishStructure || bullishImpulse || data.killzone)
+    (bullishFullStack ? !bearishStructure : bullishAggressiveSetup)
   ) {
     const score = buyScore;
     return {
@@ -177,12 +204,14 @@ export async function getScalpingSignal(
       scoreBreakdown: buyBreakdown,
       scenarioScores,
       riskRewardRatio: 2,
+      stopLossPips: FOREX_STOP_PIPS,
+      takeProfitPips: FOREX_TARGET_PIPS,
       setupType: bullishFullStack
         ? "EMA_TREND"
-        : bullishImpulse
+        : bullishBreakout
           ? "AGGRESSIVE_STRUCTURE_BREAK"
           : "AGGRESSIVE_CONTINUATION",
-      reasoning: `BUY accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(buyBreakdown)}). Fast trend ${bullishFastTrend}, full EMA stack ${bullishFullStack}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, structural impulse ${bullishImpulse}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
+      reasoning: `BUY accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(buyBreakdown)}). Fast trend ${bullishFastTrend}, full EMA stack ${bullishFullStack}, continuation ${bullishContinuation}, confirmed break ${bullishBreakout}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)}, structure ${data.structureBias || "UNKNOWN"}, context impulse ${bullishImpulse}, volume ratio ${Number.isFinite(volumeRatio) ? volumeRatio.toFixed(2) : "N/A"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
     };
   }
 
@@ -190,7 +219,7 @@ export async function getScalpingSignal(
 
   if (
     bearishMomentum &&
-    (bearishStructure || bearishImpulse || data.killzone)
+    (bearishFullStack ? !bullishStructure : bearishAggressiveSetup)
   ) {
     const score = sellScore;
     return {
@@ -201,12 +230,14 @@ export async function getScalpingSignal(
       scoreBreakdown: sellBreakdown,
       scenarioScores,
       riskRewardRatio: 2,
+      stopLossPips: FOREX_STOP_PIPS,
+      takeProfitPips: FOREX_TARGET_PIPS,
       setupType: bearishFullStack
         ? "EMA_TREND"
-        : bearishImpulse
+        : bearishBreakout
           ? "AGGRESSIVE_STRUCTURE_BREAK"
           : "AGGRESSIVE_CONTINUATION",
-      reasoning: `SELL accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(sellBreakdown)}). Fast trend ${bearishFastTrend}, full EMA stack ${bearishFullStack}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)} (context only), structure ${data.structureBias || "UNKNOWN"}, structural impulse ${bearishImpulse}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
+      reasoning: `SELL accepted on real OANDA data with ${config.FOREX_SIGNAL_PROFILE}. Setup score ${score}/100 (${scoreSummary(sellBreakdown)}). Fast trend ${bearishFastTrend}, full EMA stack ${bearishFullStack}, continuation ${bearishContinuation}, confirmed break ${bearishBreakout}, RSI ${data.rsi.toFixed(1)}, MACD histogram ${data.macdHistogram.toFixed(5)}, structure ${data.structureBias || "UNKNOWN"}, context impulse ${bearishImpulse}, volume ratio ${Number.isFinite(volumeRatio) ? volumeRatio.toFixed(2) : "N/A"}, high ${data.highPrice.toFixed(5)} / low ${data.lowPrice.toFixed(5)}.`
     };
   }
 
@@ -220,6 +251,6 @@ export async function getScalpingSignal(
     scoreLabel: scoreLabel(bestScore),
     scoreBreakdown: bestBreakdown,
     scenarioScores,
-    reasoning: `HOLD: no complete ${config.FOREX_SIGNAL_PROFILE} setup on real OANDA data. Best scenario ${bestSide} scores ${bestScore}/100 (${scoreSummary(bestBreakdown)}). Buy trigger=${bullishMomentum}, sell trigger=${bearishMomentum}, structure=${data.structureBias || "UNKNOWN"}, RSI=${data.rsi.toFixed(1)}.`
+    reasoning: `HOLD: no complete ${config.FOREX_SIGNAL_PROFILE} setup on real OANDA data. Best scenario ${bestSide} scores ${bestScore}/100 (${scoreSummary(bestBreakdown)}). Buy trigger=${bullishMomentum}, sell trigger=${bearishMomentum}, structure=${data.structureBias || "UNKNOWN"}, confirmed BOS/CHoCH buy=${bullishBreak}, sell=${bearishBreak}, RSI=${data.rsi.toFixed(1)}.`
   };
 }

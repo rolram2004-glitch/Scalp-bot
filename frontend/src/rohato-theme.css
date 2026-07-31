@@ -1,0 +1,79 @@
+.cockpit-header__identity strong,
+.cockpit-brand strong {
+  color: #effff7;
+}
+
+.cockpit-brand__bolt {
+  align-items: center;
+  background: rgba(35, 246, 153, 0.12);
+  border: 1px solid rgba(35, 246, 153, 0.32);
+  border-radius: 4px;
+  display: flex;
+  font-size: 8px;
+  height: 18px;
+  justify-content: center;
+  width: 18px;
+}
+
+.cockpit-brand small,
+.cockpit-header__identity span {
+  color: #58dca1;
+}
+
+.elite-command-center {
+  --panel: #04150e;
+  --panel2: #07251a;
+  --line: #183d2e;
+  --muted: #789485;
+  --text: #effff7;
+  --green: #23f699;
+  --red: #ff5c78;
+  --amber: #f6bd55;
+  --blue: #35d993;
+  --purple: #46e6c2;
+}
+
+.elite-topbar,
+.elite-panel,
+.elite-metric,
+.elite-lane {
+  background: linear-gradient(180deg, rgba(7, 31, 21, 0.98), rgba(3, 16, 11, 0.98));
+  border-color: var(--line);
+}
+
+.elite-topbar {
+  background:
+    radial-gradient(circle at 7% 0%, rgba(35, 246, 153, 0.1), transparent 20rem),
+    linear-gradient(100deg, rgba(7, 36, 24, 0.98), rgba(3, 17, 11, 0.98));
+}
+
+.elite-brand b,
+.elite-panel header b,
+.elite-panel header a,
+.elite-live-feed header a {
+  color: var(--green);
+}
+
+.elite-vs {
+  background: #04170f;
+  border-color: rgba(70, 230, 194, 0.34);
+  color: #9ff8dc;
+}
+
+.elite-level-grid > div,
+.elite-xau-grid > div {
+  background: rgba(2, 14, 9, 0.62);
+  border-color: rgba(56, 112, 85, 0.55);
+}
+
+.elite-chart-tags b,
+.elite-lane-meta span {
+  border-color: rgba(56, 112, 85, 0.55);
+  color: #9bb9aa;
+}
+
+@media (max-width: 680px) {
+  .elite-brand strong {
+    font-size: 13px;
+  }
+}

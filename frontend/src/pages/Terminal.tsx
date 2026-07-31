@@ -289,9 +289,9 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
   const dailyCountAvailable = Boolean(
     status &&
     ledgerAvailable &&
-    dailyRisk?.complete === true &&
-    typeof dailyRisk.tradeCount === 'number' &&
-    Number.isFinite(dailyRisk.tradeCount)
+    (mode.paper || status.reconciliationStatus === 'VERIFIED') &&
+    typeof dailyRisk?.tradeCount === 'number' &&
+    Number.isFinite(dailyRisk?.tradeCount)
   );
   const primarySymbol = String(status?.latestPairedSignal?.symbol || status?.currentSymbol || configuredSymbols[0] || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const primaryPair = primarySymbol ? status?.pairedSignals?.[primarySymbol] : undefined;
@@ -347,7 +347,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <MetricTile
           label="TRADE OGGI"
           value={dailyCountAvailable ? dailyRisk?.tradeCount ?? 'N/A' : 'N/A'}
-          detail={dailyCountAvailable ? `Limite ${dailyRisk?.maxTrades} · UTC` : dailyRisk?.reason || 'Dati giornalieri non completi'}
+          detail={dailyCountAvailable ? `${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} rimasti · ${status?.entryGateStatus || 'GATE N/A'} · limite ${dailyRisk?.maxTrades} UTC` : dailyRisk?.reason || 'Dati giornalieri non completi'}
           tone="amber"
         />
         <MetricTile

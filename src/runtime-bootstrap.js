@@ -2,9 +2,6 @@
 
 require("dotenv").config();
 
-const fs = require("fs");
-const path = require("path");
-
 const environment = String(process.env.OANDA_ENVIRONMENT || "PRACTICE").trim().toUpperCase();
 const requestedMode = String(process.env.TRADING_MODE || "PAPER").trim().toUpperCase();
 const hasPracticeCredentials = Boolean(
@@ -31,16 +28,18 @@ if (
     : "MAIN";
 }
 
-// AGGRESSIVE_25 scans all configured pairs twice per minute while broker
-// verification, one-position-per-symbol, open-position caps and SL/TP remain mandatory.
-// The daily ceiling is intentionally forced here as well as in config.js.
-process.env.MAX_DAILY_TRADES = "25";
+// ROHATO_AGGRESSIVE_100 is a Practice/PAPER laboratory profile. It scans all
+// configured pairs twice per minute while broker verification, fixed SL/TP,
+// one-position-per-symbol, cooldown and daily-loss protection remain mandatory.
+// OANDA_LIVE is separately hard-capped by config.js.
+process.env.MAX_DAILY_TRADES = requestedMode === "OANDA_LIVE" ? "25" : "100";
 process.env.MAX_NEW_TRADES_PER_CYCLE = "7";
 process.env.MAX_OPEN_POSITIONS = "15";
 process.env.SCAN_INTERVAL_MS = "30000";
 process.env.POSITION_MANAGEMENT_INTERVAL_MS = "5000";
+process.env.SYMBOL_REENTRY_COOLDOWN_MS = "600000";
 process.env.MIN_SIGNAL_CONFIDENCE = hasOpenAiKey ? "50" : "55";
-process.env.FOREX_SIGNAL_PROFILE = "AGGRESSIVE_25";
+process.env.FOREX_SIGNAL_PROFILE = "ROHATO_AGGRESSIVE_100";
 process.env.NORMAL_STOP_LOSS_PIPS = "10";
 process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
 
@@ -50,59 +49,6 @@ if (hasOpenAiKey) {
   process.env.AI_MIN_CONFIDENCE = String(process.env.AI_MIN_CONFIDENCE || "58");
   process.env.OPENAI_MODEL = String(process.env.OPENAI_MODEL || "gpt-5-mini");
 }
-
-// The original autonomous loop closed a verified OANDA position whenever a
-// later scan returned HOLD or a weaker score. Broker-side SL/TP are authoritative.
-const originalReadFileSync = fs.readFileSync.bind(fs);
-const protectedExitMarker = "PROTECTED_EXIT_ONLY";
-const signalExitStart = "      const sameSymbolIndex = botState.openTrades.findIndex((trade) => trade.symbol === symbol);";
-const signalExitEnd = "      pushLog(\n        `[${symbol}] ${rankedDecision.action} | setup score";
-
-function patchAutonomousBotSource(source) {
-  let patched = source;
-
-  if (!patched.includes(protectedExitMarker)) {
-    const start = patched.indexOf(signalExitStart);
-    if (start < 0) throw new Error("AUTONOMOUS_SIGNAL_EXIT_BLOCK_NOT_FOUND");
-    const end = patched.indexOf(signalExitEnd, start);
-    if (end <= start) throw new Error("AUTONOMOUS_SIGNAL_EXIT_END_NOT_FOUND");
-
-    const replacement =
-      "      // PROTECTED_EXIT_ONLY: a later HOLD/weak scan never closes an OANDA trade.\n" +
-      "      // The verified broker Stop Loss and Take Profit manage the exit.\n\n";
-    patched = patched.slice(0, start) + replacement + patched.slice(end);
-  }
-
-  const oldAiGate =
-    "  const aiGateConfigured = config.AI_CONFIRMATION_REQUIRED !== true ||\n" +
-    "    (config.AI_PROVIDER === \"GEMINI\" && Boolean(config.GEMINI_API_KEY));";
-  const newAiGate =
-    "  const aiGateConfigured = config.AI_CONFIRMATION_REQUIRED !== true ||\n" +
-    "    ([\"GEMINI\", \"OPENAI\"].includes(String(config.AI_PROVIDER)) &&\n" +
-    "      Boolean(config.GEMINI_API_KEY || config.OPENAI_API_KEY));";
-  if (patched.includes(oldAiGate)) patched = patched.replace(oldAiGate, newAiGate);
-
-  const oldAiBlocked =
-    "config.AI_CONFIRMATION_REQUIRED === true &&\n" +
-    "              (config.AI_PROVIDER !== \"GEMINI\" || !config.GEMINI_API_KEY)\n" +
-    "              ? \"AI confirmation is required but Gemini is not configured\"";
-  const newAiBlocked =
-    "config.AI_CONFIRMATION_REQUIRED === true &&\n" +
-    "              (![\"GEMINI\", \"OPENAI\"].includes(String(config.AI_PROVIDER)) ||\n" +
-    "                !(config.GEMINI_API_KEY || config.OPENAI_API_KEY))\n" +
-    "              ? \"AI confirmation is required but the selected provider is not configured\"";
-  if (patched.includes(oldAiBlocked)) patched = patched.replace(oldAiBlocked, newAiBlocked);
-
-  return patched;
-}
-
-fs.readFileSync = function protectedSourceRead(file, ...args) {
-  const result = originalReadFileSync(file, ...args);
-  if (!String(file || "").endsWith(`${path.sep}autonomous-bot.ts`)) return result;
-  const text = Buffer.isBuffer(result) ? result.toString("utf8") : String(result);
-  const patched = patchAutonomousBotSource(text);
-  return Buffer.isBuffer(result) ? Buffer.from(patched, "utf8") : patched;
-};
 
 require("ts-node/register/transpile-only");
 
@@ -208,5 +154,5 @@ console.log(
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
-  "maxNew=7 maxOpen=15 sl=10p tp=20p exits=SL_TP_ONLY maxDaily=25"
+  `maxNew=7 maxOpen=15 cooldown=10m sl=10p tp=20p exits=SL_TP_ONLY maxDaily=${config.MAX_DAILY_TRADES}`
 );

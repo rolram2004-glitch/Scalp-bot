@@ -91,7 +91,7 @@ test("setup score changes only when verified market evidence changes", async () 
   assert.ok(alignedMacdAndLiquidity.setupScore > base.setupScore);
 });
 
-test("AGGRESSIVE_25 accepts a confirmed fast-trend continuation before the slow EMA stack", async () => {
+test("ROHATO_AGGRESSIVE_100 accepts a confirmed fast-trend continuation before the slow EMA stack", async () => {
   const decision = await getScalpingSignal(marketData({
     ema20: 1.19,
     ema50: 1.18,
@@ -104,10 +104,10 @@ test("AGGRESSIVE_25 accepts a confirmed fast-trend continuation before the slow 
   assert.equal(decision.action, "BUY");
   assert.equal(decision.setupType, "AGGRESSIVE_CONTINUATION");
   assert.ok(decision.confidence >= 55);
-  assert.match(decision.reasoning, /AGGRESSIVE_25/);
+  assert.match(decision.reasoning, /ROHATO_AGGRESSIVE_100/);
 });
 
-test("AGGRESSIVE_25 remains HOLD when fast trend has no directional confirmation", async () => {
+test("ROHATO_AGGRESSIVE_100 remains HOLD when fast trend has no directional confirmation", async () => {
   const decision = await getScalpingSignal(marketData({
     ema20: 1.19,
     ema50: 1.18,
@@ -123,4 +123,55 @@ test("AGGRESSIVE_25 remains HOLD when fast trend has no directional confirmation
   }));
 
   assert.equal(decision.action, "HOLD");
+});
+
+test("old FVG or killzone alone cannot trigger an opposing or range trade", async () => {
+  const decision = await getScalpingSignal(marketData({
+    ema20: 1.19,
+    ema50: 1.18,
+    ema200: 1.185,
+    rsi: 53,
+    macdHistogram: 0.0002,
+    structureBias: "RANGE",
+    killzone: true,
+    fairValueGap: "BULLISH",
+    breakOfStructure: "NONE",
+    changeOfCharacter: "NONE",
+    liquiditySweep: "NONE",
+    volumeRatio: 1.2
+  }));
+
+  assert.equal(decision.action, "HOLD");
+});
+
+test("overextended RSI blocks trend chasing even with a full EMA stack", async () => {
+  const decision = await getScalpingSignal(marketData({ rsi: 80, macdHistogram: 0.001 }));
+  assert.equal(decision.action, "HOLD");
+});
+
+test("a current structure break needs aligned MACD and verified volume", async () => {
+  const accepted = await getScalpingSignal(marketData({
+    ema20: 1.19,
+    ema50: 1.18,
+    ema200: 1.185,
+    rsi: 53,
+    macdHistogram: 0.0002,
+    structureBias: "RANGE",
+    breakOfStructure: "BULLISH",
+    volumeRatio: 1.05
+  }));
+  const rejected = await getScalpingSignal(marketData({
+    ema20: 1.19,
+    ema50: 1.18,
+    ema200: 1.185,
+    rsi: 53,
+    macdHistogram: 0.0002,
+    structureBias: "RANGE",
+    breakOfStructure: "BULLISH",
+    volumeRatio: 0.7
+  }));
+
+  assert.equal(accepted.action, "BUY");
+  assert.equal(accepted.setupType, "AGGRESSIVE_STRUCTURE_BREAK");
+  assert.equal(rejected.action, "HOLD");
 });

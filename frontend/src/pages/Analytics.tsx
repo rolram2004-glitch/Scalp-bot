@@ -1,7 +1,7 @@
 import { StatusSnapshot } from '../types';
 import { executionView, hasVerifiedOandaLedger } from '../trading-state';
 
-const COLORS = ['#3b82f6', '#a855f7', '#f97316', '#22c55e', '#14b8a6', '#f8c84e'];
+const COLORS = ['#23f699', '#46e6c2', '#35d993', '#9ee493', '#18b981', '#f6bd55'];
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);

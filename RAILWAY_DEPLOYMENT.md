@@ -1,4 +1,4 @@
-# Railway - deploy sicuro di Gemmo Remondata Bot
+# Railway - deploy sicuro di SEL SCALP BOT — $Rohato$🤖111
 
 Dashboard corrente: https://scalp-bot-production-761a.up.railway.app/
 Confronto MAIN/INVERSE: https://scalp-bot-production-761a.up.railway.app/vs
@@ -21,9 +21,10 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
-   - `MAX_DAILY_TRADES=25`;
+   - `MAX_DAILY_TRADES=100` per PAPER/OANDA Practice (`OANDA_LIVE` viene comunque bloccato a 25 dal server);
+   - `SYMBOL_REENTRY_COOLDOWN_MS=600000`;
    - `MIN_SIGNAL_CONFIDENCE=55`;
-   - `FOREX_SIGNAL_PROFILE=AGGRESSIVE_25`;
+   - `FOREX_SIGNAL_PROFILE=ROHATO_AGGRESSIVE_100`;
    - `DEFAULT_UNITS=1000` o il valore approvato dall'utente;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
@@ -39,10 +40,11 @@ implica automaticamente che OANDA sia connesso.
 ## Verifica dopo ogni redeploy
 
 Non considerare concluso un deploy finche `/api/status` non espone
-`signalProfile=AGGRESSIVE_25`, `maxDailyTrades=25`, `scanIntervalMs=30000`,
-`maxOpenPositions=15` e `xauSignalLab.orderCount=0`. Se il contatore OANDA
-giornaliero e gia superiore a 25, il bot conserva le posizioni esistenti ma
-blocca ogni nuovo ingresso fino al reset UTC.
+`signalProfile=ROHATO_AGGRESSIVE_100`, `maxDailyTrades=100`,
+`scanIntervalMs=30000`, `symbolReentryCooldownMs=600000`,
+`maxOpenPositions=15`, `entryGateStatus` valorizzato e
+`xauSignalLab.orderCount=0`. Il conteggio giornaliero deve includere soltanto
+trade con `openTime` nel giorno UTC corrente, non posizioni vecchie chiuse oggi.
 
 ## Attivazione OANDA_DEMO Practice
 
@@ -54,17 +56,20 @@ Prima dell'attivazione devono essere tutti veri:
 - 15 coppie FX scansionate ogni 30 secondi, senza sovrapporre due cicli;
 - size, precisione, minimum trade size e conversione verso la valuta conto disponibili;
 - massimo 7 nuovi ingressi validi per ciclo (mai una quota obbligatoria);
-- massimo 25 operazioni totali al giorno UTC; il limite resta 25 anche se
-  Railway conserva per errore un valore precedente piu alto;
+- massimo 100 ingressi totali al giorno UTC sul conto Practice; non sono una
+  quota obbligatoria e i setup non validi restano HOLD. In `OANDA_LIVE` il
+  limite server-side resta 25 anche se Railway contiene un valore piu alto;
+- cooldown di 10 minuti dopo la chiusura della stessa coppia;
 - nessuna posizione gia aperta sul simbolo, verificata su trade e posizioni OANDA;
 - ordine considerato aperto soltanto dopo order ID, trade ID e rilettura `OPEN` coerente;
 - XAUUSD escluso dall'esecuzione OANDA finche la strategia dedicata non e validata;
 - test automatici superati e conferma esplicita dell'utente.
 
 La dashboard calcola MAIN e INVERSE dallo stesso snapshot OANDA e dallo stesso
-segnale. La corsia non selezionata resta sempre `PAPER SHADOW` e non invia
-ordini. Il suo ledger e il suo P&L restano separati dai trade OANDA e usano
-solo bid/ask reali ricevuti dopo l'avvio. Non configurare mai entrambe le
+segnale. La corsia non selezionata resta sempre `PAPER SHADOW`, non invia
+ordini e viene aperta soltanto dopo l'ingresso verificato della corsia
+operativa corrispondente. Il confronto usa R; il P&L originale resta separato
+per valuta. Non configurare mai entrambe le
 corsie: `BOTH`, valori vuoti o valori
 non riconosciuti bloccano l'esecuzione. Due ordini opposti sullo stesso conto
 possono ridurre o chiudere l'esposizione invece di creare due test indipendenti.

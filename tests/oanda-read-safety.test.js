@@ -78,3 +78,21 @@ test('malformed OANDA reconciliation responses fail closed', async () => {
     axios.get = originalGet;
   }
 });
+
+test('closed-trade reconciliation requests the bounded 500-trade OANDA window', async () => {
+  const axios = require('axios');
+  const originalGet = axios.get;
+  let requestedCount;
+  axios.get = async (_url, options) => {
+    requestedCount = options?.params?.count;
+    return { data: { trades: [] } };
+  };
+  try {
+    const oanda = require('../src/oanda');
+    const trades = await oanda.getClosedTrades(9999);
+    assert.deepEqual(trades, []);
+    assert.equal(requestedCount, 500);
+  } finally {
+    axios.get = originalGet;
+  }
+});

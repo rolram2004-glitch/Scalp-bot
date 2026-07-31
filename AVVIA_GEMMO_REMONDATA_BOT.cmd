@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-title GEMMO REMONDATA BOT - OANDA PAPER
+title SEL SCALP BOT - ROHATO 111 - OANDA PAPER
 
 cd /d "%~dp0"
 if not exist "package.json" goto missing
@@ -30,7 +30,7 @@ powershell.exe -NoProfile -Command "$limit=(Get-Date).AddSeconds(30); do { try {
 if errorlevel 1 goto error
 
 echo.
-echo GEMMO REMONDATA BOT avviato in PAPER. Nessun ordine OANDA viene inviato.
+echo SEL SCALP BOT - ROHATO 111 avviato in PAPER. Nessun ordine OANDA viene inviato.
 echo Usa: npx.cmd pm2 logs scalp-bot
 exit /b 0
 
