@@ -129,9 +129,11 @@ function laneMode(status: StatusSnapshot | null, lane: Lane) {
 }
 
 function weekendPause(status: StatusSnapshot | null) {
-  if (!status?.lastPriceAt || status.priceFeedStatus !== 'DISCONNECTED') return false;
   const day = new Date().getUTCDay();
-  return day === 0 || day === 6;
+  return Boolean(status?.isRunning) &&
+    status?.reconciliationStatus === 'VERIFIED' &&
+    status?.priceFeedStatus !== 'CONNECTED' &&
+    (day === 0 || day === 6);
 }
 
 function friendlyGate(status: StatusSnapshot | null) {
@@ -292,6 +294,17 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div className="inverse"><span>02 · CONTROLLO</span><strong>INVERSE</strong><b>Paper Shadow · 0 ordini</b></div>
       </section>
 
+      {(unmatchedMain > 0 || unmatchedInverse > 0) && (
+        <section className="vs3-data-notice" aria-label="Integrità del confronto">
+          <div>
+            <span>INTEGRITÀ DEL CONFRONTO</span>
+            <strong>{pairs.length ? 'STORICO NON ABBINATO ESCLUSO' : 'LEDGER INVERSE RIPARTITO DOPO IL DEPLOY'}</strong>
+            <p>OANDA conserva lo storico MAIN; il ledger INVERSE è PAPER e riparte con il processo Railway. I record senza lo stesso Signal ID su entrambe le corsie vengono esclusi: il bot non inventa risultati mancanti.</p>
+          </div>
+          <b>{unmatchedMain + unmatchedInverse} RECORD ESCLUSI · 0 DATI INVENTATI</b>
+        </section>
+      )}
+
       <section className="vs3-verdict-panel">
         <div className="vs3-scope" role="group" aria-label="Periodo del confronto">
           <button className={scope === 'ALL' ? 'active' : ''} onClick={() => setScope('ALL')}>SESSIONE BOT</button>
@@ -377,7 +390,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div><span>INGRESSI OGGI</span><strong>{status?.dailyTradeCount ?? 'N/A'} / {status?.maxDailyTrades ?? 'N/A'}</strong></div>
         <div><span>POSTI RIMASTI</span><strong>{remaining ?? 'N/A'}</strong></div>
         <div><span>RESET</span><strong>{resetLabel(status?.nextDailyResetAt || status?.dailyRiskStatus?.resetAt)}</strong></div>
-        <div><span>RECORD NON ABBINATI</span><strong>{unmatchedMain} MAIN · {unmatchedInverse} INVERSE</strong></div>
+        <div><span>ESCLUSI DAL CONFRONTO</span><strong>{unmatchedMain} MAIN · {unmatchedInverse} INVERSE</strong></div>
         <p>INVERSE non apre ordini OANDA. I risultati sono confrontati in R; il P&amp;L originale resta visibile dentro ogni coppia senza sommare valute diverse.</p>
       </footer>
     </div>

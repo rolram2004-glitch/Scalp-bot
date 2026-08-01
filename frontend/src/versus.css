@@ -28,6 +28,7 @@
 .vs3-lane-summary,
 .vs3-head-to-head,
 .vs3-panel,
+.vs3-data-notice,
 .vs3-proof-footer {
   background: linear-gradient(145deg, rgba(16, 30, 27, 0.98), rgba(8, 18, 16, 0.99));
   border: 1px solid var(--vs-line);
@@ -97,6 +98,25 @@
 .vs3-truth-bar .rule { background: rgba(255, 255, 255, 0.018); text-align: center; }
 .vs3-truth-bar .rule strong { font-size: 17px; letter-spacing: 0.02em; }
 .vs3-truth-bar .rule small { color: var(--vs-muted); font-size: 11px; }
+
+.vs3-data-notice {
+  align-items: center;
+  background:
+    radial-gradient(circle at 100% 50%, rgba(242, 191, 98, 0.11), transparent 26rem),
+    linear-gradient(145deg, rgba(27, 28, 21, 0.98), rgba(10, 19, 17, 0.99));
+  border-color: rgba(242, 191, 98, 0.3);
+  display: flex;
+  gap: 26px;
+  justify-content: space-between;
+  padding: 18px 22px;
+}
+.vs3-data-notice > div { min-width: 0; }
+.vs3-data-notice span,
+.vs3-data-notice strong { display: block; }
+.vs3-data-notice span { color: var(--vs-warning); font-size: 9px; font-weight: 900; letter-spacing: 0.13em; }
+.vs3-data-notice strong { font-size: 16px; margin-top: 7px; }
+.vs3-data-notice p { color: #b8c2bd; font-size: 11px; line-height: 1.55; margin: 7px 0 0; max-width: 1050px; }
+.vs3-data-notice > b { border: 1px solid rgba(242, 191, 98, 0.34); border-radius: 8px; color: var(--vs-warning); flex: 0 0 auto; font-size: 9px; letter-spacing: 0.08em; padding: 9px 11px; text-align: center; }
 
 .vs3-verdict-panel { align-items: stretch; display: grid; grid-template-columns: auto minmax(0, 1fr) minmax(230px, 0.34fr); overflow: hidden; }
 .vs3-scope { align-items: center; border-right: 1px solid var(--vs-line); display: flex; flex-direction: column; gap: 8px; justify-content: center; padding: 16px; }
@@ -311,6 +331,7 @@
   .vs3-truth-bar .main,
   .vs3-truth-bar .inverse { border-left: 0; grid-column: auto; grid-row: auto; text-align: left; }
   .vs3-truth-bar > div + div { border-left: 0; border-top: 1px solid var(--vs-line); }
+  .vs3-data-notice { align-items: flex-start; flex-direction: column; gap: 14px; padding: 17px; }
   .vs3-verdict-panel { grid-template-columns: 1fr; }
   .vs3-scope { overflow-x: auto; padding: 10px; }
   .vs3-scope button { flex: 1; min-width: 125px; }

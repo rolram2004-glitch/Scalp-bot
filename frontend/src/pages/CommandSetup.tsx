@@ -228,6 +228,14 @@ export function CommandSetupPage({
   const chartMarkers: ChartSignalMarker[] = primaryPair?.evaluatedAt && (currentLane?.action === 'BUY' || currentLane?.action === 'SELL') ? [
     { time: primaryPair.evaluatedAt, side: currentLane.action, label: `MAIN ${currentLane.action}` }
   ] : [];
+  const executionLabel = diagnostic.tone === 'paused'
+    ? 'PAUSA WEEKEND'
+    : executionReady
+      ? 'OANDA READY'
+      : String(status?.effectiveExecutionState || 'N/A').replace(/_/g, ' ');
+  const executionDetail = diagnostic.tone === 'paused'
+    ? `${status?.liveExecutionVariant || 'N/A'} · ripresa automatica`
+    : `${status?.liveExecutionVariant || 'N/A'} · ${status?.entryGateStatus || 'N/A'}`;
 
   return (
     <div className="pro-setup">
@@ -246,7 +254,7 @@ export function CommandSetupPage({
         <StatusTile label="BROKER" value={oandaStatus.connected ? 'OANDA CONNESSA' : 'NON CONNESSA'} detail={`${oandaStatus.mode || 'practice'} · ${accountCurrency || 'currency N/A'}`} state={oandaStatus.connected ? 'ok' : 'bad'} />
         <StatusTile label="PRICE FEED" value={feedLive ? 'LIVE' : diagnostic.tone === 'paused' ? 'PAUSA WEEKEND' : status?.priceFeedStatus || 'N/A'} detail={feedAge === undefined ? 'Età N/A' : `Ultimo prezzo ${feedAge}s fa`} state={feedLive ? 'ok' : diagnostic.tone === 'paused' ? 'warn' : 'bad'} />
         <StatusTile label="LEDGER" value={status?.reconciliationStatus || 'N/A'} detail={status?.lastReconciledAt ? `Verificato ${time(status.lastReconciledAt)}` : 'Nessuna ricevuta'} state={status?.reconciliationStatus === 'VERIFIED' ? 'ok' : 'bad'} />
-        <StatusTile label="EXECUTION" value={status?.effectiveExecutionState || 'N/A'} detail={`${status?.liveExecutionVariant || 'N/A'} · ${status?.entryGateStatus || 'N/A'}`} state={executionReady ? 'ok' : diagnostic.tone === 'paused' ? 'warn' : 'bad'} />
+        <StatusTile label="EXECUTION" value={executionLabel} detail={executionDetail} state={executionReady ? 'ok' : diagnostic.tone === 'paused' ? 'warn' : 'bad'} />
         <StatusTile label="AI GATE" value={status?.aiProvider || 'DISABLED'} detail={status?.aiStatus || status?.lastAiReason || 'Fallback deterministico'} state={status?.aiStatus === 'ERROR' ? 'bad' : status?.aiProvider && status.aiProvider !== 'DISABLED' ? 'ok' : 'idle'} />
         <StatusTile label="XAUUSD" value="SIGNAL ONLY" detail={`${xauLab?.orderCount ?? 0} ordini · protetto`} state={xauPass ? 'ok' : 'bad'} />
       </section>

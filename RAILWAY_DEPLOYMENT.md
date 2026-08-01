@@ -121,6 +121,10 @@ Se uno solo dei gate manca, ogni ordine resta bloccato. `OANDA_LIVE` richiede in
 
 Le posizioni OANDA aperte vengono riconciliate dall'API dopo il riavvio. Lo storico PAPER resta in memoria e si azzera al riavvio; non viene presentato come storico OANDA. Per conservare ricevute locali e order ID tra redeploy occorre montare un Railway Volume: senza volume la persistenza resta non configurata e OANDA_LIVE non va attivato.
 
+Dopo un redeploy `/vs` deve quindi escludere esplicitamente i record OANDA che
+non hanno piu il gemello PAPER con lo stesso Signal ID e mostrare il motivo del
+reset. Non ricostruire o stimare retroattivamente risultati INVERSE mancanti.
+
 ## Segreti
 
 Un token incollato in chat deve essere revocato e sostituito. Inserire il nuovo
