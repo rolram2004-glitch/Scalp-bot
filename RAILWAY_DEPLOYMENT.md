@@ -46,6 +46,23 @@ Non considerare concluso un deploy finche `/api/status` non espone
 `xauSignalLab.orderCount=0`. Il conteggio giornaliero deve includere soltanto
 trade con `openTime` nel giorno UTC corrente, non posizioni vecchie chiuse oggi.
 
+Controllare inoltre che:
+
+- `/vs` usi per impostazione iniziale l'intera sessione del bot e confronti
+  esclusivamente record MAIN/INVERSE con lo stesso Signal ID;
+- campione, totale R, expectancy, profit factor, max drawdown, curva equity e
+  tabella per simbolo siano calcolati sul medesimo insieme di trade abbinati;
+- se entrambe le corsie sono negative, il verdetto dica `MENO NEGATIVA` e non
+  presenti una corsia come vincente o profittevole;
+- ogni riga INVERSE mostri `PAPER SHADOW` e zero ricevute OANDA;
+- `/setup` mostri separatamente broker, feed, ledger ed execution gate; durante
+  la chiusura del mercato FX deve indicare `PAUSA WEEKEND`, non una falsa
+  disconnessione;
+- lo scanner elenchi tutte le 15 coppie FX e il grafico M5 esponga volume,
+  EMA 20/50/200 e livelli Entry/SL/TP quando presenti;
+- `/xauusd` e `/api/status` continuino a dichiarare XAUUSD `SIGNAL ONLY` con
+  `orderCount=0`.
+
 ## Attivazione OANDA_DEMO Practice
 
 Con `OANDA_ENVIRONMENT=PRACTICE` il wrapper usa `https://api-fxpractice.oanda.com/v3`. `OANDA_DEMO` invia quindi ordini al conto **Practice**, non a un conto finanziato. `OANDA_LIVE` richiede invece endpoint live, enable flag e una conferma server-side separata; non deve essere configurato durante il collaudo.

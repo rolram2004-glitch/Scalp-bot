@@ -5,8 +5,8 @@
 
 .cockpit-brand__bolt {
   align-items: center;
-  background: rgba(35, 246, 153, 0.12);
-  border: 1px solid rgba(35, 246, 153, 0.32);
+  background: rgba(56, 217, 139, 0.12);
+  border: 1px solid rgba(56, 217, 139, 0.32);
   border-radius: 4px;
   display: flex;
   font-size: 8px;
@@ -17,7 +17,7 @@
 
 .cockpit-brand small,
 .cockpit-header__identity span {
-  color: #58dca1;
+  color: #63d9a0;
 }
 
 .elite-command-center {
