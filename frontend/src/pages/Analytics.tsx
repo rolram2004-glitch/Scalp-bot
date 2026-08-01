@@ -1,5 +1,6 @@
 import { StatusSnapshot } from '../types';
 import { executionView, hasVerifiedOandaLedger } from '../trading-state';
+import { calculateMonetaryOutcomeSummary } from '../../../src/strategy-metrics';
 
 const COLORS = ['#23f699', '#46e6c2', '#35d993', '#9ee493', '#18b981', '#f6bd55'];
 
@@ -36,23 +37,16 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
     .filter((trade) => ledgerAvailable && (mode.paper
       ? trade.source === 'PAPER'
       : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED'));
-  const closedCurrencies = new Set(
-    comparableClosedTrades
-      .map((trade) => mode.paper ? trade.pnlCurrency : trade.accountCurrency)
-      .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
-  );
-  const closedPnlComplete = comparableClosedTrades.length > 0 &&
-    comparableClosedTrades.every((trade) => finite(trade.pnl)) &&
-    closedCurrencies.size === 1;
-  const closedSeriesCurrency = closedCurrencies.size === 1 ? [...closedCurrencies][0] : undefined;
-  const closedValues = closedPnlComplete
+  const outcome = calculateMonetaryOutcomeSummary(comparableClosedTrades);
+  const closedSeriesCurrency = outcome.currency;
+  const closedValues = outcome.comparable
     ? comparableClosedTrades.map((trade) => Number(trade.pnl)).slice(0, 30).reverse()
     : [];
   const maximumMagnitude = Math.max(...closedValues.map((value) => Math.abs(value)), 0);
   const pnlToday = metricsAvailable && finite(analytics?.pnlToday) ? analytics.pnlToday : undefined;
-  const winRate = metricsAvailable && finite(analytics?.winRate) ? analytics.winRate : undefined;
-  const wins = metricsAvailable && finite(analytics?.wins) ? analytics.wins : undefined;
-  const losses = metricsAvailable && finite(analytics?.losses) ? analytics.losses : undefined;
+  const winRate = metricsAvailable && outcome.sampleSize > 0 ? outcome.winRate : undefined;
+  const wins = metricsAvailable && outcome.sampleSize > 0 ? outcome.wins : undefined;
+  const losses = metricsAvailable && outcome.sampleSize > 0 ? outcome.losses : undefined;
   const currency = metricsAvailable && typeof analytics?.pnlCurrency === 'string' && analytics.pnlCurrency.trim()
     ? analytics.pnlCurrency
     : undefined;
@@ -78,9 +72,13 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
 
       <section className="metric-grid">
         <div className="metric-card"><span>P&amp;L oggi</span><strong className={pnlToday === undefined ? '' : pnlToday < 0 ? 'loss' : 'win'}>{pnlToday === undefined || !currency ? 'N/A' : `${pnlToday >= 0 ? '+' : '-'}${Math.abs(pnlToday).toFixed(2)} ${currency}`}</strong></div>
-        <div className="metric-card"><span>Win rate</span><strong>{winRate === undefined ? 'N/A' : `${winRate}%`}</strong></div>
-        <div className="metric-card"><span>Wins</span><strong className="win">{wins ?? 'N/A'}</strong></div>
-        <div className="metric-card"><span>Losses</span><strong className="loss">{losses ?? 'N/A'}</strong></div>
+        <div className="metric-card"><span>Risultato netto</span><strong className={!finite(outcome.netPnl) ? '' : outcome.netPnl < 0 ? 'loss' : 'win'}>{!finite(outcome.netPnl) || !outcome.currency ? 'N/A' : `${outcome.netPnl >= 0 ? '+' : '-'}${Math.abs(outcome.netPnl).toFixed(2)} ${outcome.currency}`}</strong><small>Vincite + perdite</small></div>
+        <div className="metric-card"><span>Guadagni lordi</span><strong className="win">{!finite(outcome.grossProfit) || !outcome.currency ? 'N/A' : `+${outcome.grossProfit.toFixed(2)} ${outcome.currency}`}</strong><small>Somma delle operazioni vinte</small></div>
+        <div className="metric-card"><span>Perdite lorde</span><strong className="loss">{!finite(outcome.grossLoss) || !outcome.currency ? 'N/A' : `-${Math.abs(outcome.grossLoss).toFixed(2)} ${outcome.currency}`}</strong><small>Somma delle operazioni perse</small></div>
+        <div className="metric-card"><span>Win rate</span><strong>{winRate === undefined ? 'N/A' : `${winRate}%`}</strong><small>{outcome.lossRate === undefined ? 'Campione N/A' : `${outcome.lossRate.toFixed(1)}% loss rate`}</small></div>
+        <div className="metric-card"><span>Operazioni vinte</span><strong className="win">{wins ?? 'N/A'}</strong><small>{outcome.winRate === undefined ? 'Percentuale N/A' : `${outcome.winRate.toFixed(1)}% del campione`}</small></div>
+        <div className="metric-card"><span>Operazioni perse</span><strong className="loss">{losses ?? 'N/A'}</strong><small>{outcome.lossRate === undefined ? 'Percentuale N/A' : `${outcome.lossRate.toFixed(1)}% del campione`}</small></div>
+        <div className="metric-card"><span>Totale chiuse</span><strong>{metricsAvailable ? outcome.sampleSize : 'N/A'}</strong><small>{outcome.currency ? `Valuta reale ${outcome.currency} · non USDT` : 'Valuta non disponibile'}</small></div>
       </section>
 
       <section className="panel analytics-card-wide">
