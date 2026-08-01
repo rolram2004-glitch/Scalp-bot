@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CandlestickData, createChart, ISeriesApi, LineStyle, UTCTimestamp } from 'lightweight-charts';
+import { CandlestickData, createChart, HistogramData, ISeriesApi, LineStyle, UTCTimestamp } from 'lightweight-charts';
 import { fetchCandles } from '../services/api';
 
 export interface ChartPriceLine {
@@ -22,6 +22,16 @@ function compactSymbol(value: unknown) {
 function formatPrice(value: number | undefined, symbol: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 'N/A';
   return value.toFixed(symbol.includes('JPY') || symbol.includes('XAU') ? 3 : 5);
+}
+
+function timeframeSeconds(value: string) {
+  const normalized = String(value || '').toUpperCase();
+  const amount = Number(normalized.slice(1)) || 1;
+  if (normalized.startsWith('S')) return amount;
+  if (normalized.startsWith('M')) return amount * 60;
+  if (normalized.startsWith('H')) return amount * 60 * 60;
+  if (normalized.startsWith('D')) return amount * 24 * 60 * 60;
+  return 5 * 60;
 }
 
 function emaData(candles: CandlestickData<UTCTimestamp>[], period: number) {
@@ -52,12 +62,14 @@ export function RealMiniChart({
   const [candles, setCandles] = useState<any[]>([]);
   const [datasetKey, setDatasetKey] = useState('');
   const [error, setError] = useState('');
+  const [cursorBar, setCursorBar] = useState<CandlestickData<UTCTimestamp> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const ema20Ref = useRef<ISeriesApi<'Line'> | null>(null);
   const ema50Ref = useRef<ISeriesApi<'Line'> | null>(null);
   const ema200Ref = useRef<ISeriesApi<'Line'> | null>(null);
+  const volumeRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const priceLineRefs = useRef<any[]>([]);
   const requestRef = useRef(0);
 
@@ -110,6 +122,22 @@ export function RealMiniChart({
     });
   }, [candles, datasetKey, requestKey]);
 
+  const volumeData = useMemo<HistogramData<UTCTimestamp>[]>(() => {
+    if (datasetKey !== requestKey) return [];
+    return candles.flatMap((candle) => {
+      const time = Math.floor(Date.parse(String(candle?.time || '')) / 1000);
+      const open = Number(candle?.mid?.o);
+      const close = Number(candle?.mid?.c);
+      const value = Number(candle?.volume);
+      if (![time, open, close, value].every(Number.isFinite) || value < 0) return [];
+      return [{
+        time: time as UTCTimestamp,
+        value,
+        color: close >= open ? 'rgba(72, 223, 152, 0.26)' : 'rgba(255, 113, 133, 0.25)'
+      }];
+    });
+  }, [candles, datasetKey, requestKey]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const container = containerRef.current;
@@ -153,11 +181,29 @@ export function RealMiniChart({
       lastValueVisible: false,
       crosshairMarkerVisible: false
     });
+    const volume = chart.addHistogramSeries({
+      color: 'rgba(99, 168, 255, 0.24)',
+      priceFormat: { type: 'volume' },
+      priceLineVisible: false,
+      lastValueVisible: false,
+      priceScaleId: ''
+    });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    const handleCrosshair = (param: any) => {
+      const value = param?.seriesData?.get(series);
+      if (value && Number.isFinite(value.open) && Number.isFinite(value.high) && Number.isFinite(value.low) && Number.isFinite(value.close)) {
+        setCursorBar(value as CandlestickData<UTCTimestamp>);
+      } else {
+        setCursorBar(null);
+      }
+    };
+    chart.subscribeCrosshairMove(handleCrosshair);
     chartRef.current = chart;
     seriesRef.current = series;
     ema20Ref.current = ema20;
     ema50Ref.current = ema50;
     ema200Ref.current = ema200;
+    volumeRef.current = volume;
     const observer = new ResizeObserver(() => {
       const width = container.clientWidth;
       const height = container.clientHeight;
@@ -165,6 +211,7 @@ export function RealMiniChart({
     });
     observer.observe(container);
     return () => {
+      chart.unsubscribeCrosshairMove(handleCrosshair);
       observer.disconnect();
       chart.remove();
       chartRef.current = null;
@@ -172,6 +219,7 @@ export function RealMiniChart({
       ema20Ref.current = null;
       ema50Ref.current = null;
       ema200Ref.current = null;
+      volumeRef.current = null;
       priceLineRefs.current = [];
     };
   }, []);
@@ -182,8 +230,9 @@ export function RealMiniChart({
     ema20Ref.current?.setData(showEma ? emaData(formatted, 20) : []);
     ema50Ref.current?.setData(showEma ? emaData(formatted, 50) : []);
     ema200Ref.current?.setData(showEma ? emaData(formatted, 200) : []);
+    volumeRef.current?.setData(volumeData);
     if (formatted.length > 0) chartRef.current?.timeScale().fitContent();
-  }, [formatted, requestKey, showEma]);
+  }, [formatted, requestKey, showEma, volumeData]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -196,7 +245,7 @@ export function RealMiniChart({
       .map((line) => series.createPriceLine({
         price: line.price,
         color: line.color,
-        lineWidth: line.label.endsWith('ENTRY') ? 2 : 1,
+        lineWidth: line.label.includes('ENTRY') ? 2 : 1,
         lineStyle: line.style === 'solid'
           ? LineStyle.Solid
           : line.style === 'dotted'
@@ -214,8 +263,12 @@ export function RealMiniChart({
     const chartMarkers = markers.flatMap((marker) => {
       const markerTime = Math.floor(Date.parse(marker.time) / 1000);
       if (!Number.isFinite(markerTime)) return [];
-      const index = candleTimes.indexOf(markerTime);
-      if (index < 0) return [];
+      let index = -1;
+      for (let candleIndex = 0; candleIndex < candleTimes.length; candleIndex += 1) {
+        if (candleTimes[candleIndex] <= markerTime) index = candleIndex;
+        else break;
+      }
+      if (index < 0 || Math.abs(markerTime - candleTimes[index]) > timeframeSeconds(timeframe) * 2) return [];
       return [{
         time: formatted[index].time,
         position: marker.side === 'BUY' ? 'belowBar' as const : 'aboveBar' as const,
@@ -225,18 +278,27 @@ export function RealMiniChart({
       }];
     });
     series.setMarkers(chartMarkers);
-  }, [formatted, markers]);
+  }, [formatted, markers, timeframe]);
 
-  const latest = formatted.length > 0 ? formatted[formatted.length - 1].close : undefined;
+  const latestBar = cursorBar || (formatted.length > 0 ? formatted[formatted.length - 1] : undefined);
+  const latest = latestBar?.close;
   const visibleError = datasetKey === requestKey ? error : '';
 
   return (
     <div className="real-mini-chart">
       <div className="real-mini-chart__meta">
-        <strong>{normalized || 'N/A'}</strong>
-        <span>{timeframe}</span>
-        {showEma && <span className="real-mini-chart__algo">EMA 20 · 50 · 200</span>}
-        <b>{formatPrice(latest, normalized)}</b>
+        <div className="real-mini-chart__identity">
+          <strong>{normalized || 'N/A'}</strong>
+          <span>{timeframe}</span>
+          {showEma && <span className="real-mini-chart__algo">EMA 20 · 50 · 200 · VOLUME</span>}
+        </div>
+        <div className="real-mini-chart__ohlc">
+          <span>O <b>{formatPrice(latestBar?.open, normalized)}</b></span>
+          <span>H <b>{formatPrice(latestBar?.high, normalized)}</b></span>
+          <span>L <b>{formatPrice(latestBar?.low, normalized)}</b></span>
+          <span>C <b>{formatPrice(latestBar?.close, normalized)}</b></span>
+        </div>
+        <strong className="real-mini-chart__last">{formatPrice(latest, normalized)}</strong>
       </div>
       <div className="real-mini-chart__canvas" ref={containerRef} />
       {visibleError && <div className="real-mini-chart__empty">{visibleError}</div>}

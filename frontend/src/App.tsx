@@ -48,14 +48,17 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
   const usableCoverage = hasFullFreshCoverage(status);
   const feedConnected = Boolean(accountConnected && usableCoverage && isFresh(status?.lastPriceAt, 30000));
   const oandaExecutionReady = Boolean(mode.oanda && mode.ready && status?.reconciliationStatus === 'VERIFIED' && accountConnected && feedConnected);
-  const modeLabel = !mode.known ? 'MODE UNAVAILABLE' : mode.paper ? 'PAPER' : oandaExecutionReady ? mode.label : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
   const feedAge = feedAgeSeconds(status?.lastPriceAt);
-  const feedState = !accountConnected ? 'DISCONNECTED' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 30 ? 'STALE' : feedConnected ? status?.priceFeedStatus === 'PARTIAL' ? 'PARTIAL LIVE' : 'LIVE' : 'PARTIAL';
+  const utcDay = new Date().getUTCDay();
+  const weekendPause = Boolean(accountConnected && (utcDay === 0 || utcDay === 6) && (feedAge === undefined || feedAge > 30));
+  const modeLabel = !mode.known ? 'MODE UNAVAILABLE' : mode.paper ? 'PAPER' : oandaExecutionReady ? mode.label : weekendPause && mode.demo ? 'OANDA DEMO · PAUSA' : mode.demo ? 'OANDA DEMO BLOCKED' : 'OANDA LIVE BLOCKED';
+  const feedState = !accountConnected ? 'DISCONNECTED' : weekendPause ? 'WEEKEND PAUSE' : feedAge === undefined ? 'DISCONNECTED' : feedAge > 30 ? 'STALE' : feedConnected ? status?.priceFeedStatus === 'PARTIAL' ? 'PARTIAL LIVE' : 'LIVE' : 'PARTIAL';
   const entryGate = status?.entryGateStatus || (status?.isRunning ? 'CHECKING' : 'SCANNER_STOPPED');
   const entryReady = entryGate === 'READY';
+  const entryGateLabel = weekendPause ? 'MERCATO CHIUSO' : entryGate;
   const navigation = [
     { to: '/', label: 'Dashboard', icon: 'dashboard' as const, end: true },
-    { to: '/vs', label: 'VS', icon: 'versus' as const },
+    { to: '/vs', label: 'Confronto', icon: 'versus' as const },
     { to: '/chart', label: 'Grafico', icon: 'chart' as const },
     { to: '/history', label: 'Storico', icon: 'history' as const },
     { to: '/analytics', label: 'Analisi', icon: 'analytics' as const },
@@ -107,7 +110,7 @@ function AppShell({ status, oandaStatus, reload }: { status: StatusSnapshot | nu
           <div className="header-telemetry header-telemetry--mode"><span>MODE</span><strong className={oandaExecutionReady || mode.paper ? 'positive' : 'warning-text'}>{modeLabel}</strong></div>
           <div className="header-telemetry"><span>PRICE FEED</span><strong className={feedState === 'LIVE' || feedState === 'PARTIAL LIVE' ? 'positive' : feedState === 'STALE' || feedState === 'DISCONNECTED' ? 'negative' : 'warning-text'}>{feedState}</strong></div>
           <div className="header-telemetry"><span>FEED AGE</span><strong>{feedAge === undefined ? 'N/A' : `${feedAge}s`}</strong></div>
-          <div className="header-telemetry"><span>ENTRY GATE</span><strong className={entryReady ? 'positive' : entryGate === 'DAILY_LOSS_LIMIT' ? 'negative' : 'warning-text'}>{entryGate}</strong></div>
+          <div className="header-telemetry"><span>ENTRY GATE</span><strong className={entryReady ? 'positive' : entryGate === 'DAILY_LOSS_LIMIT' ? 'negative' : 'warning-text'}>{entryGateLabel}</strong></div>
         </div>
 
         <div className="cockpit-header__actions">

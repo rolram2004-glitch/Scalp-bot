@@ -1,6 +1,25 @@
 # SEL SCALP BOT — $Rohato$🤖111
 
-Cockpit professionale dark-green di analisi e trading OANDA Practice. MAIN e la corsia operativa verificata; INVERSE e una simulazione contraria uno-a-uno aperta soltanto dopo il trade operativo corrispondente. Il confronto usa risultati in R e mantiene separate le valute originali.
+Cockpit professionale graphite/emerald di analisi e trading OANDA Practice. MAIN e la corsia operativa verificata; INVERSE e una simulazione contraria uno-a-uno aperta soltanto dopo il trade operativo corrispondente. Il confronto usa risultati in R e mantiene separate le valute originali.
+
+## Confronto e diagnostica professionale
+
+- `/vs` confronta MAIN e INVERSE soltanto sugli stessi Signal ID. La vista
+  predefinita usa l'intera sessione del bot, mentre il filtro `OGGI` e
+  disponibile per l'analisi intraday.
+- Il verdetto distingue chiaramente una strategia positiva da quella soltanto
+  meno negativa. Sono visibili curva cumulativa in R, expectancy, profit
+  factor, max drawdown, win rate, confronto testa-a-testa e risultati per
+  coppia.
+- `/setup` spiega il gate operativo prima dei dati: broker, feed, ledger,
+  esecuzione, AI e protezione XAUUSD. Durante il weekend mostra una pausa di
+  mercato, senza farla sembrare una disconnessione del bot.
+- Il Command Center include tutte le 15 coppie FX, pipeline decisionale,
+  performance per setup, ricevute OANDA e grafico M5 con candele, volume,
+  EMA 20/50/200 e linee Entry/SL/TP.
+
+Queste viste sono diagnostiche: non cambiano la strategia, non abilitano
+OANDA Live e non consentono a INVERSE o XAUUSD di inviare ordini.
 
 ## Run locally
 

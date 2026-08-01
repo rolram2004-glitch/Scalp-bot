@@ -1,17 +1,17 @@
 :root {
-  --cockpit-bg: #020a07;
-  --cockpit-panel: rgba(4, 20, 14, 0.97);
-  --cockpit-panel-2: rgba(6, 29, 20, 0.97);
-  --cockpit-line: #15382a;
-  --cockpit-line-soft: rgba(75, 132, 105, 0.24);
-  --cockpit-copy: #ebfff5;
-  --cockpit-muted: #718f81;
-  --cockpit-green: #23f699;
-  --cockpit-red: #ff5c78;
-  --cockpit-blue: #35d993;
-  --cockpit-cyan: #46e6c2;
-  --cockpit-amber: #f5a524;
-  --cockpit-purple: #a855f7;
+  --cockpit-bg: #07100f;
+  --cockpit-panel: rgba(13, 24, 22, 0.98);
+  --cockpit-panel-2: rgba(17, 32, 29, 0.98);
+  --cockpit-line: #263b35;
+  --cockpit-line-soft: rgba(133, 164, 151, 0.18);
+  --cockpit-copy: #f0f7f4;
+  --cockpit-muted: #8fa39a;
+  --cockpit-green: #38d98b;
+  --cockpit-red: #ff7185;
+  --cockpit-blue: #63a8ff;
+  --cockpit-cyan: #56d6bd;
+  --cockpit-amber: #f2bf62;
+  --cockpit-purple: #b79cff;
   --sidebar-width: 86px;
   --header-height: 64px;
 }
@@ -22,8 +22,8 @@ html {
 
 body {
   background:
-    radial-gradient(circle at 72% -10%, rgba(35, 246, 153, 0.12), transparent 32rem),
-    radial-gradient(circle at 12% 80%, rgba(70, 230, 194, 0.06), transparent 28rem),
+    radial-gradient(circle at 72% -10%, rgba(56, 217, 139, 0.09), transparent 34rem),
+    radial-gradient(circle at 12% 80%, rgba(99, 168, 255, 0.045), transparent 30rem),
     var(--cockpit-bg);
   color: var(--cockpit-copy);
   min-width: 320px;
@@ -65,7 +65,7 @@ a:focus-visible {
 
 .cockpit-sidebar {
   align-items: stretch;
-  background: rgba(2, 12, 8, 0.99);
+  background: rgba(7, 17, 15, 0.99);
   border-right: 1px solid var(--cockpit-line);
   display: flex;
   flex-direction: column;
@@ -208,7 +208,7 @@ a:focus-visible {
 .cockpit-header {
   align-items: center;
   backdrop-filter: blur(18px);
-  background: rgba(3, 17, 11, 0.94);
+  background: rgba(8, 19, 17, 0.95);
   border-bottom: 1px solid var(--cockpit-line);
   display: grid;
   gap: 18px;
@@ -645,7 +645,7 @@ a:focus-visible {
   align-items: center;
   color: #7589a2;
   display: flex;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 850;
   justify-content: space-between;
   left: 10px;
@@ -653,12 +653,45 @@ a:focus-visible {
   pointer-events: none;
   position: absolute;
   right: 10px;
-  top: 8px;
+  top: 9px;
   z-index: 3;
 }
 
 .real-mini-chart__meta strong {
   color: #aebfd2;
+}
+
+.real-mini-chart__identity,
+.real-mini-chart__ohlc {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.real-mini-chart__identity > span,
+.real-mini-chart__ohlc > span {
+  background: rgba(7, 16, 15, 0.78);
+  border: 1px solid rgba(133, 164, 151, 0.16);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.real-mini-chart__ohlc > span {
+  color: #788d84;
+  font-size: 8px;
+}
+
+.real-mini-chart__ohlc b {
+  color: #becbc6;
+  font-weight: 800;
+}
+
+.real-mini-chart__last {
+  background: rgba(7, 16, 15, 0.84);
+  border: 1px solid rgba(56, 217, 139, 0.22);
+  border-radius: 5px;
+  color: var(--cockpit-green) !important;
+  padding: 5px 7px;
 }
 
 .real-mini-chart__canvas {
@@ -680,6 +713,20 @@ a:focus-visible {
   padding: 20px;
   position: absolute;
   text-align: center;
+}
+
+@media (max-width: 680px) {
+  .real-mini-chart__ohlc {
+    display: none;
+  }
+
+  .real-mini-chart__identity {
+    gap: 5px;
+  }
+
+  .real-mini-chart__identity > span {
+    padding: 3px 4px;
+  }
 }
 
 .market-proof-strip {
