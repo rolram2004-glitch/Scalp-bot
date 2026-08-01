@@ -53,6 +53,20 @@ export interface StrategyMetrics {
   worstR?: number;
 }
 
+export interface MonetaryOutcomeSummary {
+  sampleSize: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  winRate?: number;
+  lossRate?: number;
+  comparable: boolean;
+  currency?: string;
+  grossProfit?: number;
+  grossLoss?: number;
+  netPnl?: number;
+}
+
 export interface EquityPoint {
   index: number;
   label: string;
@@ -97,6 +111,39 @@ export function tradeResultR(trade?: MetricTrade) {
     return trade.pnl / riskAmount;
   }
   return undefined;
+}
+
+export function calculateMonetaryOutcomeSummary(trades: MetricTrade[]): MonetaryOutcomeSummary {
+  const records = trades.map((trade) => {
+    const pnl = finite(trade.pnl) ? trade.pnl : undefined;
+    const currency = String(trade.source === 'OANDA' ? trade.accountCurrency || '' : trade.pnlCurrency || '')
+      .trim()
+      .toUpperCase();
+    return { pnl, currency };
+  });
+  const decided = records.filter((record) => finite(record.pnl) && record.pnl !== 0);
+  const wins = decided.filter((record) => (record.pnl as number) > 0).length;
+  const losses = decided.filter((record) => (record.pnl as number) < 0).length;
+  const breakeven = records.filter((record) => record.pnl === 0).length;
+  const currencies = new Set(records.map((record) => record.currency).filter(Boolean));
+  const comparable = records.length > 0 &&
+    records.every((record) => finite(record.pnl) && Boolean(record.currency)) &&
+    currencies.size === 1;
+  const values = comparable ? records.map((record) => record.pnl as number) : [];
+
+  return {
+    sampleSize: records.length,
+    wins,
+    losses,
+    breakeven,
+    winRate: decided.length > 0 ? (wins / decided.length) * 100 : undefined,
+    lossRate: decided.length > 0 ? (losses / decided.length) * 100 : undefined,
+    comparable,
+    currency: comparable ? [...currencies][0] : undefined,
+    grossProfit: comparable ? values.filter((value) => value > 0).reduce((sum, value) => sum + value, 0) : undefined,
+    grossLoss: comparable ? values.filter((value) => value < 0).reduce((sum, value) => sum + value, 0) : undefined,
+    netPnl: comparable ? values.reduce((sum, value) => sum + value, 0) : undefined
+  };
 }
 
 export function pairTradesBySignal(mainTrades: MetricTrade[], inverseTrades: MetricTrade[]) {

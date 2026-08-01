@@ -2,10 +2,11 @@ import { BotTrade, OandaStatus, StatusSnapshot } from '../types';
 import { executionView, hasFullFreshCoverage, hasVerifiedOandaLedger } from '../trading-state';
 import { RealMiniChart, RealSparkline } from '../components/RealMiniChart';
 import { Link } from 'react-router-dom';
+import { calculateMonetaryOutcomeSummary } from '../../../src/strategy-metrics';
 
 function money(value: number | undefined, currency?: string) {
   if (typeof value !== 'number' || !Number.isFinite(value) || !currency) return 'N/A';
-  const sign = value >= 0 ? '+' : '-';
+  const sign = value > 0 ? '+' : value < 0 ? '-' : '';
   return `${sign}${Math.abs(value).toFixed(2)} ${currency}`;
 }
 
@@ -260,18 +261,13 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
   const closedPnl = closedTrades
     .map((trade) => trade.pnl)
     .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  const closedPnlCurrencies = new Set(
-    closedTrades
-      .map((trade) => mode.paper ? textValue(trade.pnlCurrency) : textValue(trade.accountCurrency))
-      .filter((value): value is string => Boolean(value))
-  );
-  const closedPnlComparable = closedTrades.length > 0 &&
-    closedPnl.length === closedTrades.length &&
-    closedPnlCurrencies.size === 1;
-  const wins = closedPnl.filter((value) => value > 0).length;
-  const losses = closedPnl.filter((value) => value < 0).length;
+  const outcome = calculateMonetaryOutcomeSummary(closedTrades);
+  const closedPnlComparable = outcome.comparable;
+  const wins = outcome.wins;
+  const losses = outcome.losses;
   const decidedTrades = wins + losses;
-  const winRate = decidedTrades > 0 ? Math.round((wins / decidedTrades) * 1000) / 10 : undefined;
+  const winRate = outcome.winRate === undefined ? undefined : Math.round(outcome.winRate * 10) / 10;
+  const lossRate = outcome.lossRate === undefined ? undefined : Math.round(outcome.lossRate * 10) / 10;
   const configuredSymbols = status?.symbols || [];
   const marketSymbols = [
     ...configuredSymbols,
@@ -453,22 +449,70 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <article className="cockpit-panel dashboard-analytics-card">
           <header className="cockpit-panel__header">
-            <div><span>REAL DISTRIBUTION</span><h2>ANALYTICS</h2></div>
+            <div><span>RISULTATI VERIFICATI OANDA</span><h2>BILANCIO {outcome.sampleSize || 'N/A'} TRADE</h2></div>
             <Link to="/analytics">DETTAGLI</Link>
           </header>
-          <div className="setup-distribution">
-            {setupEntries.map(([name, count], index) => (
-              <div key={name}>
-                <div><span>{name}</span><strong>{count}</strong></div>
-                <i><b style={{ width: `${(count / setupMaximum) * 100}%` }} data-tone={index % 5} /></i>
+          <div className="outcome-scoreboard">
+            <div className="outcome-count-grid" aria-label="Conteggio operazioni vinte e perse">
+              <div className="win">
+                <span>OPERAZIONI VINTE</span>
+                <strong>{decidedTrades ? wins : 'N/A'}</strong>
+                <small>{winRate === undefined ? 'Percentuale N/A' : `${winRate.toFixed(1)}% del campione`}</small>
               </div>
-            ))}
-            {setupEntries.length === 0 && <div className="dense-empty">DISTRIBUZIONE N/A</div>}
+              <div className="loss">
+                <span>OPERAZIONI PERSE</span>
+                <strong>{decidedTrades ? losses : 'N/A'}</strong>
+                <small>{lossRate === undefined ? 'Percentuale N/A' : `${lossRate.toFixed(1)}% del campione`}</small>
+              </div>
+            </div>
+            <div className="outcome-rate-track" aria-label={decidedTrades ? `${winRate}% vinte e ${lossRate}% perse` : 'Percentuali non disponibili'}>
+              <i className="win" style={{ width: `${winRate || 0}%` }} />
+              <i className="loss" style={{ width: `${lossRate || 0}%` }} />
+            </div>
+            <div className="outcome-money-grid" aria-label="Somme monetarie reali">
+              <div>
+                <span>GUADAGNI LORDI</span>
+                <strong className="positive">{money(outcome.grossProfit, outcome.currency)}</strong>
+                <small>Somma delle {wins} vincite</small>
+              </div>
+              <div>
+                <span>PERDITE LORDE</span>
+                <strong className="negative">{money(outcome.grossLoss, outcome.currency)}</strong>
+                <small>Somma delle {losses} perdite</small>
+              </div>
+              <div className="net">
+                <span>RISULTATO NETTO</span>
+                <strong className={typeof outcome.netPnl === 'number' ? outcome.netPnl >= 0 ? 'positive' : 'negative' : 'neutral'}>
+                  {money(outcome.netPnl, outcome.currency)}
+                </strong>
+                <small>Vincite + perdite</small>
+              </div>
+            </div>
+            <p className="outcome-proof">
+              {outcome.comparable
+                ? `VALUTA REALE CONTO OANDA: ${outcome.currency} · importi verificati dal broker, non USDT.`
+                : outcome.sampleSize > 0
+                  ? 'P&L MONETARIO NON SOMMABILE: valuta o importi incompleti.'
+                  : 'NESSUN TRADE CHIUSO VERIFICABILE.'}
+            </p>
+            {setupEntries.length > 0 && (
+              <details className="outcome-setup-details">
+                <summary>DISTRIBUZIONE PER SETUP</summary>
+                <div className="setup-distribution">
+                  {setupEntries.map(([name, count], index) => (
+                    <div key={name}>
+                      <div><span>{name}</span><strong>{count}</strong></div>
+                      <i><b style={{ width: `${(count / setupMaximum) * 100}%` }} data-tone={index % 5} /></i>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
           <div className="analytics-mini-summary">
-            <div><span>Wins</span><strong className="positive">{decidedTrades ? wins : 'N/A'}</strong></div>
-            <div><span>Losses</span><strong className="negative">{decidedTrades ? losses : 'N/A'}</strong></div>
-            <div><span>Sample</span><strong>{decidedTrades || 'N/A'}</strong></div>
+            <div><span>VINTE</span><strong className="positive">{decidedTrades ? `${wins} · ${winRate?.toFixed(1)}%` : 'N/A'}</strong></div>
+            <div><span>PERSE</span><strong className="negative">{decidedTrades ? `${losses} · ${lossRate?.toFixed(1)}%` : 'N/A'}</strong></div>
+            <div><span>TOTALE CHIUSE</span><strong>{outcome.sampleSize || 'N/A'}</strong></div>
           </div>
         </article>
 

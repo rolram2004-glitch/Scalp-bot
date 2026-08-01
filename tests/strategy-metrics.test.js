@@ -4,6 +4,7 @@ require('ts-node/register/transpile-only');
 
 const {
   buildEquityCurve,
+  calculateMonetaryOutcomeSummary,
   calculatePairedLaneMetrics,
   calculateSymbolEdges,
   pairTradesBySignal,
@@ -80,4 +81,50 @@ test('builds chronological paired equity curves and per-symbol edges', () => {
   const edges = calculateSymbolEdges(pairs);
   assert.equal(edges.find((item) => item.symbol === 'EURUSD').winner, 'MAIN');
   assert.equal(edges.find((item) => item.symbol === 'GBPUSD').winner, 'INVERSE');
+});
+
+test('summarizes gross wins, gross losses and net P&L in one verified currency', () => {
+  const trades = [
+    ...Array.from({ length: 15 }, (_, index) => trade({
+      id: `win-${index}`,
+      signalId: `win-signal-${index}`,
+      source: 'OANDA',
+      accountCurrency: 'CHF',
+      pnl: index === 0 ? 5.9178 : 1
+    })),
+    ...Array.from({ length: 85 }, (_, index) => trade({
+      id: `loss-${index}`,
+      signalId: `loss-signal-${index}`,
+      source: 'OANDA',
+      accountCurrency: 'CHF',
+      pnl: index === 0 ? -6.786 : -0.5
+    }))
+  ];
+  const summary = calculateMonetaryOutcomeSummary(trades);
+
+  assert.equal(summary.sampleSize, 100);
+  assert.equal(summary.wins, 15);
+  assert.equal(summary.losses, 85);
+  assert.equal(summary.winRate, 15);
+  assert.equal(summary.lossRate, 85);
+  assert.equal(summary.currency, 'CHF');
+  assert.equal(summary.comparable, true);
+  assert.ok(Math.abs(summary.grossProfit - 19.9178) < 1e-10);
+  assert.ok(Math.abs(summary.grossLoss - (-48.786)) < 1e-10);
+  assert.ok(Math.abs(summary.netPnl - (-28.8682)) < 1e-10);
+});
+
+test('never sums monetary P&L across different currencies', () => {
+  const summary = calculateMonetaryOutcomeSummary([
+    trade({ id: 'chf', signalId: 'chf', source: 'OANDA', accountCurrency: 'CHF', pnl: 2 }),
+    trade({ id: 'usd', signalId: 'usd', source: 'OANDA', accountCurrency: 'USD', pnl: -1 })
+  ]);
+
+  assert.equal(summary.wins, 1);
+  assert.equal(summary.losses, 1);
+  assert.equal(summary.comparable, false);
+  assert.equal(summary.currency, undefined);
+  assert.equal(summary.grossProfit, undefined);
+  assert.equal(summary.grossLoss, undefined);
+  assert.equal(summary.netPnl, undefined);
 });
