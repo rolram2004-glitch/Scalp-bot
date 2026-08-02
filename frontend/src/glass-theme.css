@@ -1,0 +1,658 @@
+/*
+ * ROHATO WHITE GLASS
+ * One final theme layer for the whole command center. Green is reserved for
+ * brand and positive state; operational lanes keep their own semantic colors.
+ */
+
+:root {
+  --bg: #eef4f1;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-2: rgba(250, 252, 251, 0.88);
+  --surface-3: rgba(243, 248, 246, 0.92);
+  --border: rgba(39, 66, 55, 0.14);
+  --border-soft: rgba(39, 66, 55, 0.09);
+  --text: #17251f;
+  --muted: #687870;
+  --soft: #33483f;
+  --green: #0c9f6e;
+  --green-soft: rgba(12, 159, 110, 0.1);
+  --red: #dd4f68;
+  --red-soft: rgba(221, 79, 104, 0.1);
+  --yellow: #b98222;
+  --yellow-soft: rgba(185, 130, 34, 0.11);
+  --blue: #2f6fed;
+  --blue-soft: rgba(47, 111, 237, 0.1);
+  --glass: rgba(255, 255, 255, 0.76);
+  --glass-strong: rgba(255, 255, 255, 0.91);
+  --glass-soft: rgba(248, 251, 250, 0.72);
+  --glass-line: rgba(36, 66, 53, 0.13);
+  --glass-line-soft: rgba(36, 66, 53, 0.08);
+  --glass-shadow: 0 18px 48px rgba(37, 62, 52, 0.1), 0 2px 10px rgba(37, 62, 52, 0.04);
+  --glass-shadow-hover: 0 22px 58px rgba(37, 62, 52, 0.14), 0 3px 12px rgba(37, 62, 52, 0.05);
+  color-scheme: light;
+}
+
+html {
+  background: #eef4f1;
+}
+
+body {
+  background:
+    radial-gradient(circle at 8% -4%, rgba(12, 159, 110, 0.12), transparent 30rem),
+    radial-gradient(circle at 92% 5%, rgba(47, 111, 237, 0.08), transparent 30rem),
+    radial-gradient(circle at 70% 88%, rgba(124, 92, 231, 0.055), transparent 26rem),
+    linear-gradient(145deg, #f7faf8 0%, #eef4f1 48%, #f6f8f7 100%);
+  background-attachment: fixed;
+  color: var(--text);
+}
+
+.light-glass-theme {
+  --cockpit-bg: #eef4f1;
+  --cockpit-panel: rgba(255, 255, 255, 0.78);
+  --cockpit-panel-2: rgba(248, 251, 250, 0.88);
+  --cockpit-line: rgba(36, 66, 53, 0.14);
+  --cockpit-line-soft: rgba(36, 66, 53, 0.09);
+  --cockpit-copy: #17251f;
+  --cockpit-muted: #687870;
+  --cockpit-green: #0c9f6e;
+  --cockpit-red: #dd4f68;
+  --cockpit-blue: #2f6fed;
+  --cockpit-cyan: #168e9f;
+  --cockpit-amber: #b98222;
+  --cockpit-purple: #7c5ce7;
+  color: var(--text);
+}
+
+.light-glass-theme :is(button, select) {
+  color: var(--text);
+}
+
+.light-glass-theme :is(.positive, .win) { color: #087f59 !important; }
+.light-glass-theme :is(.negative, .loss) { color: #c83d58 !important; }
+.light-glass-theme .neutral { color: #708078 !important; }
+.light-glass-theme .warning-text { color: #a36c0e !important; }
+
+/* Shell */
+.light-glass-theme .cockpit-sidebar,
+.light-glass-theme .cockpit-header {
+  backdrop-filter: blur(24px) saturate(145%);
+  -webkit-backdrop-filter: blur(24px) saturate(145%);
+  background: rgba(255, 255, 255, 0.78);
+  border-color: var(--glass-line);
+  box-shadow: 0 8px 30px rgba(44, 68, 58, 0.06);
+}
+
+.light-glass-theme .cockpit-brand {
+  border-color: var(--glass-line);
+}
+
+.light-glass-theme .cockpit-brand__bolt {
+  background: linear-gradient(145deg, #0c9f6e, #087c58);
+  border: 0;
+  box-shadow: 0 5px 14px rgba(12, 159, 110, 0.22);
+  color: #fff;
+  filter: none;
+}
+
+.light-glass-theme .cockpit-brand strong,
+.light-glass-theme .cockpit-header__identity strong {
+  color: #15241d;
+}
+
+.light-glass-theme .cockpit-brand small,
+.light-glass-theme .cockpit-header__identity span {
+  color: #0b8c62;
+}
+
+.light-glass-theme .cockpit-nav a {
+  color: #73827b;
+}
+
+.light-glass-theme .cockpit-nav a:hover {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: var(--glass-line-soft);
+  color: #263a31;
+}
+
+.light-glass-theme .cockpit-nav a.active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(232, 246, 240, 0.9));
+  border-color: rgba(12, 159, 110, 0.25);
+  box-shadow: inset 3px 0 #0c9f6e, 0 7px 20px rgba(37, 62, 52, 0.08);
+  color: #163127;
+}
+
+.light-glass-theme .cockpit-nav a.active svg {
+  color: #0c9f6e;
+  filter: none;
+}
+
+.light-glass-theme .cockpit-sidebar__foot,
+.light-glass-theme .header-telemetry,
+.light-glass-theme .header-telemetry:last-child {
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .header-telemetry strong { color: #31463d; }
+
+.light-glass-theme .touch-button,
+.light-glass-theme .button,
+.light-glass-theme .time-chip,
+.light-glass-theme .chip,
+.light-glass-theme .xau-timeframe-tabs button,
+.light-glass-theme .xau-layer-controls button,
+.light-glass-theme .vs3-scope button {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: var(--glass-line);
+  color: #31463d;
+  box-shadow: 0 4px 12px rgba(37, 62, 52, 0.045);
+}
+
+.light-glass-theme .touch-button:hover,
+.light-glass-theme .button:hover {
+  background: #fff;
+  border-color: rgba(12, 159, 110, 0.24);
+}
+
+.light-glass-theme .accent-button,
+.light-glass-theme .button.primary {
+  background: linear-gradient(135deg, #0c9f6e, #087d59);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(12, 159, 110, 0.2);
+}
+
+.light-glass-theme .cockpit-content {
+  position: relative;
+}
+
+/* Reusable glass surfaces */
+.light-glass-theme :is(
+  .cockpit-panel,
+  .metric-card,
+  .panel,
+  .setup-card,
+  .chart-workspace,
+  .history-item,
+  .signal-duel-card,
+  .scenario-card,
+  .command-metric,
+  .pro-panel,
+  .pro-status-tile,
+  .pro-metric,
+  .pro-pipeline,
+  .pro-lane-card,
+  .pro-duel-rule,
+  .vs3-truth-bar,
+  .vs3-verdict-panel,
+  .vs3-lane-summary,
+  .vs3-head-to-head,
+  .vs3-panel,
+  .vs3-proof-footer
+) {
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+  background: var(--glass);
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-shadow);
+}
+
+.light-glass-theme :is(.cockpit-panel, .metric-card, .panel, .pro-panel, .pro-status-tile, .pro-metric) {
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+@media (hover: hover) {
+  .light-glass-theme :is(.metric-card, .pro-status-tile, .pro-metric):hover {
+    border-color: rgba(12, 159, 110, 0.2);
+    box-shadow: var(--glass-shadow-hover);
+    transform: translateY(-2px);
+  }
+}
+
+.light-glass-theme :is(
+  .cockpit-panel__header,
+  .panel-title,
+  .pro-panel > header,
+  .vs3-panel > header,
+  .xau-chart-card--institutional > .cockpit-panel__header
+) {
+  background: rgba(250, 252, 251, 0.62);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme :is(
+  h1,
+  h2,
+  h3,
+  .cockpit-panel__header h2,
+  .pro-panel > header h2,
+  .pro-hero-brand h1,
+  .vs3-hero h1
+) {
+  color: #15241d;
+}
+
+.light-glass-theme :is(
+  .metric-card span,
+  .metric-card small,
+  .panel-title span,
+  .history-detail span,
+  .pro-setup p,
+  .pro-setup small,
+  .pro-setup span,
+  .versus-page.vs3 p,
+  .versus-page.vs3 small,
+  .versus-page.vs3 span
+) {
+  color: var(--muted);
+}
+
+.light-glass-theme :is(.dense-table th, .dense-table td, .history-item, .compact-trade-row) {
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme :is(.dense-table th, .truth-matrix th, .pro-strategy-table thead th) {
+  background: rgba(238, 245, 242, 0.86);
+  color: #65766e;
+}
+
+.light-glass-theme :is(.dense-table tr:hover td, .truth-matrix tr:hover td) {
+  background: rgba(12, 159, 110, 0.045);
+}
+
+.light-glass-theme :is(
+  .dense-empty,
+  .empty-state,
+  .chart-empty,
+  .sparkline-empty,
+  .pro-empty,
+  .vs3-empty,
+  .vs3-chart-empty
+) {
+  color: #74827c;
+}
+
+.light-glass-theme :is(
+  .panel-header-tags b,
+  .real-mini-chart__identity > span,
+  .real-mini-chart__ohlc > span,
+  .real-mini-chart__last,
+  .scanner-filter button,
+  .chart-control-row button,
+  .scanner-rail__rows > button,
+  .pro-chart-statbar,
+  .trading-room-status,
+  .xau-kpi-grid > article,
+  .xau-kpi-grid > div,
+  .history-detail,
+  .symbol-cloud span,
+  .signal-lane
+) {
+  background: rgba(248, 251, 250, 0.82);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .real-mini-chart__empty,
+.light-glass-theme .pro-chart-frame .chart-empty {
+  background: rgba(248, 251, 250, 0.88);
+  color: #687870;
+}
+
+.light-glass-theme :is(
+  .command-metric__copy strong,
+  .real-mini-chart__meta strong,
+  .real-mini-chart__ohlc b,
+  .market-proof-strip strong,
+  .signal-duel-card dd,
+  .signal-proof strong,
+  .feed-summary strong,
+  .dense-table td strong,
+  .setup-distribution strong,
+  .xau-fact-grid dd,
+  .dashboard-event-strip strong,
+  .scanner-rail__rows button strong,
+  .instrument-title strong,
+  .scenario-card__body strong,
+  .xau-rail-targets strong,
+  .key-level-list dd,
+  .active-trade-proof dd,
+  .trading-room-status b,
+  .xau-kpi-grid strong,
+  .xau-blueprint dd,
+  .xau-level-table strong,
+  .xau-action-map dd
+) {
+  color: #2d4238;
+}
+
+.light-glass-theme :is(
+  .scanner-rail__rows > button:hover,
+  .scanner-rail__rows > button.active,
+  .scanner-filter button.active,
+  .chart-control-row button.active
+) {
+  background: rgba(47, 111, 237, 0.08);
+  border-color: rgba(47, 111, 237, 0.22);
+  color: #245cc7;
+}
+
+.light-glass-theme .setup-distribution i {
+  background: rgba(45, 67, 58, 0.1);
+}
+
+.light-glass-theme .cockpit-content .page-hero {
+  background:
+    radial-gradient(circle at 100% 0%, rgba(47, 111, 237, 0.055), transparent 24rem),
+    rgba(255, 255, 255, 0.76);
+  border-color: var(--glass-line);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Dashboard and analytics */
+.light-glass-theme .dashboard-page,
+.light-glass-theme .analytics-page,
+.light-glass-theme .history-page,
+.light-glass-theme .trading-room-page,
+.light-glass-theme .xau-page-pro {
+  color: var(--text);
+}
+
+.light-glass-theme :is(
+  .dashboard-event-strip,
+  .market-proof-strip,
+  .feed-summary,
+  .outcome-proof,
+  .outcome-count-grid > div,
+  .outcome-money-grid > div,
+  .indicator-grid > div,
+  .xau-fact-grid > div,
+  .xau-level-stack > div,
+  .target-ladder-grid > div,
+  .scenario-card__body,
+  .structure-rail,
+  .rail-positions
+) {
+  background: var(--glass-soft);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme :is(.outcome-rate-track, .confidence-track) {
+  background: rgba(45, 67, 58, 0.1);
+}
+
+.light-glass-theme :is(.donut-legend > div, .indicator-grid > div) {
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .outcome-money-grid .net {
+  background: rgba(237, 243, 249, 0.86);
+}
+
+.light-glass-theme .bar-chart {
+  background: linear-gradient(180deg, rgba(255,255,255,.45), rgba(241,247,244,.7));
+  border-color: var(--glass-line-soft);
+}
+
+/* Professional Setup */
+.light-glass-theme .pro-setup {
+  --pro-panel: rgba(255, 255, 255, 0.82);
+  --pro-panel-2: rgba(248, 251, 250, 0.9);
+  --pro-line: rgba(36, 66, 53, 0.14);
+  --pro-line-soft: rgba(36, 66, 53, 0.085);
+  --pro-text: #17251f;
+  --pro-muted: #687870;
+  --pro-brand: #0c9f6e;
+  --pro-main: #2f6fed;
+  --pro-inverse: #7c5ce7;
+  --pro-good: #0c9f6e;
+  --pro-bad: #dd4f68;
+  --pro-warn: #b98222;
+  color: var(--pro-text);
+}
+
+.light-glass-theme .pro-setup-hero,
+.light-glass-theme .vs3-hero,
+.light-glass-theme .xau-command-hero {
+  backdrop-filter: blur(24px) saturate(135%);
+  -webkit-backdrop-filter: blur(24px) saturate(135%);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(12, 159, 110, 0.11), transparent 28rem),
+    radial-gradient(circle at 95% 100%, rgba(47, 111, 237, 0.07), transparent 28rem),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(244, 249, 247, 0.78));
+  border-color: rgba(12, 159, 110, 0.17);
+  box-shadow: var(--glass-shadow);
+}
+
+.light-glass-theme .pro-setup-hero::after {
+  color: rgba(12, 159, 110, 0.045);
+}
+
+.light-glass-theme .pro-diagnosis,
+.light-glass-theme .vs3-gate {
+  background: rgba(255, 255, 255, 0.68);
+  border-color: var(--glass-line);
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.75);
+}
+
+.light-glass-theme .pro-diagnosis p,
+.light-glass-theme .pro-duel-rule p,
+.light-glass-theme .vs3-gate small,
+.light-glass-theme .vs3-verdict p {
+  color: #566860;
+}
+
+.light-glass-theme .pro-diagnosis > b {
+  border-color: var(--glass-line-soft);
+  color: #31463d;
+}
+
+.light-glass-theme .pro-status-tile.ok strong,
+.light-glass-theme .pro-metric.good > strong { color: #087f59; }
+.light-glass-theme .pro-status-tile.bad strong,
+.light-glass-theme .pro-metric.bad > strong { color: #c83d58; }
+.light-glass-theme .pro-status-tile.warn strong,
+.light-glass-theme .pro-metric.warn > strong { color: #a36c0e; }
+
+.light-glass-theme .pro-status-tile > i,
+.light-glass-theme .pro-lane-card header > b,
+.light-glass-theme .pro-level-grid > div,
+.light-glass-theme .pro-check-list > div,
+.light-glass-theme .pro-chart-tags b,
+.light-glass-theme .pro-lane-tags span {
+  background: rgba(247, 250, 249, 0.85);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .pro-scanner-list span,
+.light-glass-theme .pro-strategy-table tbody th,
+.light-glass-theme .pro-chart-tags b {
+  color: #40544b;
+}
+
+.light-glass-theme .pro-pipeline > i { color: #8b9993; }
+
+.light-glass-theme :is(
+  .pro-panel > header,
+  .pro-chart > footer,
+  .pro-ledger > footer,
+  .pro-lane-decision,
+  .pro-readiness-score,
+  .pro-xau-body > div
+) {
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .pro-chart .real-mini-chart,
+.light-glass-theme .real-mini-chart,
+.light-glass-theme .real-mini-chart__canvas {
+  background: #f8fbfa;
+}
+
+/* MAIN vs INVERSE */
+.light-glass-theme .versus-page.vs3 {
+  --vs-bg: #eef4f1;
+  --vs-panel: rgba(255, 255, 255, 0.8);
+  --vs-panel-2: rgba(248, 251, 250, 0.9);
+  --vs-line: rgba(36, 66, 53, 0.14);
+  --vs-line-soft: rgba(36, 66, 53, 0.085);
+  --vs-text: #17251f;
+  --vs-muted: #687870;
+  --vs-brand: #0c9f6e;
+  --vs-main: #2f6fed;
+  --vs-inverse: #7c5ce7;
+  --vs-good: #0c9f6e;
+  --vs-bad: #dd4f68;
+  --vs-warning: #b98222;
+  color: var(--vs-text);
+}
+
+.light-glass-theme .vs3-hero::after { color: rgba(12, 159, 110, 0.04); }
+
+.light-glass-theme .vs3-truth-bar .rule,
+.light-glass-theme .vs3-lane-mini-grid > div,
+.light-glass-theme .vs3-pair-lane,
+.light-glass-theme .vs3-pair-detail > div,
+.light-glass-theme .vs3-live-grid > div {
+  background: rgba(247, 250, 249, 0.84);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .vs3-pair-detail {
+  background: rgba(243, 248, 246, 0.82);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .vs3-data-notice {
+  background:
+    radial-gradient(circle at 100% 50%, rgba(185, 130, 34, 0.1), transparent 26rem),
+    rgba(255, 252, 244, 0.82);
+  border-color: rgba(185, 130, 34, 0.22);
+  box-shadow: var(--glass-shadow);
+}
+
+.light-glass-theme .vs3-data-notice p,
+.light-glass-theme .vs3-proof-footer p,
+.light-glass-theme .vs3-truth-bar b,
+.light-glass-theme .vs3-lane-summary header > b {
+  color: #52655c;
+}
+
+.light-glass-theme .vs3-proof-footer p {
+  background: rgba(12, 159, 110, 0.045);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .vs3-equity-chart .grid { stroke: rgba(68, 94, 83, 0.13); }
+.light-glass-theme .vs3-equity-chart text { fill: #708078; }
+
+/* XAU and charts */
+.light-glass-theme .xau-chart-card--institutional {
+  background: var(--glass-strong);
+  border-color: rgba(166, 116, 24, 0.17);
+  box-shadow: var(--glass-shadow);
+}
+
+.light-glass-theme .xau-chart-toolbar,
+.light-glass-theme .professional-xau-chart__quote,
+.light-glass-theme .professional-xau-chart__tape,
+.light-glass-theme .xau-plan-grid > div,
+.light-glass-theme .xau-ai-verdict > div,
+.light-glass-theme .xau-performance-kpis > div,
+.light-glass-theme .xau-setup-overview > div {
+  background: rgba(248, 251, 250, 0.94);
+  border-color: var(--glass-line-soft);
+}
+
+.light-glass-theme .professional-xau-chart,
+.light-glass-theme .professional-xau-chart__canvas {
+  background: #f8fbfa;
+}
+
+.light-glass-theme .professional-xau-chart__instrument strong { color: #23372e; }
+.light-glass-theme .professional-xau-chart__ohlc b { color: #52665d; }
+.light-glass-theme .professional-xau-chart__empty {
+  background: rgba(248, 251, 250, 0.88);
+  color: #687870;
+}
+
+.light-glass-theme .xau-setup-result--head {
+  background: #eef5f2;
+  color: #65766e;
+}
+
+.light-glass-theme .xau-gate-list strong,
+.light-glass-theme .xau-setup-checks strong,
+.light-glass-theme .xau-trade-plan > p,
+.light-glass-theme .xau-ai-gate > p {
+  color: #41564c;
+}
+
+.light-glass-theme .xau-layer-controls button.active,
+.light-glass-theme .xau-timeframe-tabs button.active,
+.light-glass-theme .vs3-scope button.active {
+  background: rgba(47, 111, 237, 0.1);
+  border-color: rgba(47, 111, 237, 0.28);
+  color: #245cc7;
+}
+
+.light-glass-theme .analysis-only-seal {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(185, 130, 34, 0.26);
+  color: #96640d;
+}
+
+.light-glass-theme :is(.chart-frame, .pro-chart-frame, .chart-canvas) {
+  background: #f8fbfa;
+  border-color: var(--glass-line-soft);
+}
+
+/* Strong enough contrast without turning the entire product green. */
+.light-glass-theme .side-buy { color: #087f59 !important; }
+.light-glass-theme .side-sell { color: #a36c0e !important; }
+.light-glass-theme .side-hold { color: #6e7d76 !important; }
+
+.light-glass-theme ::selection {
+  background: rgba(12, 159, 110, 0.2);
+  color: #102019;
+}
+
+.light-glass-theme * {
+  scrollbar-color: rgba(80, 105, 94, 0.38) transparent;
+}
+
+@media (max-width: 760px) {
+  body {
+    background:
+      radial-gradient(circle at 0% 0%, rgba(12, 159, 110, 0.1), transparent 22rem),
+      linear-gradient(145deg, #f8faf9, #edf4f1);
+  }
+
+  .light-glass-theme .cockpit-sidebar,
+  .light-glass-theme .cockpit-header {
+    background: rgba(255, 255, 255, 0.88);
+  }
+
+  .light-glass-theme :is(
+    .cockpit-panel,
+    .metric-card,
+    .panel,
+    .pro-panel,
+    .pro-status-tile,
+    .pro-metric,
+    .vs3-panel,
+    .vs3-lane-summary
+  ) {
+    background: rgba(255, 255, 255, 0.86);
+    box-shadow: 0 10px 28px rgba(37, 62, 52, 0.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .light-glass-theme *,
+  .light-glass-theme *::before,
+  .light-glass-theme *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

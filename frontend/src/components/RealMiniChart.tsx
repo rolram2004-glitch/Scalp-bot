@@ -133,7 +133,7 @@ export function RealMiniChart({
       return [{
         time: time as UTCTimestamp,
         value,
-        color: close >= open ? 'rgba(72, 223, 152, 0.26)' : 'rgba(255, 113, 133, 0.25)'
+        color: close >= open ? 'rgba(12, 159, 110, 0.2)' : 'rgba(221, 79, 104, 0.2)'
       }];
     });
   }, [candles, datasetKey, requestKey]);
@@ -144,21 +144,21 @@ export function RealMiniChart({
     const chart = createChart(container, {
       width: container.clientWidth,
       height: container.clientHeight || 320,
-      layout: { background: { color: '#07101d' }, textColor: '#77879f' },
-      grid: { vertLines: { color: '#101c2d' }, horzLines: { color: '#101c2d' } },
-      rightPriceScale: { borderColor: '#1b2a40' },
-      timeScale: { borderColor: '#1b2a40', timeVisible: true, secondsVisible: false },
+      layout: { background: { color: '#f8fbfa' }, textColor: '#687770' },
+      grid: { vertLines: { color: '#e8efec' }, horzLines: { color: '#e8efec' } },
+      rightPriceScale: { borderColor: '#dce6e2' },
+      timeScale: { borderColor: '#dce6e2', timeVisible: true, secondsVisible: false },
       crosshair: {
-        vertLine: { color: '#53647d', labelBackgroundColor: '#17243a' },
-        horzLine: { color: '#53647d', labelBackgroundColor: '#17243a' }
+        vertLine: { color: '#82938b', labelBackgroundColor: '#273e35' },
+        horzLine: { color: '#82938b', labelBackgroundColor: '#273e35' }
       }
     });
     const series = chart.addCandlestickSeries({
-      upColor: '#15d68f',
-      downColor: '#ff4f78',
+      upColor: '#0c9f6e',
+      downColor: '#dd4f68',
       borderVisible: false,
-      wickUpColor: '#15d68f',
-      wickDownColor: '#ff4f78'
+      wickUpColor: '#0c9f6e',
+      wickDownColor: '#dd4f68'
     });
     const ema20 = chart.addLineSeries({
       color: '#4dd6ff',
@@ -182,7 +182,7 @@ export function RealMiniChart({
       crosshairMarkerVisible: false
     });
     const volume = chart.addHistogramSeries({
-      color: 'rgba(99, 168, 255, 0.24)',
+      color: 'rgba(47, 111, 237, 0.18)',
       priceFormat: { type: 'volume' },
       priceLineVisible: false,
       lastValueVisible: false,

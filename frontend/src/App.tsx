@@ -188,7 +188,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="app-container cockpit-layout">
+      <div className="app-container cockpit-layout light-glass-theme">
         <AppShell status={status} oandaStatus={oandaStatus} reload={reload} />
         <main className="main-content cockpit-content">
           <Routes>
