@@ -153,7 +153,7 @@ export function ProfessionalXauChart({
   const volumeData = useMemo(() => parsed.map(({ candle, volume }) => ({
     time: candle.time,
     value: volume,
-    color: candle.close >= candle.open ? 'rgba(30, 211, 145, .24)' : 'rgba(255, 76, 112, .24)'
+    color: candle.close >= candle.open ? 'rgba(12, 159, 110, .2)' : 'rgba(221, 79, 104, .2)'
   })), [parsed]);
 
   useEffect(() => {
@@ -163,30 +163,30 @@ export function ProfessionalXauChart({
       width: container.clientWidth,
       height: container.clientHeight || 520,
       layout: {
-        background: { color: '#050b14' },
-        textColor: '#718198',
+        background: { color: '#f8fbfa' },
+        textColor: '#687770',
         fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, sans-serif',
         fontSize: 11
       },
       watermark: {
         visible: true,
         text: 'XAUUSD · OANDA',
-        color: 'rgba(219, 164, 64, .055)',
+        color: 'rgba(166, 116, 24, .075)',
         fontSize: 44,
         horzAlign: 'center',
         vertAlign: 'center'
       },
       grid: {
-        vertLines: { color: 'rgba(67, 85, 112, .13)', style: LineStyle.Dotted },
-        horzLines: { color: 'rgba(67, 85, 112, .15)', style: LineStyle.Dotted }
+        vertLines: { color: 'rgba(83, 112, 100, .12)', style: LineStyle.Dotted },
+        horzLines: { color: 'rgba(83, 112, 100, .14)', style: LineStyle.Dotted }
       },
       rightPriceScale: {
-        borderColor: '#1a2a40',
+        borderColor: '#dce6e2',
         scaleMargins: { top: 0.08, bottom: 0.2 },
         entireTextOnly: true
       },
       timeScale: {
-        borderColor: '#1a2a40',
+        borderColor: '#dce6e2',
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 6,
@@ -197,16 +197,16 @@ export function ProfessionalXauChart({
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: 'rgba(138, 160, 190, .55)',
+          color: 'rgba(92, 111, 103, .55)',
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: '#1a2940'
+          labelBackgroundColor: '#273e35'
         },
         horzLine: {
-          color: 'rgba(138, 160, 190, .55)',
+          color: 'rgba(92, 111, 103, .55)',
           width: 1,
           style: LineStyle.Dashed,
-          labelBackgroundColor: '#1a2940'
+          labelBackgroundColor: '#273e35'
         }
       },
       handleScroll: true,
@@ -214,12 +214,12 @@ export function ProfessionalXauChart({
       kineticScroll: { mouse: true, touch: true }
     });
     const series = chart.addCandlestickSeries({
-      upColor: '#1ed391',
-      downColor: '#ff4c70',
-      borderUpColor: '#1ed391',
-      borderDownColor: '#ff4c70',
-      wickUpColor: '#60e6b3',
-      wickDownColor: '#ff8399',
+      upColor: '#0c9f6e',
+      downColor: '#dd4f68',
+      borderUpColor: '#0c9f6e',
+      borderDownColor: '#dd4f68',
+      wickUpColor: '#2bb78a',
+      wickDownColor: '#e17084',
       priceLineVisible: true,
       priceLineColor: '#d6a13e',
       priceLineStyle: LineStyle.Dotted,

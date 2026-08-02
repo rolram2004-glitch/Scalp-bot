@@ -6,6 +6,7 @@ import './cockpit.css';
 import './versus.css';
 import './xau-v2.css';
 import './rohato-theme.css';
+import './glass-theme.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

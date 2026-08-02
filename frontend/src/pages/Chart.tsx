@@ -260,15 +260,15 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
     const chart = createChart(container, {
       width: container.clientWidth,
       height: container.clientHeight || 500,
-      layout: { background: { color: '#070b13' }, textColor: '#9aa7bd' },
-      grid: { vertLines: { color: '#141b2a' }, horzLines: { color: '#141b2a' } },
+      layout: { background: { color: '#f8fbfa' }, textColor: '#687770' },
+      grid: { vertLines: { color: '#e8efec' }, horzLines: { color: '#e8efec' } },
       crosshair: { mode: CrosshairMode.Magnet },
-      rightPriceScale: { borderColor: '#1e293b', autoScale: true },
-      timeScale: { borderColor: '#1e293b', timeVisible: true, secondsVisible: false }
+      rightPriceScale: { borderColor: '#dce6e2', autoScale: true },
+      timeScale: { borderColor: '#dce6e2', timeVisible: true, secondsVisible: false }
     });
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e', downColor: '#ef476f', borderVisible: false,
-      wickUpColor: '#22c55e', wickDownColor: '#ef476f', priceFormat: { type: 'price', precision: pricePrecision(displaySymbol), minMove: displaySymbol.includes('JPY') ? 0.001 : 0.00001 }
+      upColor: '#0c9f6e', downColor: '#dd4f68', borderVisible: false,
+      wickUpColor: '#0c9f6e', wickDownColor: '#dd4f68', priceFormat: { type: 'price', precision: pricePrecision(displaySymbol), minMove: displaySymbol.includes('JPY') ? 0.001 : 0.00001 }
     });
     const ema = chart.addLineSeries({ color: '#f7c948', lineWidth: 2, lineStyle: LineStyle.Solid, title: 'EMA20', priceFormat: { type: 'price', precision: pricePrecision(displaySymbol), minMove: displaySymbol.includes('JPY') ? 0.001 : 0.00001 } });
     chartRef.current = chart;

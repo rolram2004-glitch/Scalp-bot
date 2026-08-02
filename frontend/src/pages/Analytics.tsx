@@ -2,7 +2,7 @@ import { StatusSnapshot } from '../types';
 import { executionView, hasVerifiedOandaLedger } from '../trading-state';
 import { calculateMonetaryOutcomeSummary } from '../../../src/strategy-metrics';
 
-const COLORS = ['#23f699', '#46e6c2', '#35d993', '#9ee493', '#18b981', '#f6bd55'];
+const COLORS = ['#2f6fed', '#7c5ce7', '#0c9f6e', '#e0a020', '#dd4f68', '#3d91a8'];
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
