@@ -117,10 +117,6 @@ function cleanTargets(values: unknown, action: SignalAction, entry: number) {
     .slice(0, 3);
 }
 
-function mirrorPrice(value: number | undefined, pivot: number) {
-  return finite(value) && finite(pivot) ? pivot - (value - pivot) : undefined;
-}
-
 function pipSize(symbol: string) {
   const normalized = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   return normalized.endsWith("JPY") ? 0.01 : 0.0001;
@@ -136,6 +132,24 @@ export function invertAction(action: unknown): SignalAction {
   if (action === "BUY") return "SELL";
   if (action === "SELL") return "BUY";
   return "HOLD";
+}
+
+function protectiveLevelsValid(
+  action: SignalAction,
+  entry: number | undefined,
+  stopLoss: number | undefined,
+  takeProfit: number | undefined
+) {
+  if (action === "HOLD" || !finite(entry) || !finite(stopLoss) || !finite(takeProfit)) return false;
+  const direction = action === "BUY" ? 1 : -1;
+  return (entry - stopLoss) * direction > 0 && (takeProfit - entry) * direction > 0;
+}
+
+function riskReward(entry: number | undefined, stopLoss: number | undefined, takeProfit: number | undefined) {
+  if (!finite(entry) || !finite(stopLoss) || !finite(takeProfit)) return undefined;
+  const risk = Math.abs(entry - stopLoss);
+  const reward = Math.abs(takeProfit - entry);
+  return risk > 0 && reward > 0 ? reward / risk : undefined;
 }
 
 export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSignalSnapshot {
@@ -170,7 +184,6 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
     ? Math.min(100, Math.max(0, requestedThreshold))
     : 65;
   const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence;
-  const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence;
   const baseReasoning = String(input.mainDecision?.reasoning || "Decisione MAIN non disponibile.");
   const entry = finite(input.mainDecision?.entryPrice)
     ? input.mainDecision.entryPrice
@@ -186,21 +199,28 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
     ? input.mainDecision.takeProfitPips
     : forexInstrument ? 20 : undefined;
   const mainDirection = mainAction === "BUY" ? 1 : mainAction === "SELL" ? -1 : 0;
-  const inverseDirection = inverseAction === "BUY" ? 1 : inverseAction === "SELL" ? -1 : 0;
   const mainStop = finite(input.mainDecision?.stopLossPrice)
     ? input.mainDecision.stopLossPrice
     : stopPips && mainDirection ? entry - mainDirection * stopPips * unitPip : undefined;
   const mainTakeProfit = mainTargets[0] ?? (
     targetPips && mainDirection ? entry + mainDirection * targetPips * unitPip : undefined
   );
-  const inverseStop = stopPips && inverseDirection
-    ? inverseEntry - inverseDirection * stopPips * unitPip
-    : mirrorPrice(mainStop, inverseEntry);
-  const inverseTargets = mainTargets.length > 0
-    ? mainTargets.map((target) => mirrorPrice(target, inverseEntry)).filter(finite)
-    : targetPips && inverseDirection
-      ? [inverseEntry + inverseDirection * targetPips * unitPip]
-      : [];
+  // STRICT MIRROR rule:
+  // - the MAIN take-profit price becomes the INVERSE stop-loss price;
+  // - the MAIN stop-loss price becomes the INVERSE take-profit price.
+  // Both lanes are derived from the same OANDA snapshot. The opposite side
+  // enters on the opposite executable quote, so spread is deliberately visible
+  // in the resulting risk/reward instead of being hidden by a synthetic price.
+  const inverseStop = mainTakeProfit;
+  const inverseTakeProfit = mainStop;
+  const inverseLevelsValid = protectiveLevelsValid(
+    inverseAction,
+    inverseEntry,
+    inverseStop,
+    inverseTakeProfit
+  );
+  const inverseTargets = inverseLevelsValid && finite(inverseTakeProfit) ? [inverseTakeProfit] : [];
+  const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence && inverseLevelsValid;
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";
 
@@ -208,6 +228,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   else if (liveRequested && !validVariant) executionBlockedReason = "INVALID_LIVE_EXECUTION_VARIANT";
   else if (liveRequested && input.executionGateVerified !== true) executionBlockedReason = "OANDA_SAFETY_GATES_NOT_VERIFIED";
   else if (liveRequested && !realMarketSnapshot) executionBlockedReason = marketValidationReason;
+  else if (inverseSelected && !inverseLevelsValid) executionBlockedReason = "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD";
 
   return {
     pairId: input.signalId,
@@ -243,17 +264,23 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       setupScore: input.mainDecision?.setupScore ?? confidence,
       scoreLabel: input.mainDecision?.scoreLabel,
       scoreBreakdown: input.mainDecision?.scoreBreakdown,
-      reasoning: `Scenario contrario calcolato sullo stesso snapshot OANDA della MAIN. MAIN ${mainAction}; INVERSE ${inverseAction}. ${baseReasoning}`,
-      setupType: input.mainDecision?.setupType ? `INVERSE_${input.mainDecision.setupType}` : "INVERSE",
+      reasoning: `STRICT MIRROR sullo stesso snapshot OANDA: MAIN ${mainAction} -> MIRROR ${inverseAction}; MAIN SL diventa MIRROR TP e MAIN TP diventa MIRROR SL. ${baseReasoning}`,
+      setupType: input.mainDecision?.setupType ? `MIRROR_${input.mainDecision.setupType}` : "MIRROR",
       entryPrice: inverseAction === "HOLD" ? undefined : inverseEntry,
       stopLossPrice: inverseAction === "HOLD" ? undefined : inverseStop,
-      takeProfitPrice: inverseAction === "HOLD" ? undefined : inverseTargets[0],
+      takeProfitPrice: inverseAction === "HOLD" ? undefined : inverseTakeProfit,
       structuralTargets: inverseAction === "HOLD" ? [] : inverseTargets,
-      riskRewardRatio: input.mainDecision?.riskRewardRatio,
+      riskRewardRatio: inverseAction === "HOLD" ? undefined : riskReward(inverseEntry, inverseStop, inverseTakeProfit),
       mode: inverseSelected ? oandaLaneMode : "PAPER SHADOW",
       selectedForExecution: inverseSelected,
       executionState: inverseSelected ? (inverseEligible ? "READY" : "NOT_ELIGIBLE") : "SHADOW",
-      executionReason: inverseSelected && !inverseEligible ? (inverseAction === "HOLD" ? "HOLD" : "CONFIDENCE_BELOW_THRESHOLD") : undefined,
+      executionReason: inverseSelected && !inverseEligible
+        ? inverseAction === "HOLD"
+          ? "HOLD"
+          : !inverseLevelsValid
+            ? "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD"
+            : "CONFIDENCE_BELOW_THRESHOLD"
+        : undefined,
       derivedFrom: "MAIN"
     },
     executionBlockedReason

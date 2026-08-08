@@ -54,7 +54,7 @@ test("inverse mapping is deterministic and fail-closed", () => {
   assert.equal(invertAction("UNKNOWN"), "HOLD");
 });
 
-test("MAIN and INVERSE share one OANDA quote and one evaluation timestamp", () => {
+test("MAIN and strict MIRROR share one OANDA quote and swap the protective price levels", () => {
   const originalDecision = {
     action: "BUY",
     confidence: 72,
@@ -74,8 +74,11 @@ test("MAIN and INVERSE share one OANDA quote and one evaluation timestamp", () =
   assert.ok(Math.abs(result.main.stopLossPrice - (market.ask - 0.001)) < 1e-10);
   assert.ok(Math.abs(result.main.takeProfitPrice - (market.ask + 0.002)) < 1e-10);
   assert.ok(Math.abs(result.inverse.entryPrice - market.bid) < 1e-10);
-  assert.ok(Math.abs(result.inverse.stopLossPrice - (market.bid + 0.001)) < 1e-10);
-  assert.ok(Math.abs(result.inverse.takeProfitPrice - (market.bid - 0.002)) < 1e-10);
+  assert.equal(result.inverse.stopLossPrice, result.main.takeProfitPrice);
+  assert.equal(result.inverse.takeProfitPrice, result.main.stopLossPrice);
+  assert.ok(Math.abs(result.inverse.stopLossPrice - (market.ask + 0.002)) < 1e-10);
+  assert.ok(Math.abs(result.inverse.takeProfitPrice - (market.ask - 0.001)) < 1e-10);
+  assert.ok(Math.abs(result.inverse.riskRewardRatio - (9.2 / 20.8)) < 1e-10);
   assert.equal(result.inverse.derivedFrom, "MAIN");
   assert.deepEqual(originalDecision, {
     action: "BUY",
@@ -83,6 +86,68 @@ test("MAIN and INVERSE share one OANDA quote and one evaluation timestamp", () =
     setupType: "EMA_TREND",
     reasoning: "MAIN unchanged"
   });
+});
+
+test("strict MIRROR also swaps MAIN protective levels for a SELL signal", () => {
+  const result = snapshot({
+    mainDecision: {
+      action: "SELL",
+      confidence: 72,
+      setupType: "EMA_TREND",
+      reasoning: "MAIN sell"
+    }
+  });
+
+  assert.equal(result.main.action, "SELL");
+  assert.equal(result.inverse.action, "BUY");
+  assert.ok(Math.abs(result.main.entryPrice - market.bid) < 1e-10);
+  assert.ok(Math.abs(result.main.stopLossPrice - (market.bid + 0.001)) < 1e-10);
+  assert.ok(Math.abs(result.main.takeProfitPrice - (market.bid - 0.002)) < 1e-10);
+  assert.ok(Math.abs(result.inverse.entryPrice - market.ask) < 1e-10);
+  assert.equal(result.inverse.stopLossPrice, result.main.takeProfitPrice);
+  assert.equal(result.inverse.takeProfitPrice, result.main.stopLossPrice);
+});
+
+test("red MAIN stop becomes MIRROR target and green MAIN target becomes MIRROR stop at the exact prices", () => {
+  const result = snapshot({
+    mainDecision: {
+      action: "SELL",
+      confidence: 72,
+      setupType: "EXPLICIT_LEVEL_MIRROR",
+      reasoning: "preserve the actual protective prices",
+      stopLossPrice: 1.10101,
+      structuralTargets: [1.09801]
+    }
+  });
+
+  assert.equal(result.main.stopLossPrice, 1.10101);
+  assert.equal(result.main.takeProfitPrice, 1.09801);
+  assert.equal(result.inverse.action, "BUY");
+  assert.equal(result.inverse.takeProfitPrice, 1.10101);
+  assert.equal(result.inverse.stopLossPrice, 1.09801);
+  assert.equal(result.inverse.takeProfitPrice, result.main.stopLossPrice);
+  assert.equal(result.inverse.stopLossPrice, result.main.takeProfitPrice);
+});
+
+test("INVERSE OANDA execution fails closed when spread makes strict mirror levels non-directional", () => {
+  const wideMarket = {
+    ...market,
+    time: new Date().toISOString(),
+    bid: 1.1,
+    ask: 1.1015,
+    mid: 1.10075
+  };
+  const result = snapshot({
+    tradingMode: "OANDA_DEMO",
+    liveExecutionVariant: "INVERSE",
+    executionGateVerified: true,
+    market: wideMarket
+  });
+
+  assert.equal(result.inverse.selectedForExecution, true);
+  assert.equal(result.inverse.executionState, "NOT_ELIGIBLE");
+  assert.equal(result.inverse.executionReason, "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD");
+  assert.equal(result.executionBlockedReason, "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD");
 });
 
 test("PAPER keeps MAIN local and INVERSE shadow-only", () => {

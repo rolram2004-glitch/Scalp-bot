@@ -17,7 +17,8 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `OANDA_ENVIRONMENT=PRACTICE`;
    - `OANDA_ORDER_EXECUTION_ENABLED=false`;
    - `LIVE_TRADING_ENABLED=false`;
-   - `LIVE_EXECUTION_VARIANT=MAIN` (unico valore alternativo valido: `INVERSE`);
+   - `LIVE_EXECUTION_VARIANT=MAIN` (selettore esplicito usato da `OANDA_LIVE`; unico valore alternativo valido: `INVERSE`);
+   - `PRACTICE_EXECUTION_VARIANT=INVERSE` per il laboratorio strict MIRROR su OANDA Practice;
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
@@ -54,7 +55,7 @@ Controllare inoltre che:
   tabella per simbolo siano calcolati sul medesimo insieme di trade abbinati;
 - se entrambe le corsie sono negative, il verdetto dica `MENO NEGATIVA` e non
   presenti una corsia come vincente o profittevole;
-- ogni riga INVERSE mostri `PAPER SHADOW` e zero ricevute OANDA;
+- la corsia selezionata mostri OANDA Practice e la corsia non selezionata `PAPER SHADOW`; mai due corsie OANDA sullo stesso segnale;
 - `/setup` mostri separatamente broker, feed, ledger ed execution gate; durante
   la chiusura del mercato FX deve indicare `PAUSA WEEKEND`, non una falsa
   disconnessione;
@@ -82,11 +83,12 @@ Prima dell'attivazione devono essere tutti veri:
 - XAUUSD escluso dall'esecuzione OANDA finche la strategia dedicata non e validata;
 - test automatici superati e conferma esplicita dell'utente.
 
-La dashboard calcola MAIN e INVERSE dallo stesso snapshot OANDA e dallo stesso
-segnale. La corsia non selezionata resta sempre `PAPER SHADOW`, non invia
-ordini e viene aperta soltanto dopo l'ingresso verificato della corsia
-operativa corrispondente. Il confronto usa R; il P&L originale resta separato
-per valuta. Non configurare mai entrambe le
+La dashboard calcola MAIN e MIRROR (INVERSE) dallo stesso snapshot OANDA e dallo stesso
+segnale. MIRROR inverte BUY/SELL e scambia gli stessi prezzi protettivi:
+`MAIN SL = MIRROR TP` e `MAIN TP = MIRROR SL`. La corsia non selezionata resta
+sempre `PAPER SHADOW`, non invia ordini e viene aperta soltanto dopo l'ingresso
+verificato della corsia operativa corrispondente. Il confronto usa R; il P&L
+originale resta separato per valuta. Non configurare mai entrambe le
 corsie: `BOTH`, valori vuoti o valori
 non riconosciuti bloccano l'esecuzione. Due ordini opposti sullo stesso conto
 possono ridurre o chiudere l'esposizione invece di creare due test indipendenti.
@@ -108,11 +110,12 @@ LIVE_TRADING_ENABLED=true
 LIVE_EXECUTION_VARIANT=MAIN
 ```
 
-Per eseguire esclusivamente la lettura contraria usare invece
+Per eseguire esclusivamente la corsia MIRROR usare invece
 `LIVE_EXECUTION_VARIANT=INVERSE`. La strategia MAIN non viene modificata:
 l'azione inversa e derivata una sola volta (`BUY` diventa `SELL`, `SELL`
 diventa `BUY`, `HOLD` resta `HOLD`) dallo stesso timestamp e dalla stessa
-quotazione. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
+quotazione; inoltre il TP MAIN diventa lo SL MIRROR e lo SL MAIN diventa il TP
+MIRROR agli stessi prezzi. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
 dedicato non e validato.
 
 Se uno solo dei gate manca, ogni ordine resta bloccato. `OANDA_LIVE` richiede inoltre `OANDA_ENVIRONMENT=LIVE` e `OANDA_LIVE_CONFIRMATION=I_CONFIRM_REAL_MONEY`; questa conferma non deve essere impostata senza un'autorizzazione finale esplicita.

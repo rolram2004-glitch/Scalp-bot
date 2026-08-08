@@ -1,6 +1,6 @@
 # SEL SCALP BOT — $Rohato$🤖111
 
-Cockpit professionale graphite/emerald di analisi e trading OANDA Practice. MAIN e la corsia operativa verificata; INVERSE e una simulazione contraria uno-a-uno aperta soltanto dopo il trade operativo corrispondente. Il confronto usa risultati in R e mantiene separate le valute originali.
+Cockpit professionale White Glass di analisi e trading OANDA Practice. MAIN e MIRROR (INVERSE) nascono dallo stesso segnale: MIRROR inverte BUY/SELL e scambia esattamente i livelli protettivi (`MAIN SL -> MIRROR TP`, `MAIN TP -> MIRROR SL`). Una sola corsia puo essere OANDA; l'altra resta PAPER SHADOW. Il confronto usa risultati in R e mantiene separate le valute originali.
 
 ## Confronto e diagnostica professionale
 
@@ -54,7 +54,10 @@ Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` i
 - `TRADING_MODE=PAPER`: real OANDA market data, no OANDA orders.
 - `TRADING_MODE=OANDA_DEMO`, `OANDA_ENVIRONMENT=PRACTICE` and both execution enable gates: verified orders on OANDA Practice only.
 - `TRADING_MODE=OANDA_LIVE`: real-money mode; blocked unless endpoint, enable flags and explicit real-money confirmation all match. Never enable it during development or automatic tests.
-- `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one real execution lane. The other lane is an explicit paper shadow and never calls OANDA.
+- `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one OANDA execution lane. The other lane is an explicit paper shadow and never calls OANDA.
+- `PRACTICE_EXECUTION_VARIANT=INVERSE`: selects strict MIRROR for the automatic OANDA Practice laboratory. It does not enable `OANDA_LIVE`.
+
+La regola MIRROR e sui livelli reali, non sui colori dell'interfaccia: una chiusura MAIN sul proprio SL corrisponde al prezzo target del MIRROR; una chiusura MAIN sul proprio TP corrisponde al prezzo di stop del MIRROR. Il P&L delle due corsie viene comunque misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
 
 Il profilo `ROHATO_AGGRESSIVE_100` scansiona 15 coppie ogni 30 secondi, usa un
 massimo di 7 ingressi validi per ciclo, 15 posizioni, una posizione per simbolo,

@@ -98,6 +98,12 @@
 .vs3-truth-bar .rule { background: rgba(255, 255, 255, 0.018); text-align: center; }
 .vs3-truth-bar .rule strong { font-size: 17px; letter-spacing: 0.02em; }
 .vs3-truth-bar .rule small { color: var(--vs-muted); font-size: 11px; }
+.vs3-mirror-rules { display: grid; gap: 7px; margin: 10px auto 9px; max-width: 560px; }
+.vs3-result-swap { align-items: center; display: grid; gap: 8px; grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); }
+.vs3-result-swap b { border: 1px solid; border-radius: 7px; font-size: 10px; letter-spacing: 0.045em; padding: 7px 8px; }
+.vs3-result-swap b.loss { background: rgba(255, 113, 133, 0.08); border-color: rgba(255, 113, 133, 0.26); color: var(--vs-bad); }
+.vs3-result-swap b.win { background: rgba(72, 223, 152, 0.08); border-color: rgba(72, 223, 152, 0.26); color: var(--vs-good); }
+.vs3-result-swap i { color: var(--vs-muted); font-size: 14px; font-style: normal; font-weight: 900; }
 
 .vs3-data-notice {
   align-items: center;

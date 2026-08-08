@@ -7,6 +7,8 @@ export interface VerifiedOrderRequest {
   units: number;
   riskAmount: number;
   rewardAmount: number;
+  stopLossPrice?: number;
+  takeProfitPrice?: number;
   strategyVariant: "MAIN" | "INVERSE";
   signalId: string;
   signalAt: string;
@@ -313,22 +315,54 @@ export async function executeVerifiedMarketOrder(
       return { status: "REJECTED", reason: "QUOTE_TO_ACCOUNT_CONVERSION_UNAVAILABLE" };
     }
 
-    const risk = finitePositive(riskAmount);
-    const reward = finitePositive(rewardAmount);
-    if (!risk || !reward) {
-      return { status: "REJECTED", reason: "INVALID_CASH_RISK_CONFIGURATION" };
+    const direction = side === "BUY" ? 1 : -1;
+    const explicitProtectionRequested = request.stopLossPrice !== undefined || request.takeProfitPrice !== undefined;
+    const requestedStopLoss = finitePositive(request.stopLossPrice);
+    const requestedTakeProfit = finitePositive(request.takeProfitPrice);
+    if (explicitProtectionRequested && (!requestedStopLoss || !requestedTakeProfit)) {
+      return { status: "REJECTED", reason: "EXPLICIT_PROTECTIVE_LEVELS_INCOMPLETE" };
     }
 
-    const riskDistance = risk / (units * factors.loss);
-    const rewardDistance = reward / (units * factors.gain);
-    const direction = side === "BUY" ? 1 : -1;
-    const stopLossNumber = entry - direction * riskDistance;
-    const takeProfitNumber = entry + direction * rewardDistance;
+    let risk: number;
+    let reward: number;
+    let stopLossNumber: number;
+    let takeProfitNumber: number;
+    if (explicitProtectionRequested) {
+      stopLossNumber = requestedStopLoss as number;
+      takeProfitNumber = requestedTakeProfit as number;
+      const directional = (entry - stopLossNumber) * direction > 0 &&
+        (takeProfitNumber - entry) * direction > 0;
+      if (!directional) {
+        return { status: "REJECTED", reason: "EXPLICIT_PROTECTIVE_LEVELS_NOT_DIRECTIONAL" };
+      }
+      risk = Math.abs(entry - stopLossNumber) * units * factors.loss;
+      reward = Math.abs(takeProfitNumber - entry) * units * factors.gain;
+      if (!finitePositive(risk) || !finitePositive(reward)) {
+        return { status: "REJECTED", reason: "EXPLICIT_PROTECTIVE_RISK_INVALID" };
+      }
+    } else {
+      const configuredRisk = finitePositive(riskAmount);
+      const configuredReward = finitePositive(rewardAmount);
+      if (!configuredRisk || !configuredReward) {
+        return { status: "REJECTED", reason: "INVALID_CASH_RISK_CONFIGURATION" };
+      }
+      risk = configuredRisk;
+      reward = configuredReward;
+      const riskDistance = risk / (units * factors.loss);
+      const rewardDistance = reward / (units * factors.gain);
+      stopLossNumber = entry - direction * riskDistance;
+      takeProfitNumber = entry + direction * rewardDistance;
+    }
     if (stopLossNumber <= 0 || takeProfitNumber <= 0) {
       return { status: "REJECTED", reason: "INVALID_PROTECTIVE_PRICE" };
     }
     const stopLoss = stopLossNumber.toFixed(displayPrecision);
     const takeProfit = takeProfitNumber.toFixed(displayPrecision);
+    const roundedStopLoss = Number(stopLoss);
+    const roundedTakeProfit = Number(takeProfit);
+    if ((entry - roundedStopLoss) * direction <= 0 || (roundedTakeProfit - entry) * direction <= 0) {
+      return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
+    }
 
     const expectedClientTag = clientTag(strategyVariant, signalId);
     const expectedSignedUnits = side === "BUY" ? units : -units;
@@ -461,6 +495,9 @@ export async function executeVerifiedMarketOrder(
       return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_TRADE_DETAILS_INCOMPLETE");
     }
     const priceTolerance = 0.5 / 10 ** displayPrecision;
+    const verifiedProtectionDirectional = verifiedStopLoss !== null && verifiedTakeProfit !== null &&
+      (verifiedEntry - verifiedStopLoss) * direction > 0 &&
+      (verifiedTakeProfit - verifiedEntry) * direction > 0;
     const protectiveOrdersVerified =
       Boolean(verified?.stopLossOrder?.id) &&
       Boolean(verified?.takeProfitOrder?.id) &&
@@ -468,6 +505,7 @@ export async function executeVerifiedMarketOrder(
       String(verified?.takeProfitOrder?.state || "").toUpperCase() === "PENDING" &&
       verifiedStopLoss !== null &&
       verifiedTakeProfit !== null &&
+      verifiedProtectionDirectional &&
       Math.abs(verifiedStopLoss - Number(stopLoss)) <= priceTolerance &&
       Math.abs(verifiedTakeProfit - Number(takeProfit)) <= priceTolerance;
     if (!protectiveOrdersVerified) {

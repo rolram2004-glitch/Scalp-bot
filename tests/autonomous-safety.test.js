@@ -80,6 +80,19 @@ test("fixed pip plan respects JPY precision and keeps 1:2 risk reward", () => {
   assert.equal(autonomousTestUtils.normalizedR(20, 10), 2);
 });
 
+test("strict MIRROR swaps MAIN risk and reward and preserves its explicit price levels", () => {
+  assert.deepEqual(autonomousTestUtils.variantPipDefaults("MAIN"), { riskPips: 10, rewardPips: 20 });
+  assert.deepEqual(autonomousTestUtils.variantPipDefaults("INVERSE"), { riskPips: 20, rewardPips: 10 });
+
+  const mirror = autonomousTestUtils.laneProtectionPlan("EURUSD", 1.1, "SELL", 1.1021, 1.0991);
+  assert.ok(mirror);
+  assert.equal(mirror.stopLoss, 1.1021);
+  assert.equal(mirror.takeProfit, 1.0991);
+  assert.ok(Math.abs(mirror.riskPips - 21) < 1e-10);
+  assert.ok(Math.abs(mirror.rewardPips - 9) < 1e-10);
+  assert.equal(autonomousTestUtils.laneProtectionPlan("EURUSD", 1.1, "SELL", 1.099, 1.101), null);
+});
+
 test("symbol cooldown prevents immediate repeat entries", () => {
   const now = Date.parse("2026-07-31T12:00:00.000Z");
   const closed = [{ symbol: "GBPJPY", closedAt: "2026-07-31T11:55:00.000Z" }];

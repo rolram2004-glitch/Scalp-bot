@@ -335,6 +335,56 @@ test("INVERSE SELL is tagged, verified and keeps its signal metadata", async () 
   assert.equal(calls.createMarketOrder, 1);
 });
 
+test("strict MIRROR sends the swapped MAIN price levels unchanged to OANDA", async () => {
+  const { oanda, calls } = buildOandaMock({
+    verifiedTrade: {
+      id: "202",
+      state: "OPEN",
+      instrument: "EUR_USD",
+      currentUnits: "-1000",
+      price: "1.09998",
+      openTime: "2026-08-08T12:00:00.000Z"
+    },
+    orderResponse: {
+      orderCreateTransaction: { id: "120" },
+      orderFillTransaction: {
+        id: "121",
+        time: "2026-08-08T12:00:00.000Z",
+        tradeOpened: { tradeID: "202" }
+      }
+    }
+  });
+
+  const result = await executeVerifiedMarketOrder(request(oanda, {
+    side: "SELL",
+    strategyVariant: "INVERSE",
+    signalId: "SIG-MIRROR-LEVEL-SWAP",
+    stopLossPrice: 1.1021,
+    takeProfitPrice: 1.0991,
+    riskAmount: 999,
+    rewardAmount: 999
+  }));
+
+  assert.equal(result.status, "OPENED");
+  assert.equal(calls.lastOrder.stopLoss, "1.10210");
+  assert.equal(calls.lastOrder.takeProfit, "1.09910");
+  assert.ok(Math.abs(result.trade.riskAmount - 1.89) < 1e-10);
+  assert.ok(Math.abs(result.trade.rewardAmount - 0.819) < 1e-10);
+});
+
+test("strict MIRROR rejects non-directional swapped levels before order submission", async () => {
+  const { oanda, calls } = buildOandaMock();
+  const result = await executeVerifiedMarketOrder(request(oanda, {
+    side: "SELL",
+    strategyVariant: "INVERSE",
+    stopLossPrice: 1.099,
+    takeProfitPrice: 1.101
+  }));
+
+  assert.deepEqual(result, { status: "REJECTED", reason: "EXPLICIT_PROTECTIVE_LEVELS_NOT_DIRECTIONAL" });
+  assert.equal(calls.createMarketOrder, 0);
+});
+
 test("invalid variant fails before OANDA calls", async () => {
   const { oanda, calls } = buildOandaMock();
   const result = await executeVerifiedMarketOrder(request(oanda, {
