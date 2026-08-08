@@ -82,23 +82,27 @@ function Gate({ label, value, detail, state }: { label: string; value: string; d
   );
 }
 
-function Lane({ lane, executionReady }: { lane?: SignalLaneSnapshot; executionReady: boolean }) {
+function Lane({ lane, executionReady, symbol }: { lane?: SignalLaneSnapshot; executionReady: boolean; symbol: string }) {
   if (!lane) return <div className="lane-command empty-state">DATI NON DISPONIBILI</div>;
   const selectedButBlocked = lane.selectedForExecution && !executionReady;
   const executionState = selectedButBlocked ? 'BLOCKED' : lane.executionState;
   const laneMode = selectedButBlocked ? 'OANDA EXECUTION BLOCKED' : lane.mode;
   const liveReceipt = executionReady && lane.selectedForExecution && lane.executionState === 'OPEN_VERIFIED';
+  const laneLabel = lane.variant === 'INVERSE' ? 'MIRROR' : 'MAIN';
   return (
     <article className={`lane-command ${lane.variant.toLowerCase()} ${lane.selectedForExecution ? 'selected' : ''}`}>
-      <header><div><span>{lane.variant} LANE</span><strong className={variantClass(lane.action)}>{lane.action}</strong></div><b>{laneMode}</b></header>
+      <header><div><span>{laneLabel} LANE</span><strong className={variantClass(lane.action)}>{lane.action}</strong></div><b>{laneMode}</b></header>
       <div className="lane-kpis"><div><span>Setup score</span><strong>{setupScoreText(lane)}</strong></div><div><span>Execution</span><strong>{executionState}</strong></div></div>
       <dl>
+        <dt>Entry</dt><dd>{price(lane.entryPrice, symbol)}</dd>
+        <dt>Stop loss</dt><dd>{price(lane.stopLossPrice, symbol)}</dd>
+        <dt>Take profit</dt><dd>{price(lane.takeProfitPrice, symbol)}</dd>
         <dt>Setup</dt><dd>{lane.setupType || 'N/A'}</dd>
         <dt>Reason</dt><dd>{lane.executionReason || (liveReceipt ? 'VERIFIED BY OANDA' : 'N/A')}</dd>
         <dt>Order ID</dt><dd>{lane.oandaOrderId || 'N/A'}</dd>
         <dt>Trade ID</dt><dd>{lane.oandaTradeId || 'N/A'}</dd>
       </dl>
-      <p>{lane.reasoning || 'N/A'}</p>
+      <p>{lane.variant === 'INVERSE' ? 'STRICT MIRROR · MAIN SL → MIRROR TP · MAIN TP → MIRROR SL. ' : ''}{lane.reasoning || 'N/A'}</p>
     </article>
   );
 }
@@ -230,7 +234,7 @@ export function SetupPage({ status, news = [], oandaStatus = {} }: { status: Sta
         <Gate label="Account authentication" value={accountConnected ? 'PASS' : accountStatusUnavailable ? 'UNAVAILABLE' : 'BLOCKED'} detail={accountConnected ? `Account and ${accountCurrency || 'currency'} returned by OANDA` : oandaStatus.errorCode || oandaStatus.reason || 'No verified account response'} state={accountConnected ? 'ok' : accountStatusUnavailable ? 'idle' : 'bad'} />
         <Gate label="One-second price feed" value={feedConnected ? 'FULL / FRESH' : feedPartial ? 'PARTIAL' : 'UNAVAILABLE'} detail={`${status?.priceCoverage ?? 'N/A'} / ${status?.priceExpected ?? (symbols.length || 'N/A')} instruments · last tick ${priceState.age}`} state={feedConnected ? 'ok' : feedPartial ? 'warn' : status ? 'bad' : 'idle'} />
         <Gate label="Candle analysis" value={symbols.length ? `${candleCoverage}/${symbols.length}` : 'N/A'} detail="At least 200 real OANDA candles required per analyzed symbol" state={symbols.length && candleCoverage === symbols.length ? 'ok' : candleCoverage > 0 ? 'warn' : 'idle'} />
-        <Gate label="Exclusive execution lane" value={!status ? 'N/A' : status.liveExecutionVariantValid ? status.liveExecutionVariant : 'INVALID'} detail={mode.oanda ? 'Exactly one lane may submit after every global gate passes' : mode.paper ? 'Selector stored; ignored while PAPER' : 'Execution mode unavailable'} state={!status ? 'idle' : status.liveExecutionVariantValid ? 'ok' : 'bad'} />
+        <Gate label="Exclusive execution lane" value={!status ? 'N/A' : status.liveExecutionVariantValid ? status.liveExecutionVariant === 'INVERSE' ? 'MIRROR (INVERSE)' : status.liveExecutionVariant : 'INVALID'} detail={mode.oanda ? 'Exactly one lane may submit after every global gate passes' : mode.paper ? 'Selector stored; ignored while PAPER' : 'Execution mode unavailable'} state={!status ? 'idle' : status.liveExecutionVariantValid ? 'ok' : 'bad'} />
         <Gate label="OANDA reconciliation" value={status?.reconciliationStatus || 'N/A'} detail={`Last verified sync ${dateTime(status?.lastReconciledAt)}`} state={status?.reconciliationStatus === 'VERIFIED' ? 'ok' : mode.oanda ? 'bad' : 'idle'} />
         <Gate label="Protective orders" value={protectiveReceipt ? 'ALL VERIFIED' : verifiedOpen.length > 0 ? 'INCOMPLETE' : 'N/A'} detail={protectiveReceipt ? 'Every verified open receipt includes OANDA SL and TP' : 'No complete current OANDA receipt set proves SL + TP'} state={protectiveReceipt ? 'ok' : mode.oanda && verifiedOpen.length > 0 ? 'bad' : 'idle'} />
         <Gate label="XAUUSD execution" value="ANALYSIS ONLY" detail="Structural engine active; order and partial-close validation pending" state="warn" />
@@ -250,7 +254,7 @@ export function SetupPage({ status, news = [], oandaStatus = {} }: { status: Sta
 
       <section className="command-panel matrix-panel">
         <header><div><span>SCAN UNIVERSE</span><h2>{symbols.length ? `${symbols.length}-instrument truth matrix` : 'Instrument truth matrix'}</h2></div><b>{status?.signalsAnalyzed ?? 'N/A'} analyses · {status?.signalsDiscarded ?? 'N/A'} discarded</b></header>
-        <div className="matrix-scroll"><table className="truth-matrix"><thead><tr><th>Instrument</th><th>Feed / price</th><th>Candles</th><th>Structure</th><th>MAIN</th><th>INVERSE</th><th>Execution</th></tr></thead><tbody>
+        <div className="matrix-scroll"><table className="truth-matrix"><thead><tr><th>Instrument</th><th>Feed / price</th><th>Candles</th><th>Structure</th><th>MAIN</th><th>MIRROR</th><th>Execution</th></tr></thead><tbody>
           {matrix.map(({ symbol, market, quote, pair, quoteFresh }) => (
             <tr key={symbol} className={selectedSymbol === symbol ? 'selected' : ''} onClick={() => setSelectedSymbol(symbol)}>
               <td><strong>{symbol}</strong><small>{symbol === 'XAUUSD' ? 'DEDICATED · ANALYSIS ONLY' : market?.timeframe || 'M5'}</small></td>
@@ -281,7 +285,7 @@ export function SetupPage({ status, news = [], oandaStatus = {} }: { status: Sta
 
         <div className="command-panel snapshot-panel">
           <header><div><span>SHARED SIGNAL ENVELOPE</span><h2>{selectedPair?.pairId || 'NO PAIR YET'}</h2></div><b>{dateTime(selectedPair?.evaluatedAt)}</b></header>
-          {selectedPair ? <><div className="envelope-proof"><div><span>OANDA tick</span><strong>{dateTime(selectedPair.market.time)}</strong></div><div><span>Same quote</span><strong>{price(selectedPair.market.bid, selectedSymbol)} / {price(selectedPair.market.ask, selectedSymbol)}</strong></div><div><span>Validation</span><strong>{selectedPair.marketValid ? 'CAPTURED FRESH' : selectedPair.marketValidationReason || 'BLOCKED'}</strong></div><div><span>Data source</span><strong>{selectedPair.analysis.structureSource || selectedPair.market.source}</strong></div></div><div className="lane-grid"><Lane lane={selectedPair.main} executionReady={oandaExecutionReady} /><Lane lane={selectedPair.inverse} executionReady={oandaExecutionReady} /></div>{(selectedPair.executionBlockedReason || (mode.oanda && !oandaExecutionReady)) && <div className="hard-block">EXECUTION BLOCK: {selectedPair.executionBlockedReason || modeLabel}</div>}</> : <div className="empty-state">Nessun pair snapshot reale disponibile per {selectedSymbol}.</div>}
+          {selectedPair ? <><div className="envelope-proof"><div><span>OANDA tick</span><strong>{dateTime(selectedPair.market.time)}</strong></div><div><span>Same quote</span><strong>{price(selectedPair.market.bid, selectedSymbol)} / {price(selectedPair.market.ask, selectedSymbol)}</strong></div><div><span>Validation</span><strong>{selectedPair.marketValid ? 'CAPTURED FRESH' : selectedPair.marketValidationReason || 'BLOCKED'}</strong></div><div><span>Data source</span><strong>{selectedPair.analysis.structureSource || selectedPair.market.source}</strong></div></div><div className="lane-grid"><Lane lane={selectedPair.main} executionReady={oandaExecutionReady} symbol={selectedSymbol} /><Lane lane={selectedPair.inverse} executionReady={oandaExecutionReady} symbol={selectedSymbol} /></div>{(selectedPair.executionBlockedReason || (mode.oanda && !oandaExecutionReady)) && <div className="hard-block">EXECUTION BLOCK: {selectedPair.executionBlockedReason || modeLabel}</div>}</> : <div className="empty-state">Nessun pair snapshot reale disponibile per {selectedSymbol}.</div>}
         </div>
       </section>
 

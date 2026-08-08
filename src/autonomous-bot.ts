@@ -437,6 +437,40 @@ function fixedPipPlan(symbol: string, entryPrice: number, side: "BUY" | "SELL" |
   };
 }
 
+function variantPipDefaults(variant?: StrategyVariant) {
+  const mainRisk = Number(config.NORMAL_STOP_LOSS_PIPS || 10);
+  const mainReward = Number(config.NORMAL_TAKE_PROFIT_PIPS || 20);
+  return variant === "INVERSE"
+    ? { riskPips: mainReward, rewardPips: mainRisk }
+    : { riskPips: mainRisk, rewardPips: mainReward };
+}
+
+function laneProtectionPlan(
+  symbol: string,
+  entryPrice: number,
+  side: "BUY" | "SELL" | "HOLD",
+  stopLoss: unknown,
+  takeProfit: unknown
+) {
+  const stop = optionalFinite(stopLoss);
+  const target = optionalFinite(takeProfit);
+  if (side === "HOLD" || !Number.isFinite(entryPrice) || !stop || !target) return null;
+  const direction = side === "BUY" ? 1 : -1;
+  if ((entryPrice - stop) * direction <= 0 || (target - entryPrice) * direction <= 0) return null;
+  const multiplier = pipMultiplier(symbol);
+  const riskPips = Math.abs(entryPrice - stop) * multiplier;
+  const rewardPips = Math.abs(target - entryPrice) * multiplier;
+  const units = tradeUnits(symbol);
+  return {
+    stopLoss: stop,
+    takeProfit: target,
+    riskPips,
+    rewardPips,
+    riskAmount: Math.abs(entryPrice - stop) * units,
+    rewardAmount: Math.abs(target - entryPrice) * units
+  };
+}
+
 function normalizedR(pnlPips: unknown, riskPips: unknown) {
   const pnl = Number(pnlPips);
   const risk = Number(riskPips);
@@ -496,6 +530,32 @@ function updatePairExecution(
   lane.executionReason = reason;
   lane.oandaOrderId = ids?.orderId;
   lane.oandaTradeId = ids?.tradeId;
+}
+
+function syncPairProtectionWithVerifiedTrade(pair: PairedSignalSnapshot, trade: BotTrade, variant: StrategyVariant) {
+  const stopLoss = optionalFinite(trade.stopLoss);
+  const takeProfit = optionalFinite(trade.takeProfit);
+  if (!stopLoss || !takeProfit) return;
+  const activeLane = variant === "INVERSE" ? pair.inverse : pair.main;
+  const mirrorLane = variant === "INVERSE" ? pair.main : pair.inverse;
+  activeLane.entryPrice = trade.entryPrice;
+  activeLane.stopLossPrice = stopLoss;
+  activeLane.takeProfitPrice = takeProfit;
+  mirrorLane.stopLossPrice = takeProfit;
+  mirrorLane.takeProfitPrice = stopLoss;
+  mirrorLane.structuralTargets = [stopLoss];
+  const activePlan = laneProtectionPlan(pair.symbol, trade.entryPrice, trade.side, stopLoss, takeProfit);
+  if (activePlan) activeLane.riskRewardRatio = activePlan.rewardPips / activePlan.riskPips;
+  if (mirrorLane.entryPrice) {
+    const mirrorPlan = laneProtectionPlan(
+      pair.symbol,
+      mirrorLane.entryPrice,
+      mirrorLane.action,
+      mirrorLane.stopLossPrice,
+      mirrorLane.takeProfitPrice
+    );
+    if (mirrorPlan) mirrorLane.riskRewardRatio = mirrorPlan.rewardPips / mirrorPlan.riskPips;
+  }
 }
 
 function paperExitPrice(side: "BUY" | "SELL" | "HOLD", marketData: MarketData) {
@@ -773,7 +833,8 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
   const livePnlPips = currentPrice
     ? (side === "BUY" ? currentPrice - entryPrice : entryPrice - currentPrice) * pipMultiplier(symbol)
     : previous?.pnlPips;
-  const riskPips = previous?.riskPips ?? (ownership ? Number(config.NORMAL_STOP_LOSS_PIPS || 10) : undefined);
+  const fallbackPips = ownership ? variantPipDefaults(ownership.strategyVariant) : undefined;
+  const riskPips = previous?.riskPips ?? fallbackPips?.riskPips;
 
   return {
     id: `OANDA-${remote.id}`,
@@ -790,7 +851,7 @@ function mapVerifiedOandaTrade(remote: any, accountCurrency: string, previous?: 
     pnlPips: livePnlPips,
     pnlR: normalizedR(livePnlPips, riskPips),
     riskPips,
-    rewardPips: previous?.rewardPips ?? (ownership ? Number(config.NORMAL_TAKE_PROFIT_PIPS || 20) : undefined),
+    rewardPips: previous?.rewardPips ?? fallbackPips?.rewardPips,
     openedAt,
     setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
     confidence: previous?.confidence,
@@ -827,7 +888,8 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
   const pnlPips = closePrice && closePrice > 0
     ? (side === "BUY" ? closePrice - entryPrice : entryPrice - closePrice) * pipMultiplier(symbol)
     : previous?.pnlPips;
-  const riskPips = previous?.riskPips ?? (ownership ? Number(config.NORMAL_STOP_LOSS_PIPS || 10) : undefined);
+  const fallbackPips = ownership ? variantPipDefaults(ownership.strategyVariant) : undefined;
+  const riskPips = previous?.riskPips ?? fallbackPips?.riskPips;
   return {
     id: `OANDA-${remote.id}`,
     symbol,
@@ -843,7 +905,7 @@ function mapClosedOandaTrade(remote: any, accountCurrency: string, previous?: Bo
     pnlPips,
     pnlR: normalizedR(pnlPips, riskPips),
     riskPips,
-    rewardPips: previous?.rewardPips ?? (ownership ? Number(config.NORMAL_TAKE_PROFIT_PIPS || 20) : undefined),
+    rewardPips: previous?.rewardPips ?? fallbackPips?.rewardPips,
     openedAt,
     closedAt: remote?.closeTime || previous?.closedAt,
     setupType: previous?.setupType || (!ownership ? "OANDA_EXTERNAL" : undefined),
@@ -1105,12 +1167,30 @@ function buildShadowTrade(
     setupType: lane.setupType
   };
   const trade = buildTrade(symbol, decision, marketData, pairedSignal);
+  const protection = laneProtectionPlan(
+    symbol,
+    trade.entryPrice,
+    trade.side,
+    lane.stopLossPrice,
+    lane.takeProfitPrice
+  );
+  if (!protection) {
+    throw new Error("PAPER_SHADOW_PROTECTIVE_LEVELS_INVALID");
+  }
   return {
     ...trade,
     id: `SHADOW-${lane.variant}-${symbol}-${pairedSignal.pairId}`,
     source: "PAPER_SHADOW",
     strategyVariant: lane.variant,
-    reasoning: `${lane.reasoning}. PAPER SHADOW: nessun ordine OANDA, prezzi bid/ask reali.`,
+    stopLoss: protection.stopLoss,
+    takeProfit: protection.takeProfit,
+    riskAmount: protection.riskAmount,
+    rewardAmount: protection.rewardAmount,
+    riskPips: protection.riskPips,
+    rewardPips: protection.rewardPips,
+    pnlR: normalizedR(trade.pnlPips, protection.riskPips),
+    setupType: lane.setupType,
+    reasoning: `${lane.reasoning}. PAPER SHADOW: nessun ordine OANDA, livelli protettivi della corsia preservati; SL ${protection.riskPips.toFixed(2)} pip / TP ${protection.rewardPips.toFixed(2)} pip inclusivo dello spread.`,
     verificationStatus: "NOT_VERIFIED",
     pairedWithTradeId
   };
@@ -1158,6 +1238,10 @@ function openPairedShadowTrade(
   const existingIndex = botState.shadowOpenTrades.findIndex((trade) => cleanSymbol(trade.symbol) === cleanSymbol(symbol));
 
   if (lane.action === "HOLD" || lane.confidence < MIN_CONFIDENCE) return;
+  if (!laneProtectionPlan(symbol, paperExecutablePrice(lane.action, marketData), lane.action, lane.stopLossPrice, lane.takeProfitPrice)) {
+    pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW skipped: strict protective levels are not directional after spread`);
+    return;
+  }
   if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "PAIR CLOSED");
   if (cycle.shadowOpened >= MAX_NEW_TRADES_PER_CYCLE || botState.shadowOpenTrades.length >= MAX_OPEN_POSITIONS) return;
 
@@ -1565,11 +1649,43 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           units: tradeUnits(symbol),
           riskAmount: cash.riskAmount,
           rewardAmount: cash.rewardAmount,
+          stopLossPrice: selectedLane.stopLossPrice,
+          takeProfitPrice: selectedLane.takeProfitPrice,
           strategyVariant: config.LIVE_EXECUTION_VARIANT,
           signalId: pairedSignal.pairId,
           signalAt: pairedSignal.evaluatedAt
         });
         if (result.status === "OPENED") {
+          const verifiedProtection = laneProtectionPlan(
+            symbol,
+            result.trade.entryPrice,
+            result.trade.side,
+            result.trade.stopLoss,
+            result.trade.takeProfit
+          );
+          if (!verifiedProtection) {
+            const emergencyTrade: BotTrade = {
+              id: `OANDA-${result.trade.oandaTradeId}`,
+              ...result.trade,
+              reasoning: "Verified protective levels became non-directional after fill; fail-closed emergency exit.",
+              status: "OPEN",
+              verificationStatus: "VERIFIED",
+              managedByBot: true
+            };
+            const exposureClosed = await closeVerifiedOandaTrade(
+              emergencyTrade,
+              "POST-FILL RECONCILIATION FAILURE"
+            );
+            const reason = exposureClosed
+              ? "VERIFIED_PROTECTIVE_LEVELS_NOT_DIRECTIONAL_EXPOSURE_CLOSED"
+              : "VERIFIED_PROTECTIVE_LEVELS_NOT_DIRECTIONAL_EMERGENCY_CLOSE_NOT_VERIFIED";
+            botState.signalsDiscarded += 1;
+            updatePairExecution(pairedSignal, "REJECTED", reason);
+            botState.lastOrderStatus = "REJECTED";
+            botState.lastOrderReason = reason;
+            pushLog(`[${symbol}] ${reason}`);
+            return;
+          }
           const provisionalTrade: BotTrade = {
             id: `OANDA-${result.trade.oandaTradeId}`,
             ...result.trade,
@@ -1577,8 +1693,8 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
             pnlPips: undefined,
             setupType: decisionForExecution.setupType,
             confidence: decisionForExecution.confidence,
-            riskPips: Number(config.NORMAL_STOP_LOSS_PIPS || 10),
-            rewardPips: Number(config.NORMAL_TAKE_PROFIT_PIPS || 20),
+            riskPips: verifiedProtection.riskPips,
+            rewardPips: verifiedProtection.rewardPips,
             reasoning: `${decisionForExecution.reasoning}. Ordine ${config.LIVE_EXECUTION_VARIANT} verificato tramite OANDA ${config.OANDA_ENVIRONMENT}.`,
             status: "OPEN",
             verificationStatus: "VERIFIED",
@@ -1616,6 +1732,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           botState.entryPrice = trade.entryPrice;
           botState.stopLoss = trade.stopLoss;
           botState.takeProfit = trade.takeProfit;
+          syncPairProtectionWithVerifiedTrade(pairedSignal, trade, config.LIVE_EXECUTION_VARIANT);
           updatePairExecution(pairedSignal, "OPEN_VERIFIED", undefined, {
             orderId: trade.oandaOrderId,
             tradeId: trade.oandaTradeId
@@ -1938,6 +2055,8 @@ export const autonomousTestUtils = {
   paperExitPrice,
   isFreshTradeableQuote,
   fixedPipPlan,
+  variantPipDefaults,
+  laneProtectionPlan,
   countUtcTradeEntries,
   symbolCooldownRemainingMs,
   normalizedR

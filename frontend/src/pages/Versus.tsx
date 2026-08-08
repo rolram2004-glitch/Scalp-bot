@@ -15,6 +15,10 @@ import {
 type Lane = 'MAIN' | 'INVERSE';
 type Scope = 'TODAY' | 'ALL';
 
+function laneLabel(lane: Lane) {
+  return lane === 'INVERSE' ? 'MIRROR' : 'MAIN';
+}
+
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
@@ -155,11 +159,12 @@ function verdict(main: StrategyMetrics, inverse: StrategyMetrics) {
     return { title: 'RISULTATO PARI', detail: 'Le due corsie hanno lo stesso risultato cumulativo sul campione abbinato.', delta: '0.00R', lane: 'TIE', tone: 'neutral' };
   }
   const lane: Lane = difference > 0 ? 'MAIN' : 'INVERSE';
+  const label = laneLabel(lane);
   const winningTotal = lane === 'MAIN' ? main.totalR : inverse.totalR;
   const losingTotal = lane === 'MAIN' ? inverse.totalR : main.totalR;
   if (winningTotal < 0 && losingTotal < 0) {
     return {
-      title: `${lane} MENO NEGATIVA`,
+      title: `${label} MENO NEGATIVA`,
       detail: 'Attenzione: entrambe le corsie sono negative. “Migliore” non significa profittevole.',
       delta: `+${Math.abs(difference).toFixed(2)}R`,
       lane,
@@ -167,8 +172,8 @@ function verdict(main: StrategyMetrics, inverse: StrategyMetrics) {
     };
   }
   return {
-    title: `${lane} IN VANTAGGIO`,
-    detail: losingTotal < 0 ? `${lane} è l’unica corsia positiva sul campione abbinato.` : 'Entrambe positive, ma questa corsia ha il risultato cumulativo maggiore.',
+    title: `${label} IN VANTAGGIO`,
+    detail: losingTotal < 0 ? `${label} è l’unica corsia positiva sul campione abbinato.` : 'Entrambe positive, ma questa corsia ha il risultato cumulativo maggiore.',
     delta: `+${Math.abs(difference).toFixed(2)}R`,
     lane,
     tone: 'good'
@@ -179,7 +184,7 @@ function LaneSummary({ lane, metrics, mode, selected }: { lane: Lane; metrics: S
   return (
     <article className={`vs3-lane-summary ${lane.toLowerCase()}`}>
       <header>
-        <div><span>{selected ? 'CORSIA OPERATIVA' : 'GEMELLO DI CONTROLLO'}</span><h2>{lane}</h2></div>
+        <div><span>{selected ? 'CORSIA OPERATIVA' : 'GEMELLO DI CONTROLLO'}</span><h2>{laneLabel(lane)}</h2></div>
         <b>{mode}</b>
       </header>
       <div className="vs3-lane-total">
@@ -215,8 +220,8 @@ function EquityComparison({ pairs }: { pairs: TradePairComparison[] }) {
   const last = points[points.length - 1];
 
   return (
-    <svg className="vs3-equity-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Curva cumulativa dei risultati MAIN e INVERSE in R">
-      <title>Curva cumulativa MAIN e INVERSE in unità R</title>
+    <svg className="vs3-equity-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Curva cumulativa dei risultati MAIN e MIRROR in R">
+      <title>Curva cumulativa MAIN e MIRROR in unità R</title>
       {[0, 0.25, 0.5, 0.75, 1].map((part) => {
         const lineY = padY + part * (height - padY * 2);
         const value = max - part * range;
@@ -228,29 +233,37 @@ function EquityComparison({ pairs }: { pairs: TradePairComparison[] }) {
       <circle cx={x(points.length - 1)} cy={y(last.main)} r="4" className="main-dot" />
       <circle cx={x(points.length - 1)} cy={y(last.inverse)} r="4" className="inverse-dot" />
       <text x={width - padX} y={y(last.main) - 9} textAnchor="end" className="main-label">MAIN {formatR(last.main)}</text>
-      <text x={width - padX} y={y(last.inverse) + 17} textAnchor="end" className="inverse-label">INVERSE {formatR(last.inverse)}</text>
+      <text x={width - padX} y={y(last.inverse) + 17} textAnchor="end" className="inverse-label">MIRROR {formatR(last.inverse)}</text>
     </svg>
   );
 }
 
 function PairRow({ pair }: { pair: TradePairComparison }) {
-  const label = pair.winner === 'OPEN' ? 'IN CORSO' : pair.winner === 'UNAVAILABLE' ? 'R N/A' : pair.winner === 'TIE' ? 'PARI' : `${pair.winner} MIGLIORE`;
+  const label = pair.winner === 'OPEN'
+    ? 'IN CORSO'
+    : pair.winner === 'UNAVAILABLE'
+      ? 'R N/A'
+      : pair.winner === 'TIE'
+        ? 'PARI'
+        : `${laneLabel(pair.winner)} MIGLIORE`;
+  const mainSource = pair.main.source === 'OANDA' ? 'OANDA' : 'PAPER SHADOW';
+  const mirrorSource = pair.inverse.source === 'OANDA' ? 'OANDA' : 'PAPER SHADOW';
   return (
     <details className={`vs3-pair-row ${pair.comparable ? 'comparable' : 'pending'}`}>
       <summary>
         <div className="vs3-pair-symbol"><strong>{pair.symbol}</strong><span>{localTime(pair.main.openedAt || pair.inverse.openedAt)}</span></div>
-        <div className="vs3-pair-lane main"><span>MAIN · OANDA</span><b className={`side-${String(pair.main.side).toLowerCase()}`}>{pair.main.side || 'N/A'}</b><strong className={resultTone(pair.mainR)}>{formatR(pair.mainR)}</strong></div>
+        <div className="vs3-pair-lane main"><span>MAIN · {mainSource}</span><b className={`side-${String(pair.main.side).toLowerCase()}`}>{pair.main.side || 'N/A'}</b><strong className={resultTone(pair.mainR)}>{formatR(pair.mainR)}</strong></div>
         <div className="vs3-pair-result"><span>VERDETTO</span><strong>{label}</strong><small>{pair.comparable ? `${formatR(Math.abs((pair.mainR || 0) - (pair.inverseR || 0)))} gap` : 'attendo entrambi'}</small></div>
-        <div className="vs3-pair-lane inverse"><span>INVERSE · PAPER</span><b className={`side-${String(pair.inverse.side).toLowerCase()}`}>{pair.inverse.side || 'N/A'}</b><strong className={resultTone(pair.inverseR)}>{formatR(pair.inverseR)}</strong></div>
+        <div className="vs3-pair-lane inverse"><span>MIRROR · {mirrorSource}</span><b className={`side-${String(pair.inverse.side).toLowerCase()}`}>{pair.inverse.side || 'N/A'}</b><strong className={resultTone(pair.inverseR)}>{formatR(pair.inverseR)}</strong></div>
         <i aria-hidden="true">⌄</i>
       </summary>
       <div className="vs3-pair-detail">
         <div><span>Signal ID</span><strong>{pair.signalId}</strong></div>
         <div><span>MAIN Entry / SL / TP</span><strong>{price(pair.main.entryPrice, pair.symbol)} · {price(pair.main.stopLoss, pair.symbol)} · {price(pair.main.takeProfit, pair.symbol)}</strong></div>
-        <div><span>INVERSE Entry / SL / TP</span><strong>{price(pair.inverse.entryPrice, pair.symbol)} · {price(pair.inverse.stopLoss, pair.symbol)} · {price(pair.inverse.takeProfit, pair.symbol)}</strong></div>
+        <div><span>MIRROR Entry / SL / TP</span><strong>{price(pair.inverse.entryPrice, pair.symbol)} · {price(pair.inverse.stopLoss, pair.symbol)} · {price(pair.inverse.takeProfit, pair.symbol)}</strong></div>
         <div><span>MAIN broker receipt</span><strong>{pair.main.oandaTradeId ? `OANDA TRADE ${pair.main.oandaTradeId}` : pair.main.status === 'CLOSED' ? 'OANDA TRADE CHIUSO' : 'ID N/A'}</strong></div>
         <div><span>P&L originale MAIN</span><strong className={resultTone(pair.mainR)}>{money(pair.main)}</strong></div>
-        <div><span>P&L originale INVERSE</span><strong className={resultTone(pair.inverseR)}>{money(pair.inverse)} · 0 ORDINI OANDA</strong></div>
+        <div><span>P&amp;L MIRROR</span><strong className={resultTone(pair.inverseR)}>{money(pair.inverse)}{pair.inverse.source === 'OANDA' ? ' · OANDA' : ' · PAPER'}</strong></div>
       </div>
     </details>
   );
@@ -276,30 +289,40 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
   const remaining = status?.dailyRemainingTrades ?? status?.dailyRiskStatus?.remainingTrades;
   const unmatchedMain = Math.max(0, mainTrades.filter((trade) => trade.signalId).length - pairs.length);
   const unmatchedInverse = Math.max(0, inverseTrades.filter((trade) => trade.signalId).length - pairs.length);
+  const oandaLabel = status?.tradingMode === 'OANDA_LIVE' ? 'OANDA LIVE' : 'OANDA PRACTICE';
+  const mainMode = status?.tradingMode === 'PAPER' ? 'PAPER MAIN' : selectedLane === 'MAIN' ? oandaLabel : 'PAPER SHADOW';
+  const mirrorMode = selectedLane === 'INVERSE' && status?.tradingMode !== 'PAPER' ? oandaLabel : 'PAPER SHADOW';
 
   return (
     <div className="versus-page vs3">
       <section className="vs3-hero">
         <div>
           <p className="vs3-eyebrow">$Rohato$🤖111 · STRATEGY COMPARISON</p>
-          <h1>MAIN contro INVERSE, senza confusione.</h1>
-          <p>Ogni riga confronta lo stesso Signal ID. MAIN usa il risultato OANDA; INVERSE è il gemello contrario PAPER con zero ordini.</p>
+          <h1>MAIN contro MIRROR, senza confusione.</h1>
+          <p>Stesso Signal ID, direzione opposta e livelli realmente scambiati: MAIN SL → MIRROR TP; MAIN TP → MIRROR SL.</p>
         </div>
         <div className={`vs3-gate ${gate.tone}`}><span>STATO OPERATIVO</span><strong>{gate.label}</strong><small>{gate.detail}</small></div>
       </section>
 
       <section className="vs3-truth-bar" aria-label="Significato delle due corsie">
-        <div className="main"><span>01 · REALE</span><strong>MAIN</strong><b>Ordine OANDA {status?.tradingMode === 'OANDA_LIVE' ? 'Live' : 'Practice'}</b></div>
-        <div className="rule"><span>REGOLA DI CONFRONTO</span><strong>1 SIGNAL ID = 2 DIREZIONI</strong><small>Rischio normalizzato in R; valute mai sommate.</small></div>
-        <div className="inverse"><span>02 · CONTROLLO</span><strong>INVERSE</strong><b>Paper Shadow · 0 ordini</b></div>
+        <div className="main"><span>01 · NORMALE</span><strong>MAIN</strong><b>{mainMode}</b></div>
+        <div className="rule">
+          <span>REGOLA STRICT MIRROR · ROSSO ↔ VERDE</span>
+          <div className="vs3-mirror-rules" aria-label="Mappatura degli esiti MAIN e MIRROR">
+            <div className="vs3-result-swap"><b className="loss">MAIN LOSS · SL</b><i>→</i><b className="win">MIRROR WIN · TP</b></div>
+            <div className="vs3-result-swap"><b className="win">MAIN WIN · TP</b><i>→</i><b className="loss">MIRROR LOSS · SL</b></div>
+          </div>
+          <small>Vengono scambiati gli stessi livelli di prezzo. Il P&amp;L monetario non viene copiato: usa bid/ask reali, quindi spread e slippage restano visibili.</small>
+        </div>
+        <div className="inverse"><span>02 · CONTRARIO</span><strong>MIRROR</strong><b>{mirrorMode}</b></div>
       </section>
 
       {(unmatchedMain > 0 || unmatchedInverse > 0) && (
         <section className="vs3-data-notice" aria-label="Integrità del confronto">
           <div>
             <span>INTEGRITÀ DEL CONFRONTO</span>
-            <strong>{pairs.length ? 'STORICO NON ABBINATO ESCLUSO' : 'LEDGER INVERSE RIPARTITO DOPO IL DEPLOY'}</strong>
-            <p>OANDA conserva lo storico MAIN; il ledger INVERSE è PAPER e riparte con il processo Railway. I record senza lo stesso Signal ID su entrambe le corsie vengono esclusi: il bot non inventa risultati mancanti.</p>
+            <strong>{pairs.length ? 'STORICO NON ABBINATO ESCLUSO' : 'LEDGER PAPER RIPARTITO DOPO IL DEPLOY'}</strong>
+            <p>OANDA conserva la corsia operativa; la corsia PAPER riparte con il processo Railway. I record senza lo stesso Signal ID su entrambe le corsie vengono esclusi: il bot non inventa risultati mancanti.</p>
           </div>
           <b>{unmatchedMain + unmatchedInverse} RECORD ESCLUSI · 0 DATI INVENTATI</b>
         </section>
@@ -325,7 +348,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
       <section className="vs3-scoreboard">
         <LaneSummary lane="MAIN" metrics={mainMetrics} mode={laneMode(status, 'MAIN')} selected={selectedLane === 'MAIN' || status?.tradingMode === 'PAPER'} />
         <div className="vs3-head-to-head">
-          <span>HEAD TO HEAD</span><strong>{counts.main}<small>MAIN</small></strong><b>VS</b><strong>{counts.inverse}<small>INVERSE</small></strong>
+          <span>HEAD TO HEAD</span><strong>{counts.main}<small>MAIN</small></strong><b>VS</b><strong>{counts.inverse}<small>MIRROR</small></strong>
           <p>{counts.ties} pari · solo coppie concluse</p>
         </div>
         <LaneSummary lane="INVERSE" metrics={inverseMetrics} mode={laneMode(status, 'INVERSE')} selected={selectedLane === 'INVERSE'} />
@@ -334,14 +357,14 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
       <section className="vs3-analysis-grid">
         <article className="vs3-panel vs3-equity-panel">
           <header><div><span>ANDAMENTO CUMULATIVO</span><h2>EQUITY CURVE IN R</h2></div><b>{mainMetrics.sampleSize} COPPIE CHIUSE</b></header>
-          <div className="vs3-legend"><span className="main">MAIN OANDA</span><span className="inverse">INVERSE PAPER</span><small>La linea zero separa profitto e perdita.</small></div>
+          <div className="vs3-legend"><span className="main">MAIN · {mainMode}</span><span className="inverse">MIRROR · {mirrorMode}</span><small>La linea zero separa profitto e perdita.</small></div>
           <EquityComparison pairs={pairs} />
         </article>
         <article className="vs3-panel vs3-metrics-panel">
           <header><div><span>METRICHE PROFESSIONALI</span><h2>QUALITÀ DEL RISULTATO</h2></div><b>STESSO CAMPIONE</b></header>
           <div className="vs3-metric-table-wrap">
             <table className="vs3-metric-table">
-              <thead><tr><th>Metrica</th><th className="main">MAIN</th><th className="inverse">INVERSE</th></tr></thead>
+              <thead><tr><th>Metrica</th><th className="main">MAIN</th><th className="inverse">MIRROR</th></tr></thead>
               <tbody>
                 <tr><th>Totale</th><td className={resultTone(mainMetrics.totalR)}>{formatR(mainMetrics.totalR)}</td><td className={resultTone(inverseMetrics.totalR)}>{formatR(inverseMetrics.totalR)}</td></tr>
                 <tr><th>Expectancy / trade</th><td className={resultTone(mainMetrics.averageR)}>{formatR(mainMetrics.averageR)}</td><td className={resultTone(inverseMetrics.averageR)}>{formatR(inverseMetrics.averageR)}</td></tr>
@@ -360,9 +383,9 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <header><div><span>DOVE CAMBIA IL RISULTATO</span><h2>EDGE PER COPPIA</h2></div><b>{symbolEdges.length} MERCATI CON DATI</b></header>
         <div className="vs3-symbol-table-wrap">
           <table className="vs3-symbol-table">
-            <thead><tr><th>Mercato</th><th>Campione</th><th>MAIN</th><th>INVERSE</th><th>Vantaggio</th></tr></thead>
+            <thead><tr><th>Mercato</th><th>Campione</th><th>MAIN</th><th>MIRROR</th><th>Vantaggio</th></tr></thead>
             <tbody>{symbolEdges.slice(0, 15).map((edge) => (
-              <tr key={edge.symbol}><th>{edge.symbol}</th><td>{edge.pairs}</td><td className={resultTone(edge.mainR)}>{formatR(edge.mainR)}</td><td className={resultTone(edge.inverseR)}>{formatR(edge.inverseR)}</td><td><b className={edge.winner.toLowerCase()}>{edge.winner}</b><span>{formatR(Math.abs(edge.deltaR))}</span></td></tr>
+              <tr key={edge.symbol}><th>{edge.symbol}</th><td>{edge.pairs}</td><td className={resultTone(edge.mainR)}>{formatR(edge.mainR)}</td><td className={resultTone(edge.inverseR)}>{formatR(edge.inverseR)}</td><td><b className={edge.winner.toLowerCase()}>{edge.winner === 'TIE' ? 'PARI' : laneLabel(edge.winner)}</b><span>{formatR(Math.abs(edge.deltaR))}</span></td></tr>
             ))}</tbody>
           </table>
           {!symbolEdges.length && <div className="vs3-empty">NESSUN RISULTATO ABBINATO NEL PERIODO</div>}
@@ -371,8 +394,8 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
 
       <section className="vs3-panel vs3-ledger-panel">
         <header><div><span>STESSO SIGNAL ID · DETTAGLI ESPANDIBILI</span><h2>CONFRONTO TRADE PER TRADE</h2></div><b>{pairs.length} COPPIE</b></header>
-        <div className="vs3-ledger-intro"><span>MAIN = ricevuta OANDA</span><span>INVERSE = simulazione</span><span>Verde = profitto</span><span>Rosso = perdita</span></div>
-        <div className="vs3-pair-list">{pairs.slice(0, 30).map((pair) => <PairRow key={pair.signalId} pair={pair} />)}{!pairs.length && <div className="vs3-empty">NESSUNA COPPIA MAIN ↔ INVERSE NEL PERIODO</div>}</div>
+        <div className="vs3-ledger-intro"><span>Operativa = ricevuta OANDA</span><span>Gemello = PAPER shadow</span><span>Verde = profitto</span><span>Rosso = perdita</span></div>
+        <div className="vs3-pair-list">{pairs.slice(0, 30).map((pair) => <PairRow key={pair.signalId} pair={pair} />)}{!pairs.length && <div className="vs3-empty">NESSUNA COPPIA MAIN ↔ MIRROR NEL PERIODO</div>}</div>
       </section>
 
       <section className="vs3-panel vs3-live-panel">
@@ -380,7 +403,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div className="vs3-live-grid">{signals.map((pair) => (
           <article key={pair.pairId}>
             <header><strong>{pair.symbol}</strong><span>{localTime(pair.evaluatedAt)}</span></header>
-            <div><b className={`side-${pair.main.action.toLowerCase()}`}>MAIN {pair.main.action}</b><i>↔</i><b className={`side-${pair.inverse.action.toLowerCase()}`}>INVERSE {pair.inverse.action}</b></div>
+            <div><b className={`side-${pair.main.action.toLowerCase()}`}>MAIN {pair.main.action}</b><i>↔</i><b className={`side-${pair.inverse.action.toLowerCase()}`}>MIRROR {pair.inverse.action}</b></div>
             <footer><span>{scoreText(pair.main.setupScore ?? pair.main.confidence)}</span><span>{pair.main.setupType || 'SETUP N/A'}</span><span>{pair.marketValid ? 'OANDA FRESH' : 'HOLD'}</span></footer>
           </article>
         ))}{!signals.length && <div className="vs3-empty">SNAPSHOT NON DISPONIBILI</div>}</div>
@@ -390,8 +413,8 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div><span>INGRESSI OGGI</span><strong>{status?.dailyTradeCount ?? 'N/A'} / {status?.maxDailyTrades ?? 'N/A'}</strong></div>
         <div><span>POSTI RIMASTI</span><strong>{remaining ?? 'N/A'}</strong></div>
         <div><span>RESET</span><strong>{resetLabel(status?.nextDailyResetAt || status?.dailyRiskStatus?.resetAt)}</strong></div>
-        <div><span>ESCLUSI DAL CONFRONTO</span><strong>{unmatchedMain} MAIN · {unmatchedInverse} INVERSE</strong></div>
-        <p>INVERSE non apre ordini OANDA. I risultati sono confrontati in R; il P&amp;L originale resta visibile dentro ogni coppia senza sommare valute diverse.</p>
+        <div><span>ESCLUSI DAL CONFRONTO</span><strong>{unmatchedMain} MAIN · {unmatchedInverse} MIRROR</strong></div>
+        <p>Una sola corsia può aprire ordini OANDA; l'altra resta PAPER. I risultati sono confrontati in R senza sommare valute diverse.</p>
       </footer>
     </div>
   );

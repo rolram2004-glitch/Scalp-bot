@@ -21,11 +21,16 @@ if (
 ) {
   process.env.TRADING_MODE = "OANDA_DEMO";
   process.env.OANDA_ORDER_EXECUTION_ENABLED = "true";
-  process.env.LIVE_EXECUTION_VARIANT = ["MAIN", "INVERSE"].includes(
-    String(process.env.LIVE_EXECUTION_VARIANT || "MAIN").trim().toUpperCase()
-  )
-    ? String(process.env.LIVE_EXECUTION_VARIANT || "MAIN").trim().toUpperCase()
-    : "MAIN";
+  // The Practice laboratory now validates the user's strict mirror hypothesis:
+  // MAIN SL -> INVERSE TP and MAIN TP -> INVERSE SL. Keep this selector
+  // separate from OANDA_LIVE so a future real-money account still requires an
+  // explicit LIVE_EXECUTION_VARIANT plus the existing live confirmation gate.
+  const requestedPracticeVariant = String(process.env.PRACTICE_EXECUTION_VARIANT || "INVERSE")
+    .trim()
+    .toUpperCase();
+  process.env.LIVE_EXECUTION_VARIANT = ["MAIN", "INVERSE"].includes(requestedPracticeVariant)
+    ? requestedPracticeVariant
+    : "INVERSE";
 }
 
 // ROHATO_AGGRESSIVE_100 is a Practice/PAPER laboratory profile. It scans all
@@ -118,6 +123,13 @@ executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarke
   const instrument = normalizeOandaSymbol(request?.symbol);
   if (!instrument || instrument.startsWith("XAU_")) return originalExecuteVerifiedMarketOrder(request);
 
+  // Paired signals carry broker-price protective levels. Passing those through
+  // preserves the strict mirror identity exactly instead of rebuilding a
+  // second, non-equivalent 10/20 plan after the signal has been inverted.
+  if (Number.isFinite(Number(request?.stopLossPrice)) && Number.isFinite(Number(request?.takeProfitPrice))) {
+    return originalExecuteVerifiedMarketOrder(request);
+  }
+
   try {
     const [account, instrumentInfo, pricing] = await Promise.all([
       oanda.getAccount(),
@@ -138,8 +150,11 @@ executionEngine.executeVerifiedMarketOrder = async function executeFixedPipMarke
       return { status: "REJECTED", reason: "FIXED_PIP_CONVERSION_UNAVAILABLE" };
     }
 
-    const riskAmount = units * 10 * pipSize * factors.loss;
-    const rewardAmount = units * 20 * pipSize * factors.gain;
+    const mirror = String(request?.strategyVariant || "").toUpperCase() === "INVERSE";
+    const riskPips = mirror ? 20 : 10;
+    const rewardPips = mirror ? 10 : 20;
+    const riskAmount = units * riskPips * pipSize * factors.loss;
+    const rewardAmount = units * rewardPips * pipSize * factors.gain;
     return originalExecuteVerifiedMarketOrder({ ...request, riskAmount, rewardAmount });
   } catch (error) {
     const reason = String(error?.message || "FIXED_PIP_PRECHECK_FAILED")
@@ -154,5 +169,5 @@ console.log(
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
-  `maxNew=7 maxOpen=15 cooldown=10m sl=10p tp=20p exits=SL_TP_ONLY maxDaily=${config.MAX_DAILY_TRADES}`
+  `maxNew=7 maxOpen=15 cooldown=10m MAIN=SL10/TP20 MIRROR=SL20/TP10 exits=SL_TP_ONLY maxDaily=${config.MAX_DAILY_TRADES}`
 );

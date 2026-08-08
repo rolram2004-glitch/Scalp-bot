@@ -210,7 +210,7 @@ function CompactTradeRow({ trade }: { trade: BotTrade }) {
   );
 }
 
-function SignalLaneCard({ lane, title }: { lane: any; title: string }) {
+function SignalLaneCard({ lane, title, symbol }: { lane: any; title: string; symbol: string }) {
   if (!lane) return <div className="signal-duel-card unavailable"><span>{title}</span><strong>N/A</strong><small>NESSUN SNAPSHOT REALE</small></div>;
   const directionClass = lane.action === 'BUY' ? 'positive' : lane.action === 'SELL' ? 'negative' : 'neutral';
   return (
@@ -221,6 +221,9 @@ function SignalLaneCard({ lane, title }: { lane: any; title: string }) {
         <span>SETUP SCORE</span>
       </div>
       <dl>
+        <div><dt>Entry</dt><dd>{price(lane.entryPrice, symbol)}</dd></div>
+        <div><dt>SL</dt><dd>{price(lane.stopLossPrice, symbol)}</dd></div>
+        <div><dt>TP</dt><dd>{price(lane.takeProfitPrice, symbol)}</dd></div>
         <div><dt>Setup</dt><dd>{lane.setupType || 'N/A'}</dd></div>
         <div><dt>State</dt><dd>{lane.executionState || 'N/A'}</dd></div>
       </dl>
@@ -322,6 +325,9 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
     : undefined;
   const recentFeed = feed.slice(0, 9);
   const recentHistory = closedTrades.slice(0, 7);
+  const mirrorSelected = status?.liveExecutionVariant === 'INVERSE' && status?.tradingMode !== 'PAPER';
+  const mainLaneTitle = mirrorSelected ? 'MAIN · PAPER SHADOW' : 'MAIN · OPERATIVA';
+  const mirrorLaneTitle = mirrorSelected ? 'MIRROR · OPERATIVA' : 'MIRROR · PAPER SHADOW';
 
   return (
     <div className="dashboard-page">
@@ -384,16 +390,16 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <section className="signal-duel cockpit-panel">
           <header className="cockpit-panel__header">
-            <div><span>SAME SNAPSHOT</span><h2>MAIN / INVERSE</h2></div>
+            <div><span>STRICT MIRROR · SL ↔ TP</span><h2>MAIN / MIRROR</h2></div>
             <div className="panel-header-tags">
               <b>{primaryPair?.pairId ? primaryPair.pairId.slice(-12) : 'PAIR N/A'}</b>
               <Link to="/vs">APRI VS</Link>
             </div>
           </header>
           <div className="signal-duel__body">
-            <SignalLaneCard lane={primaryPair?.main} title="MAIN LANE" />
+            <SignalLaneCard lane={primaryPair?.main} title={mainLaneTitle} symbol={primarySymbol} />
             <div className="signal-versus">VS</div>
-            <SignalLaneCard lane={primaryPair?.inverse} title="INVERSE LANE" />
+            <SignalLaneCard lane={primaryPair?.inverse} title={mirrorLaneTitle} symbol={primarySymbol} />
           </div>
           <footer className="signal-proof">
             <span>{primaryPair?.marketValid ? 'REAL QUOTE CAPTURED' : primaryPair?.marketValidationReason || 'SNAPSHOT N/A'}</span>

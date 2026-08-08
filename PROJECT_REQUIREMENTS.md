@@ -43,9 +43,9 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
   marker segnali e layout responsive. Nessun livello sintetico.
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
-- La pagina `VS` deve mantenere MAIN e INVERSE in corsie separate. Ogni PAPER SHADOW deve nascere soltanto dopo l'apertura verificata del trade operativo corrispondente e condividere lo stesso signal ID. Il confronto primario usa l'unita normalizzata `R`; CHF, JPY, USD e altre valute restano esposte separatamente e non vengono mai sommate.
+- La pagina `VS` deve mantenere MAIN e MIRROR (INVERSE) in corsie separate. MIRROR usa lo stesso Signal ID, inverte BUY/SELL e preserva lo scambio esatto `MAIN SL = MIRROR TP` / `MAIN TP = MIRROR SL`. Ogni PAPER SHADOW deve nascere soltanto dopo l'apertura verificata della corsia OANDA corrispondente. Il confronto primario usa l'unita normalizzata `R`; CHF, JPY, USD e altre valute restano esposte separatamente e non vengono mai sommate.
 - Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
-- L'identita visiva e `SEL SCALP BOT — $Rohato$🤖111`: cockpit professionale dark forest con verde dominante e menta per INVERSE. Il rosso e riservato a SELL, perdite ed errori; non identifica la corsia INVERSE. Proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
+- L'identita visiva e `SEL SCALP BOT — $Rohato$🤖111`: cockpit professionale White Glass, con verde come accento e superfici bianche semitrasparenti. MAIN resta blu e MIRROR viola; verde e rosso identificano risultati positivi/negativi, non le corsie. Proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
 - La dashboard principale include soltanto metriche derivabili da dati reali: P&L, win rate, trade oggi, posizioni, balance, equity/NAV, profit factor, drawdown, rischio, ultimo segnale e timestamp; quando non calcolabili mostra N/A.
 - Grafico/Setup include Market Scanner, grafico OANDA, layer attivabili, scenari speculari BUY/SELL dallo stesso snapshot e decisione finale BUY/SELL/HOLD motivata.
 
@@ -62,14 +62,16 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
   allineata a struttura e MACD/liquidita. Un breakout anticipato richiede un BOS
   o CHoCH corrente, MACD concorde e volume ratio almeno 0.95. Killzone o FVG
   storici da soli non sono trigger; RSI sopra 72 per BUY o sotto 28 per SELL blocca l'inseguimento.
-- Forex usa stop fisso 10 pip, target fisso 20 pip, rapporto 1:2 e cooldown di
+- Forex MAIN usa stop fisso 10 pip e target fisso 20 pip. MIRROR scambia gli stessi
+  livelli di prezzo, quindi il suo rischio/target nominale diventa circa 20/10 pip
+  (con la differenza effettiva di bid/ask misurata e mostrata). Il cooldown resta di
   10 minuti dopo la chiusura della stessa coppia. Gli importi nella valuta conto
   vengono ricalcolati da size, pip location e conversioni OANDA, non etichettati arbitrariamente.
 - Distinguere sempre target previsto da P&L reale OANDA. Non etichettare USD se il conto e in CHF.
 - Massimo una posizione per simbolo, verificata localmente, nei trade OANDA e nelle posizioni OANDA.
-- Gli scenari BUY e SELL derivano dallo stesso identico snapshot OANDA e dallo stesso timestamp; non effettuano due richieste e non aprono automaticamente trade opposti.
-- Una sola decisione finale puo essere selezionata per l'esecuzione OANDA; lo scenario scartato resta analisi e non invia ordini.
-- La corsia INVERSE di confronto non si apre su segnali grezzi o su trade MAIN bloccati dai gate. Viene registrata uno-a-uno soltanto dopo un ingresso MAIN/PAPER effettivo e resta sempre `PAPER SHADOW` con zero order ID OANDA.
+- MAIN e MIRROR derivano dallo stesso identico snapshot OANDA e dallo stesso timestamp; non effettuano due richieste di mercato e non aprono mai due ordini OANDA opposti sullo stesso segnale.
+- Una sola corsia puo essere selezionata per l'esecuzione OANDA; l'altra resta `PAPER SHADOW` e non invia ordini.
+- Il gemello di confronto non si apre su segnali grezzi o su trade della corsia operativa bloccati dai gate. Viene registrato uno-a-uno soltanto dopo un ingresso effettivo e condivide lo stesso Signal ID.
 - Non presentare il punteggio euristico come probabilita: usare `SETUP SCORE`, derivato in modo ripetibile da trend, momentum, struttura, liquidita, volatilita, spread, sessione, rischio e conferma AI.
 
 ## XAUUSD dedicato

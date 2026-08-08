@@ -135,12 +135,15 @@ function TradeRow({ trade }: { trade: BotTrade }) {
 function LaneCard({ variant, lane, symbol, executionReady }: { variant: 'MAIN' | 'INVERSE'; lane?: SignalLaneSnapshot; symbol: string; executionReady: boolean }) {
   const targets = lane?.structuralTargets || [];
   const laneScore = score(lane);
-  const isMain = variant === 'MAIN';
-  const mode = isMain ? (executionReady ? 'OANDA PRACTICE READY' : 'OANDA PRACTICE BLOCKED') : 'PAPER SHADOW · 0 ORDINI';
+  const label = variant === 'INVERSE' ? 'MIRROR' : 'MAIN';
+  const selected = lane?.selectedForExecution === true;
+  const mode = selected
+    ? executionReady ? 'OANDA PRACTICE READY' : 'OANDA PRACTICE BLOCKED'
+    : 'PAPER SHADOW · 0 ORDINI';
   return (
     <article className={`pro-lane-card ${variant.toLowerCase()}`}>
       <header>
-        <div><span>{isMain ? 'CORSIA OPERATIVA' : 'GEMELLO CONTRARIO'}</span><h3>{variant}</h3></div>
+        <div><span>{selected ? 'CORSIA OPERATIVA' : variant === 'INVERSE' ? 'GEMELLO CONTRARIO' : 'GEMELLO NORMALE'}</span><h3>{label}</h3></div>
         <b>{mode}</b>
       </header>
       <div className="pro-lane-decision">
@@ -154,7 +157,7 @@ function LaneCard({ variant, lane, symbol, executionReady }: { variant: 'MAIN' |
         <div><span>R:R</span><strong>{numeric(lane?.riskRewardRatio) === undefined ? 'N/A' : `1:${Number(lane?.riskRewardRatio).toFixed(2)}`}</strong></div>
       </div>
       <div className="pro-lane-tags"><span>{lane?.setupType || 'SETUP N/A'}</span><span>{lane?.executionState || 'STATE N/A'}</span><span>{lane?.mode || 'MODE N/A'}</span></div>
-      <p>{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
+      <p>{variant === 'INVERSE' ? 'STRICT MIRROR: MAIN SL → MIRROR TP · MAIN TP → MIRROR SL. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
     </article>
   );
 }
@@ -184,8 +187,11 @@ export function CommandSetupPage({
   const executionReady = status?.effectiveExecutionState === 'OANDA_DEMO_READY' || status?.effectiveExecutionState === 'OANDA_LIVE_READY';
   const diagnostic = operationDiagnosis(status, oandaStatus, feedAge);
   const openTrades = (status?.openTrades || []).filter((trade) => trade.status === 'OPEN');
+  const activeVariant = status?.liveExecutionVariant === 'INVERSE' ? 'INVERSE' : 'MAIN';
   const closedTrades = (status?.closedTrades || []).filter((trade) =>
-    status?.tradingMode === 'PAPER' ? trade.source === 'PAPER' : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED'
+    status?.tradingMode === 'PAPER'
+      ? trade.source === 'PAPER'
+      : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED' && trade.strategyVariant === activeVariant
   );
   const performance = calculateTradeMetrics(closedTrades);
   const recentTrades = [...openTrades, ...closedTrades].sort((left, right) => tradeTime(right) - tradeTime(left)).slice(0, 10);
@@ -193,7 +199,7 @@ export function CommandSetupPage({
   const scannerRows = fxSymbols.map((symbol) => ({
     symbol,
     market: status?.marketData?.[symbol] || marketData?.[symbol],
-    signal: status?.pairedSignals?.[symbol]?.main,
+    signal: activeVariant === 'INVERSE' ? status?.pairedSignals?.[symbol]?.inverse : status?.pairedSignals?.[symbol]?.main,
     quote: status?.livePrices?.[symbol]
   }));
   const validNow = scannerRows.filter((row) => row.signal && row.signal.action !== 'HOLD' && (score(row.signal) || 0) >= (status?.minimumConfidence ?? 55)).length;
@@ -219,23 +225,25 @@ export function CommandSetupPage({
   const brokerPass = oandaStatus.connected === true && status?.reconciliationStatus === 'VERIFIED';
   const xauPass = xauLab?.executionEnabled === false && xauLab?.orderCount === 0;
   const reviewCandidate = samplePass && expectancyPass && factorPass && brokerPass && xauPass;
-  const currentLane = primaryPair?.main;
+  const currentLane = activeVariant === 'INVERSE' ? primaryPair?.inverse : primaryPair?.main;
+  const currentLaneLabel = activeVariant === 'INVERSE' ? 'MIRROR' : 'MAIN';
   const chartLines: ChartPriceLine[] = currentLane?.action && currentLane.action !== 'HOLD' ? [
-    { price: Number(currentLane.entryPrice), label: 'MAIN ENTRY', color: '#63a8ff', style: 'solid' as const },
+    { price: Number(currentLane.entryPrice), label: `${currentLaneLabel} ENTRY`, color: '#63a8ff', style: 'solid' as const },
     { price: Number(currentLane.stopLossPrice), label: 'STOP LOSS', color: '#ff7185', style: 'dashed' as const },
     { price: Number(currentLane.takeProfitPrice || currentLane.structuralTargets?.[0]), label: 'TARGET 1', color: '#48df98', style: 'dashed' as const }
   ].filter((line) => Number.isFinite(line.price) && line.price > 0) : [];
   const chartMarkers: ChartSignalMarker[] = primaryPair?.evaluatedAt && (currentLane?.action === 'BUY' || currentLane?.action === 'SELL') ? [
-    { time: primaryPair.evaluatedAt, side: currentLane.action, label: `MAIN ${currentLane.action}` }
+    { time: primaryPair.evaluatedAt, side: currentLane.action, label: `${currentLaneLabel} ${currentLane.action}` }
   ] : [];
   const executionLabel = diagnostic.tone === 'paused'
     ? 'PAUSA WEEKEND'
     : executionReady
       ? 'OANDA READY'
       : String(status?.effectiveExecutionState || 'N/A').replace(/_/g, ' ');
+  const executionVariantLabel = activeVariant === 'INVERSE' ? 'MIRROR (INVERSE)' : 'MAIN';
   const executionDetail = diagnostic.tone === 'paused'
-    ? `${status?.liveExecutionVariant || 'N/A'} · ripresa automatica`
-    : `${status?.liveExecutionVariant || 'N/A'} · ${status?.entryGateStatus || 'N/A'}`;
+    ? `${executionVariantLabel} · ripresa automatica`
+    : `${executionVariantLabel} · ${status?.entryGateStatus || 'N/A'}`;
 
   return (
     <div className="pro-setup">
@@ -243,7 +251,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Una sola schermata per capire stato, qualità strategia, rischio, segnali e ricevute OANDA.</p>
+          <p>Modalità MIRROR: stesso segnale, direzione opposta, MAIN SL → MIRROR TP e MAIN TP → MIRROR SL. Spread e ricevute OANDA restano visibili.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -314,8 +322,8 @@ export function CommandSetupPage({
 
       <section className="pro-duel">
         <LaneCard variant="MAIN" lane={primaryPair?.main} symbol={primarySymbol} executionReady={executionReady} />
-        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>MAIN</b> può inviare l’ordine.<br /><b>INVERSE</b> misura il contrario, ma resta PAPER.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
-        <LaneCard variant="INVERSE" lane={primaryPair?.inverse} symbol={primarySymbol} executionReady={false} />
+        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>Una sola corsia</b> invia OANDA.<br /><b>MIRROR</b>: MAIN SL → TP · MAIN TP → SL.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
+        <LaneCard variant="INVERSE" lane={primaryPair?.inverse} symbol={primarySymbol} executionReady={executionReady} />
       </section>
 
       <section className="pro-insight-grid">
