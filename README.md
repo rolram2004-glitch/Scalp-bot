@@ -63,6 +63,11 @@ Il profilo `ROHATO_AGGRESSIVE_100` scansiona 15 coppie ogni 30 secondi, usa un
 massimo di 7 ingressi validi per ciclo, 15 posizioni, una posizione per simbolo,
 cooldown di 10 minuti e un tetto di 100 ingressi UTC in PAPER/Practice. Non forza
 trade senza setup. `OANDA_LIVE` resta hard-capped a 25 e richiede conferma separata.
+La prontezza del feed operativo richiede le 15 coppie FX fresche e non dipende
+dall'orario separato di XAUUSD, che resta `SIGNAL ONLY`. Posizioni Rohato
+verificate della corsia precedente possono terminare ai propri SL/TP su simboli
+gia occupati senza bloccare l'intero scanner MIRROR; esposizioni esterne o senza
+tag verificabile continuano a bloccare fail-closed.
 
 Gli identificatori OANDA storici conservano il prefisso tecnico `GEMMO` per
 riconoscere in sicurezza le posizioni gia esistenti; il nome visibile del prodotto
