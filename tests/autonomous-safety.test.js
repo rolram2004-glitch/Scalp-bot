@@ -95,6 +95,22 @@ test("paper and shadow quote guard rejects stale or non-tradeable prices", () =>
   assert.equal(autonomousTestUtils.isFreshTradeableQuote({ ...fresh, ask: 1.099 }), false);
 });
 
+test("a shadow pair updates from its own fresh quote without a global feed flag", () => {
+  const quote = {
+    bid: 1.1,
+    ask: 1.1002,
+    time: new Date().toISOString(),
+    tradeable: true
+  };
+  assert.equal(autonomousTestUtils.shadowExecutableExitPrice("BUY", quote), 1.1);
+  assert.equal(autonomousTestUtils.shadowExecutableExitPrice("SELL", quote), 1.1002);
+  assert.equal(autonomousTestUtils.shadowExecutableExitPrice("HOLD", quote), undefined);
+  assert.equal(autonomousTestUtils.shadowExecutableExitPrice("BUY", {
+    ...quote,
+    time: new Date(Date.now() - 60000).toISOString()
+  }), undefined);
+});
+
 test("FX execution feed is ready without waiting for later-opening XAUUSD", () => {
   const quote = { bid: 1, ask: 1.0001, time: new Date().toISOString(), tradeable: true };
   const coverage = autonomousTestUtils.executionFeedCoverage({
