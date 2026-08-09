@@ -20,6 +20,47 @@ test("only an owned GEMMO trade from the active lane may be auto-closed", () => 
   assert.equal(autonomousTestUtils.canAutoCloseOandaTrade(base, "INVERSE"), false);
 });
 
+test("verified previous-lane trades do not block MIRROR on unrelated symbols", () => {
+  const previousMain = {
+    source: "OANDA",
+    managedByBot: true,
+    strategyVariant: "MAIN",
+    signalId: "SIG-EURUSD-1",
+    clientTag: "GEMMO-MAIN-SIG-EURUSD-1",
+    oandaTradeId: "123"
+  };
+  const currentMirror = {
+    ...previousMain,
+    strategyVariant: "INVERSE",
+    signalId: "SIG-GBPUSD-2",
+    clientTag: "GEMMO-INVERSE-SIG-GBPUSD-2",
+    oandaTradeId: "456"
+  };
+
+  assert.equal(autonomousTestUtils.isVerifiedRohatoOandaTrade(previousMain), true);
+  assert.equal(autonomousTestUtils.isVerifiedRohatoOandaTrade(currentMirror), true);
+  assert.equal(autonomousTestUtils.hasUnverifiedOandaExposure([previousMain, currentMirror]), false);
+});
+
+test("manual or malformed OANDA exposure still blocks every new order", () => {
+  const verified = {
+    source: "OANDA",
+    managedByBot: true,
+    strategyVariant: "MAIN",
+    signalId: "SIG-EURUSD-1",
+    clientTag: "GEMMO-MAIN-SIG-EURUSD-1",
+    oandaTradeId: "123"
+  };
+
+  assert.equal(autonomousTestUtils.hasUnverifiedOandaExposure([
+    verified,
+    { ...verified, managedByBot: false, clientTag: "MANUAL-TRADE", signalId: undefined }
+  ]), true);
+  assert.equal(autonomousTestUtils.hasUnverifiedOandaExposure([
+    { ...verified, clientTag: "GEMMO-INVERSE-SIG-EURUSD-1" }
+  ]), true);
+});
+
 test("GEMMO ownership parser rejects manual or malformed tags", () => {
   assert.deepEqual(autonomousTestUtils.parseGemmoClientTag("GEMMO-INVERSE-SIG-EURUSD-1"), {
     strategyVariant: "INVERSE",
@@ -52,6 +93,25 @@ test("paper and shadow quote guard rejects stale or non-tradeable prices", () =>
     time: new Date(Date.now() - 60000).toISOString()
   }), false);
   assert.equal(autonomousTestUtils.isFreshTradeableQuote({ ...fresh, ask: 1.099 }), false);
+});
+
+test("FX execution feed is ready without waiting for later-opening XAUUSD", () => {
+  const quote = { bid: 1, ask: 1.0001, time: new Date().toISOString(), tradeable: true };
+  const coverage = autonomousTestUtils.executionFeedCoverage({
+    EURUSD: quote,
+    GBPUSD: quote,
+    XAUUSD: { ...quote, bid: 2000, ask: 2000.1 }
+  }, ["EURUSD", "GBPUSD", "XAUUSD"]);
+
+  assert.deepEqual(coverage, {
+    covered: 2,
+    expected: 2,
+    latestTime: quote.time
+  });
+  assert.deepEqual(
+    autonomousTestUtils.executionFeedCoverage({ XAUUSD: quote }, ["EURUSD", "XAUUSD"]),
+    { covered: 0, expected: 1, latestTime: undefined }
+  );
 });
 
 test("UTC daily cap counts entries only, not positions merely closed today", () => {
