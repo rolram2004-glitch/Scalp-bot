@@ -17,6 +17,7 @@ const oanda = require("./oanda");
 const config = require("./config");
 
 const SYMBOLS = (config.SYMBOLS || []).map((symbol: string) => String(symbol).replace("_", ""));
+const EXECUTION_SYMBOLS = SYMBOLS.filter((symbol: string) => !String(symbol).toUpperCase().startsWith("XAU"));
 
 // Market data uses M5 candles; the configured interval controls how often the
 // latest completed OANDA context is evaluated. Concurrent scans are blocked.
@@ -227,7 +228,9 @@ const botState: BotSnapshot = {
   pairedSignals: {},
   xauSignalLab: xauSignalLab.getSnapshot(),
   priceCoverage: 0,
-  priceExpected: SYMBOLS.length,
+  // Execution readiness depends on the 15 FX pairs only. XAUUSD has its own
+  // SIGNAL ONLY schedule and must never hold the FX order lane closed.
+  priceExpected: EXECUTION_SYMBOLS.length,
   reconciliationStatus: "NOT_RUN",
   dailyRiskStatus: {
     dateUTC: new Date().toISOString().slice(0, 10),
@@ -503,11 +506,26 @@ function parseGemmoClientTag(tag: unknown) {
     : null;
 }
 
-function hasConflictingManagedVariant() {
-  return botState.openTrades.some((trade) =>
-    trade.source === "OANDA" &&
-    (trade.managedByBot !== true || trade.strategyVariant !== config.LIVE_EXECUTION_VARIANT)
-  );
+function isVerifiedRohatoOandaTrade(
+  trade: Pick<BotTrade, "source" | "managedByBot" | "strategyVariant" | "signalId" | "clientTag" | "oandaTradeId">
+) {
+  const ownership = parseGemmoClientTag(trade.clientTag);
+  return trade.source === "OANDA" &&
+    trade.managedByBot === true &&
+    Boolean(trade.oandaTradeId) &&
+    Boolean(ownership) &&
+    ownership?.strategyVariant === trade.strategyVariant &&
+    ownership?.signalId === trade.signalId;
+}
+
+function hasUnverifiedOandaExposure(
+  trades: Array<Pick<BotTrade, "source" | "managedByBot" | "strategyVariant" | "signalId" | "clientTag" | "oandaTradeId">> = botState.openTrades
+) {
+  // A verified Rohato trade from the previous lane is safe to leave under its
+  // broker-side SL/TP. It blocks only its own symbol through
+  // hasOpenTradeForSymbol(), not every unrelated FX pair. Manual, malformed or
+  // otherwise unverified OANDA exposure still fails closed globally.
+  return trades.some((trade) => trade.source === "OANDA" && !isVerifiedRohatoOandaTrade(trade));
 }
 
 function canAutoCloseOandaTrade(trade: Pick<BotTrade, "source" | "managedByBot" | "strategyVariant" | "clientTag" | "oandaTradeId">, variant: StrategyVariant) {
@@ -575,6 +593,22 @@ function isFreshTradeableQuote(quote: { bid?: unknown; ask?: unknown; time?: unk
     Number.isFinite(ask) && ask >= bid &&
     Number.isFinite(time) && age >= -5000 && age <= 30000 &&
     quote?.tradeable === true;
+}
+
+function executionFeedCoverage(
+  prices: NonNullable<BotSnapshot["livePrices"]>,
+  symbols: string[] = SYMBOLS
+) {
+  const executionSymbols = symbols.filter((symbol) => !isGold(symbol));
+  let covered = 0;
+  let latestTime: string | undefined;
+  for (const symbol of executionSymbols) {
+    const quote = prices[cleanSymbol(symbol)];
+    if (!quote) continue;
+    covered += 1;
+    if (quote.time && (!latestTime || quote.time > latestTime)) latestTime = quote.time;
+  }
+  return { covered, expected: executionSymbols.length, latestTime };
 }
 
 function hasOpenTradeForSymbol(symbol: string) {
@@ -736,9 +770,6 @@ async function refreshLivePrices() {
     }
 
     const nextPrices: NonNullable<BotSnapshot["livePrices"]> = {};
-    let updated = 0;
-    let latestTime: string | undefined;
-
     for (const item of prices) {
       const symbol = cleanSymbol(item?.instrument);
       const bid = Number(item?.bids?.[0]?.price ?? item?.closeoutBid);
@@ -773,15 +804,15 @@ async function refreshLivePrices() {
          };
       }
 
-      if (time && (!latestTime || time > latestTime)) latestTime = time;
-      updated += 1;
     }
 
-    if (updated === 0) throw new Error("OANDA_PRICE_SNAPSHOT_EMPTY");
+    const fxCoverage = executionFeedCoverage(nextPrices);
+    if (fxCoverage.covered === 0) throw new Error("OANDA_FX_PRICE_SNAPSHOT_EMPTY");
     botState.livePrices = nextPrices;
-    botState.priceCoverage = updated;
-    botState.lastPriceAt = latestTime;
-    botState.priceFeedStatus = updated === botState.priceExpected ? "CONNECTED" : "PARTIAL";
+    botState.priceCoverage = fxCoverage.covered;
+    botState.priceExpected = fxCoverage.expected;
+    botState.lastPriceAt = fxCoverage.latestTime;
+    botState.priceFeedStatus = fxCoverage.covered === fxCoverage.expected ? "CONNECTED" : "PARTIAL";
     botState.oandaConnected = true;
     botState.oandaReason = undefined;
     botState.dataSource = "OANDA MARKET DATA";
@@ -1571,10 +1602,10 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     } else if (liveExecutionActive() && pairedSignal.executionBlockedReason) {
       botState.signalsDiscarded += 1;
       pushLog(`[${symbol}] OANDA execution blocked: ${pairedSignal.executionBlockedReason}`);
-    } else if (liveExecutionActive() && hasConflictingManagedVariant()) {
+    } else if (liveExecutionActive() && hasUnverifiedOandaExposure()) {
       botState.signalsDiscarded += 1;
-      updatePairExecution(pairedSignal, "SKIPPED", "OANDA_EXTERNAL_OR_DIFFERENT_GEMMO_VARIANT_OPEN");
-      pushLog(`[${symbol}] OANDA execution skipped: an external/unknown OANDA trade or another Rohato lane is still open`);
+      updatePairExecution(pairedSignal, "SKIPPED", "OANDA_EXTERNAL_OR_UNVERIFIED_TRADE_OPEN");
+      pushLog(`[${symbol}] OANDA execution skipped: external or unverified OANDA exposure is still open`);
     } else if (hasOpenTradeForSymbol(symbol)) {
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "POSITION_ALREADY_OPEN");
@@ -2050,10 +2081,13 @@ export function stopAutonomousBot() {
 
 export const autonomousTestUtils = {
   parseGemmoClientTag,
+  isVerifiedRohatoOandaTrade,
+  hasUnverifiedOandaExposure,
   canAutoCloseOandaTrade,
   paperExecutablePrice,
   paperExitPrice,
   isFreshTradeableQuote,
+  executionFeedCoverage,
   fixedPipPlan,
   variantPipDefaults,
   laneProtectionPlan,
