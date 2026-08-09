@@ -46,6 +46,9 @@ Non considerare concluso un deploy finche `/api/status` non espone
 `maxOpenPositions=15`, `entryGateStatus` valorizzato e
 `xauSignalLab.orderCount=0`. Il conteggio giornaliero deve includere soltanto
 trade con `openTime` nel giorno UTC corrente, non posizioni vecchie chiuse oggi.
+La copertura che abilita gli ordini deve essere `15/15` sulle coppie FX: XAUUSD
+ha orari diversi ed e `SIGNAL ONLY`, quindi la sua chiusura non deve bloccare il
+motore forex.
 
 Controllare inoltre che:
 
@@ -95,10 +98,12 @@ possono ridurre o chiudere l'esposizione invece di creare due test indipendenti.
 
 Ogni ordine GEMMO salva la corsia e il signal ID nelle client extensions
 OANDA. Una posizione senza tag verificabile viene mostrata come OANDA esterna,
-ma il bot non puo chiuderla automaticamente e non apre nuovi ordini finche
-l'origine resta sconosciuta. Prima di cambiare da MAIN a
-INVERSE (o viceversa) chiudere tutte le posizioni GEMMO della corsia precedente;
-in caso contrario ogni nuovo ordine resta bloccato.
+il bot non puo chiuderla automaticamente e non apre nuovi ordini finche
+l'origine resta sconosciuta. Le posizioni GEMMO verificate della corsia
+precedente possono invece arrivare ai propri SL/TP broker mentre la nuova corsia
+lavora su simboli diversi. Sullo stesso simbolo resta sempre vietato un secondo
+ordine: si attende la chiusura verificata e il cooldown, evitando compensazioni
+o riduzioni involontarie dell'esposizione OANDA.
 
 Solo dopo la conferma impostare entrambe le variabili e fare un nuovo deploy:
 

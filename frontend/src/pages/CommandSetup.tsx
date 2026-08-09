@@ -278,7 +278,7 @@ export function CommandSetupPage({
 
       <section className="pro-pipeline" aria-label="Pipeline decisionale corrente">
         <div><span>UNIVERSO</span><strong>{fxSymbols.length} FX</strong><small>+ XAU signal only</small></div>
-        <i>→</i><div><span>QUOTE COPERTE</span><strong>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? allSymbols.length}</strong><small>fonte OANDA</small></div>
+        <i>→</i><div><span>QUOTE FX COPERTE</span><strong>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? 15}</strong><small>OANDA · XAU SIGNAL ONLY separato</small></div>
         <i>→</i><div><span>DIREZIONI</span><strong>{buyNow} BUY · {sellNow} SELL</strong><small>{holdNow} HOLD</small></div>
         <i>→</i><div><span>SETUP VALIDABILI</span><strong>{validNow}</strong><small>soglia {status?.minimumConfidence ?? 'N/A'}/100</small></div>
         <i>→</i><div><span>CAPACITÀ</span><strong>{Math.max(0, (status?.maxOpenPositions ?? 15) - openTrades.length)} slot</strong><small>{status?.dailyRemainingTrades ?? 'N/A'} ingressi UTC</small></div>
