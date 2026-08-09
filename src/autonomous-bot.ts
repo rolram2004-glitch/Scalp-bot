@@ -263,9 +263,25 @@ let dailyRiskReason: string | undefined = config.TRADING_MODE === "PAPER"
   ? undefined
   : "OANDA_RECONCILIATION_NOT_RUN";
 
+function executionFeedOperational(
+  state: Pick<BotSnapshot, "priceFeedStatus" | "priceCoverage" | "priceExpected" | "lastPriceAt">,
+  now = Date.now()
+) {
+  const priceTime = Date.parse(String(state.lastPriceAt || ""));
+  const priceFresh = Number.isFinite(priceTime) && now - priceTime >= -5000 && now - priceTime <= 30000;
+
+  // OANDA can update thin Sunday-open instruments at different times. Requiring
+  // all 15 FX quotes to be fresh in the same one-second snapshot globally
+  // blocks valid symbols. Each scanned symbol is still fail-closed below:
+  // generateMarketData and pairedSignal.marketValid require that symbol's own
+  // executable quote to be fresh and tradeable before any order can be sent.
+  return state.priceFeedStatus !== "DISCONNECTED" &&
+    state.priceCoverage > 0 &&
+    state.priceExpected > 0 &&
+    priceFresh;
+}
+
 function liveExecutionActive() {
-  const priceTime = Date.parse(String(botState.lastPriceAt || ""));
-  const priceFresh = Number.isFinite(priceTime) && Date.now() - priceTime >= -5000 && Date.now() - priceTime <= 30000;
   const modeReady = config.TRADING_MODE === "OANDA_DEMO" ||
     (config.TRADING_MODE === "OANDA_LIVE" && config.OANDA_LIVE_CONFIRMED === true);
   const aiGateConfigured = config.AI_CONFIRMATION_REQUIRED !== true ||
@@ -278,9 +294,7 @@ function liveExecutionActive() {
     config.OANDA_ENVIRONMENT_VALID === true &&
     botState.oandaConnected === true &&
     botState.reconciliationStatus === "VERIFIED" &&
-    botState.priceFeedStatus === "CONNECTED" &&
-    botState.priceCoverage === botState.priceExpected &&
-    priceFresh &&
+    executionFeedOperational(botState) &&
     dailyRiskDataComplete &&
     aiGateConfigured;
 }
@@ -2088,6 +2102,7 @@ export const autonomousTestUtils = {
   paperExitPrice,
   isFreshTradeableQuote,
   executionFeedCoverage,
+  executionFeedOperational,
   fixedPipPlan,
   variantPipDefaults,
   laneProtectionPlan,

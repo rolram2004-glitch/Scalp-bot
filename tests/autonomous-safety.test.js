@@ -114,6 +114,36 @@ test("FX execution feed is ready without waiting for later-opening XAUUSD", () =
   );
 });
 
+test("a fresh partial FX feed does not globally block valid symbols", () => {
+  const now = Date.parse("2026-08-09T21:45:30.000Z");
+  const base = {
+    priceExpected: 15,
+    lastPriceAt: "2026-08-09T21:45:29.000Z"
+  };
+
+  assert.equal(autonomousTestUtils.executionFeedOperational({
+    ...base,
+    priceFeedStatus: "PARTIAL",
+    priceCoverage: 11
+  }, now), true);
+  assert.equal(autonomousTestUtils.executionFeedOperational({
+    ...base,
+    priceFeedStatus: "DISCONNECTED",
+    priceCoverage: 11
+  }, now), false);
+  assert.equal(autonomousTestUtils.executionFeedOperational({
+    ...base,
+    priceFeedStatus: "PARTIAL",
+    priceCoverage: 0
+  }, now), false);
+  assert.equal(autonomousTestUtils.executionFeedOperational({
+    ...base,
+    priceFeedStatus: "PARTIAL",
+    priceCoverage: 11,
+    lastPriceAt: "2026-08-09T21:44:00.000Z"
+  }, now), false);
+});
+
 test("UTC daily cap counts entries only, not positions merely closed today", () => {
   const dateUTC = "2026-07-31";
   const trades = [
