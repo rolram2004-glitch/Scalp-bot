@@ -609,6 +609,15 @@ function isFreshTradeableQuote(quote: { bid?: unknown; ask?: unknown; time?: unk
     quote?.tradeable === true;
 }
 
+function shadowExecutableExitPrice(
+  side: "BUY" | "SELL" | "HOLD",
+  quote: { bid?: unknown; ask?: unknown; time?: unknown; tradeable?: unknown } | undefined
+) {
+  if (!quote || side === "HOLD" || !isFreshTradeableQuote(quote)) return undefined;
+  const price = Number(side === "SELL" ? quote.ask : quote.bid);
+  return Number.isFinite(price) && price > 0 ? price : undefined;
+}
+
 function executionFeedCoverage(
   prices: NonNullable<BotSnapshot["livePrices"]>,
   symbols: string[] = SYMBOLS
@@ -1882,8 +1891,8 @@ async function monitorShadowTrades() {
 
   for (const trade of botState.shadowOpenTrades) {
     const quote = botState.livePrices?.[cleanSymbol(trade.symbol)];
-    const currentPrice = Number(trade.side === "SELL" ? quote?.ask : quote?.bid);
-    if (botState.priceFeedStatus !== "CONNECTED" || !quote || !isFreshTradeableQuote(quote) || !Number.isFinite(currentPrice) || currentPrice <= 0) {
+    const currentPrice = shadowExecutableExitPrice(trade.side, quote);
+    if (!quote || currentPrice === undefined) {
       stillOpen.push(trade);
       continue;
     }
@@ -2101,6 +2110,7 @@ export const autonomousTestUtils = {
   paperExecutablePrice,
   paperExitPrice,
   isFreshTradeableQuote,
+  shadowExecutableExitPrice,
   executionFeedCoverage,
   executionFeedOperational,
   fixedPipPlan,
