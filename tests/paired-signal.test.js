@@ -108,6 +108,28 @@ test("strict MIRROR also swaps MAIN protective levels for a SELL signal", () => 
   assert.equal(result.inverse.takeProfitPrice, result.main.stopLossPrice);
 });
 
+test("old MAIN 10/20 plan becomes MIRROR SL about 20 pips and TP about 10 pips in both directions", () => {
+  for (const action of ["BUY", "SELL"]) {
+    const result = snapshot({
+      mainDecision: {
+        action,
+        confidence: 72,
+        setupType: "OLD_MAIN_CONTRACT",
+        reasoning: "keep the old strategy and invert only its execution"
+      }
+    });
+    const direction = result.inverse.action === "BUY" ? 1 : -1;
+    const mirrorRiskPips = (result.inverse.entryPrice - result.inverse.stopLossPrice) * direction * 10000;
+    const mirrorTargetPips = (result.inverse.takeProfitPrice - result.inverse.entryPrice) * direction * 10000;
+
+    assert.equal(result.inverse.action, action === "BUY" ? "SELL" : "BUY");
+    assert.equal(result.inverse.stopLossPrice, result.main.takeProfitPrice);
+    assert.equal(result.inverse.takeProfitPrice, result.main.stopLossPrice);
+    assert.ok(Math.abs(mirrorRiskPips - 20.8) < 1e-10);
+    assert.ok(Math.abs(mirrorTargetPips - 9.2) < 1e-10);
+  }
+});
+
 test("red MAIN stop becomes MIRROR target and green MAIN target becomes MIRROR stop at the exact prices", () => {
   const result = snapshot({
     mainDecision: {
