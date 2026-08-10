@@ -8,6 +8,16 @@ function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
+function isUtcToday(value?: string) {
+  if (!value) return false;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const now = new Date();
+  return parsed.getUTCFullYear() === now.getUTCFullYear() &&
+    parsed.getUTCMonth() === now.getUTCMonth() &&
+    parsed.getUTCDate() === now.getUTCDate();
+}
+
 export function AnalyticsPage({ analytics, status }: { analytics: any; status?: StatusSnapshot | null }) {
   const mode = executionView(status);
   const liveDataAvailable = hasVerifiedOandaLedger(status);
@@ -17,10 +27,15 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
     ? analyticsMode === 'PAPER'
     : mode.oanda && Boolean(status?.tradingMode) && analyticsMode.startsWith(String(status?.tradingMode));
   const metricsAvailable = ledgerAvailable && analytics !== null && analytics !== undefined && analyticsModeMatches;
+  const activeVariant = status?.liveExecutionVariant === 'MAIN' || status?.liveExecutionVariant === 'INVERSE'
+    ? status.liveExecutionVariant
+    : undefined;
+  const activeLaneLabel = activeVariant === 'INVERSE' ? 'MIRROR' : activeVariant || 'CURRENT MODE';
   const allTrades = status ? [...status.closedTrades, ...status.openTrades] : [];
   const trades = ledgerAvailable ? allTrades.filter((trade) => mode.paper
     ? trade.source === 'PAPER'
-    : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED') : [];
+    : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED' &&
+      (!activeVariant || trade.strategyVariant === activeVariant)) : [];
   const distribution = trades.reduce((acc: Record<string, number>, trade) => {
     const key = trade.setupType || 'SETUP N/A';
     acc[key] = (acc[key] || 0) + 1;
@@ -36,26 +51,30 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
   const comparableClosedTrades = (status?.closedTrades || [])
     .filter((trade) => ledgerAvailable && (mode.paper
       ? trade.source === 'PAPER'
-      : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED'));
+      : trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED' &&
+        (!activeVariant || trade.strategyVariant === activeVariant)));
   const outcome = calculateMonetaryOutcomeSummary(comparableClosedTrades);
   const closedSeriesCurrency = outcome.currency;
   const closedValues = outcome.comparable
     ? comparableClosedTrades.map((trade) => Number(trade.pnl)).slice(0, 30).reverse()
     : [];
   const maximumMagnitude = Math.max(...closedValues.map((value) => Math.abs(value)), 0);
-  const pnlToday = metricsAvailable && finite(analytics?.pnlToday) ? analytics.pnlToday : undefined;
+  const todayTrades = trades.filter((trade) => isUtcToday(trade.closedAt || trade.openedAt));
+  const todayPnl = todayTrades.map((trade) => trade.pnl).filter(finite);
+  const todayCurrencies = new Set(todayTrades.map((trade) => mode.paper ? trade.pnlCurrency : trade.accountCurrency).filter(Boolean));
+  const pnlToday = metricsAvailable && todayTrades.length > 0 && todayPnl.length === todayTrades.length && todayCurrencies.size === 1
+    ? todayPnl.reduce((sum, value) => sum + value, 0)
+    : undefined;
   const winRate = metricsAvailable && outcome.sampleSize > 0 ? outcome.winRate : undefined;
   const wins = metricsAvailable && outcome.sampleSize > 0 ? outcome.wins : undefined;
   const losses = metricsAvailable && outcome.sampleSize > 0 ? outcome.losses : undefined;
-  const currency = metricsAvailable && typeof analytics?.pnlCurrency === 'string' && analytics.pnlCurrency.trim()
-    ? analytics.pnlCurrency
-    : undefined;
+  const currency = metricsAvailable && todayCurrencies.size === 1 ? String([...todayCurrencies][0]) : undefined;
   const modeLabel = !mode.known
     ? 'MODE / API UNAVAILABLE'
     : mode.paper
       ? 'PAPER LEDGER'
       : liveDataAvailable
-        ? `${mode.demo ? 'OANDA DEMO' : 'OANDA LIVE'} VERIFIED ONLY`
+        ? `${mode.demo ? 'OANDA DEMO' : 'OANDA LIVE'} · ${activeLaneLabel} ONLY`
         : `${mode.demo ? 'OANDA DEMO' : 'OANDA LIVE'} DATA UNAVAILABLE`;
   const unavailableReason = !mode.known
     ? 'DATI NON DISPONIBILI: stato applicazione non disponibile.'
@@ -66,7 +85,7 @@ export function AnalyticsPage({ analytics, status }: { analytics: any; status?: 
   return (
     <div className="analytics-page">
       <section className="page-hero">
-        <div><p className="eyebrow">Analytics</p><h1>Performance calcolata soltanto sui trade della corsia corrente.</h1></div>
+        <div><p className="eyebrow">Analytics</p><h1>Performance calcolata soltanto sui trade {activeLaneLabel} della corsia corrente.</h1></div>
         <div className="system-warning">{modeLabel}</div>
       </section>
 

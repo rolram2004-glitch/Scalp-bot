@@ -236,14 +236,22 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
   const mode = executionView(status);
   const oandaLedgerAvailable = hasVerifiedOandaLedger(status);
   const ledgerAvailable = mode.paper || oandaLedgerAvailable;
+  const activeVariant = status?.liveExecutionVariant === 'MAIN' || status?.liveExecutionVariant === 'INVERSE'
+    ? status.liveExecutionVariant
+    : undefined;
+  const activeLaneLabel = activeVariant === 'INVERSE' ? 'MIRROR' : activeVariant || 'CURRENT MODE';
   const orphanIds = new Set((status?.orphanTrades || []).map((trade) => trade.id));
   const eligible = (trade: BotTrade) => {
     if (orphanIds.has(trade.id) || trade.source === 'LOCAL_ORPHAN' || trade.verificationStatus === 'NOT_VERIFIED') return false;
     if (mode.paper) return trade.source === 'PAPER';
     return oandaLedgerAvailable && trade.source === 'OANDA' && trade.verificationStatus === 'VERIFIED';
   };
-  const openTrades = ledgerAvailable ? (status?.openTrades || []).filter(eligible) : [];
-  const closedTrades = ledgerAvailable ? (status?.closedTrades || []).filter(eligible) : [];
+  const belongsToActiveLane = (trade: BotTrade) => !mode.oanda || !activeVariant || trade.strategyVariant === activeVariant;
+  const accountOpenTrades = ledgerAvailable ? (status?.openTrades || []).filter(eligible) : [];
+  const openTrades = accountOpenTrades.filter(belongsToActiveLane);
+  const closedTrades = ledgerAvailable
+    ? (status?.closedTrades || []).filter(eligible).filter(belongsToActiveLane)
+    : [];
   const feed = [
     ...openTrades,
     ...closedTrades.slice(0, Math.max(0, 20 - openTrades.length))
@@ -318,11 +326,12 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
   const xauQuote = status?.livePrices?.[xauSymbol];
   const xauPair = status?.pairedSignals?.[xauSymbol];
   const xauPrice = xauQuote?.mid ?? xauMarket?.closePrice;
-  const openPositionValue = ledgerAvailable ? openTrades.length : 'N/A';
-  const openUnitValues = openTrades.map((trade) => Number(trade.units)).filter((value) => Number.isFinite(value));
-  const openUnits = ledgerAvailable && openTrades.length > 0 && openUnitValues.length === openTrades.length
+  const openPositionValue = ledgerAvailable ? accountOpenTrades.length : 'N/A';
+  const openUnitValues = accountOpenTrades.map((trade) => Number(trade.units)).filter((value) => Number.isFinite(value));
+  const openUnits = ledgerAvailable && accountOpenTrades.length > 0 && openUnitValues.length === accountOpenTrades.length
     ? openUnitValues.reduce((sum, value) => sum + value, 0)
     : undefined;
+  const otherLaneOpenPositions = Math.max(0, accountOpenTrades.length - openTrades.length);
   const recentFeed = feed.slice(0, 9);
   const recentHistory = closedTrades.slice(0, 7);
   const mirrorSelected = status?.liveExecutionVariant === 'INVERSE' && status?.tradingMode !== 'PAPER';
@@ -335,7 +344,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <MetricTile
           label="P&L OGGI"
           value={money(pnlToday, pnlCurrency)}
-          detail={mode.paper ? 'Aggregato PAPER non convertito' : oandaLedgerAvailable ? `UTC ${dailyRisk?.dateUTC || 'N/A'}` : 'Riconciliazione OANDA richiesta'}
+          detail={mode.paper ? 'Aggregato PAPER non convertito' : oandaLedgerAvailable ? `${activeLaneLabel} · UTC ${dailyRisk?.dateUTC || 'N/A'}` : 'Riconciliazione OANDA richiesta'}
           tone={typeof pnlToday === 'number' && pnlToday < 0 ? 'red' : 'green'}
           spark={cumulativePnl}
         />
@@ -355,7 +364,11 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <MetricTile
           label="POSIZIONI APERTE"
           value={openPositionValue}
-          detail={ledgerAvailable ? openTrades.length === 0 ? 'Nessuna posizione corrente' : openUnits === undefined ? 'Units N/A' : `${openUnits} units tracciate` : 'Ledger non verificato'}
+          detail={ledgerAvailable
+            ? accountOpenTrades.length === 0
+              ? 'Nessuna posizione corrente'
+              : `${openTrades.length} ${activeLaneLabel}${otherLaneOpenPositions ? ` · ${otherLaneOpenPositions} altra corsia` : ''}${openUnits === undefined ? ' · units N/A' : ` · ${openUnits} units totali`}`
+            : 'Ledger non verificato'}
           tone="green"
         />
         <MetricTile
@@ -390,7 +403,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <section className="signal-duel cockpit-panel">
           <header className="cockpit-panel__header">
-            <div><span>STRICT MIRROR · SL ↔ TP</span><h2>MAIN / MIRROR</h2></div>
+            <div><span>VECCHIA MAIN 10P/20P · MIRROR SL ≈ 20P / TP ≈ 10P</span><h2>MAIN / MIRROR</h2></div>
             <div className="panel-header-tags">
               <b>{primaryPair?.pairId ? primaryPair.pairId.slice(-12) : 'PAIR N/A'}</b>
               <Link to="/vs">APRI VS</Link>
@@ -409,7 +422,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <article className="cockpit-panel dashboard-feed-card">
           <header className="cockpit-panel__header">
-            <div><span>{mode.paper ? 'PAPER LEDGER' : oandaLedgerAvailable ? 'OANDA VERIFIED LEDGER' : 'LEDGER UNAVAILABLE'}</span><h2>TRADE FEED</h2></div>
+            <div><span>{mode.paper ? 'PAPER LEDGER' : oandaLedgerAvailable ? `OANDA VERIFIED · ${activeLaneLabel} ONLY` : 'LEDGER UNAVAILABLE'}</span><h2>TRADE FEED</h2></div>
             <Link to="/history">VEDI TUTTO</Link>
           </header>
           <div className="compact-trade-list">
@@ -428,7 +441,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
       <section className="dashboard-secondary-grid">
         <article className="cockpit-panel dashboard-history-card">
           <header className="cockpit-panel__header">
-            <div><span>LEDGER CURRENT MODE</span><h2>TRADE HISTORY</h2></div>
+            <div><span>LEDGER CURRENT MODE · {activeLaneLabel}</span><h2>TRADE HISTORY</h2></div>
             <b>{displayMode}</b>
           </header>
           <div className="dense-table-scroll">
@@ -455,7 +468,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <article className="cockpit-panel dashboard-analytics-card">
           <header className="cockpit-panel__header">
-            <div><span>RISULTATI VERIFICATI OANDA</span><h2>BILANCIO {outcome.sampleSize || 'N/A'} TRADE</h2></div>
+            <div><span>RISULTATI VERIFICATI OANDA · {activeLaneLabel} ONLY</span><h2>BILANCIO {activeLaneLabel} · {outcome.sampleSize || 'N/A'} TRADE</h2></div>
             <Link to="/analytics">DETTAGLI</Link>
           </header>
           <div className="outcome-scoreboard">
@@ -496,7 +509,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
             </div>
             <p className="outcome-proof">
               {outcome.comparable
-                ? `VALUTA REALE CONTO OANDA: ${outcome.currency} · importi verificati dal broker, non USDT.`
+                ? `VALUTA REALE CONTO OANDA: ${outcome.currency} · solo corsia ${activeLaneLabel}; storico dell'altra corsia escluso.`
                 : outcome.sampleSize > 0
                   ? 'P&L MONETARIO NON SOMMABILE: valuta o importi incompleti.'
                   : 'NESSUN TRADE CHIUSO VERIFICABILE.'}
