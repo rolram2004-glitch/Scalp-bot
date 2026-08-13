@@ -430,7 +430,7 @@ function cashRules(symbol: string) {
       }
     : {
         riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT || 1.2),
-        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 2.4)
+        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.5)
       };
 }
 
@@ -1436,7 +1436,10 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       tradingMode: config.TRADING_MODE,
       liveExecutionVariant: config.LIVE_EXECUTION_VARIANT,
       executionGateVerified: liveExecutionActive(),
-      minimumConfidence: MIN_CONFIDENCE
+      minimumConfidence: MIN_CONFIDENCE,
+      accountCashRisk: Number(config.NORMAL_STOP_LOSS_ACCOUNT),
+      accountCashReward: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT),
+      accountTargetCurrency: String(config.ACCOUNT_TARGET_CURRENCY || "")
     });
     if (isGold(symbol)) {
       pairedSignal.executionBlockedReason = "XAU_ANALYSIS_ONLY_VALIDATION_PENDING";
@@ -1703,8 +1706,8 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           units: tradeUnits(symbol),
           riskAmount: cash.riskAmount,
           rewardAmount: cash.rewardAmount,
-          stopLossPrice: selectedLane.stopLossPrice,
-          takeProfitPrice: selectedLane.takeProfitPrice,
+          protectionMode: "ACCOUNT_CASH",
+          targetAccountCurrency: String(config.ACCOUNT_TARGET_CURRENCY || ""),
           strategyVariant: config.LIVE_EXECUTION_VARIANT,
           signalId: pairedSignal.pairId,
           signalAt: pairedSignal.evaluatedAt

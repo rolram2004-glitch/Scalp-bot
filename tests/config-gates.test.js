@@ -15,6 +15,10 @@ function readConfig(env) {
     SCAN_INTERVAL_MS: process.env.SCAN_INTERVAL_MS,
     MIN_SIGNAL_CONFIDENCE: process.env.MIN_SIGNAL_CONFIDENCE,
     FOREX_SIGNAL_PROFILE: process.env.FOREX_SIGNAL_PROFILE,
+    DEFAULT_UNITS: process.env.DEFAULT_UNITS,
+    NORMAL_STOP_LOSS_ACCOUNT: process.env.NORMAL_STOP_LOSS_ACCOUNT,
+    NORMAL_TAKE_PROFIT_ACCOUNT: process.env.NORMAL_TAKE_PROFIT_ACCOUNT,
+    ACCOUNT_TARGET_CURRENCY: process.env.ACCOUNT_TARGET_CURRENCY,
     MAX_RISK_PERCENT: process.env.MAX_RISK_PERCENT,
     MAX_DAILY_LOSS: process.env.MAX_DAILY_LOSS,
     AI_PROVIDER: process.env.AI_PROVIDER,
@@ -135,6 +139,24 @@ test("Rohato Practice profile accepts 30 second scans and caps the demo day at 1
   assert.equal(config.MAX_DAILY_TRADES, 100);
   assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
   assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_AGGRESSIVE_100");
+});
+
+test("MIRROR account-cash defaults are 1000 units, SL 1.20 CHF and TP 0.50 CHF", () => {
+  const config = readConfig({
+    TRADING_MODE: "OANDA_DEMO",
+    OANDA_ENVIRONMENT: "PRACTICE",
+    OANDA_ORDER_EXECUTION_ENABLED: "true",
+    LIVE_EXECUTION_VARIANT: "INVERSE",
+    DEFAULT_UNITS: "1000",
+    NORMAL_STOP_LOSS_ACCOUNT: "1.2",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.5",
+    ACCOUNT_TARGET_CURRENCY: "chf"
+  });
+
+  assert.equal(config.DEFAULT_UNITS, 1000);
+  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 1.2);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.5);
+  assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
 });
 
 test("PAPER daily trade cap cannot be raised above 100 by a stale Railway variable", () => {

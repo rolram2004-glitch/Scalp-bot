@@ -161,6 +161,8 @@ function createApp() {
       units,
       riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT),
       rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT),
+      protectionMode: "ACCOUNT_CASH",
+      targetAccountCurrency: String(config.ACCOUNT_TARGET_CURRENCY || ""),
       strategyVariant: config.LIVE_EXECUTION_VARIANT,
       signalId: `SIG-DEMO-TEST-${signalAt.replace(/[^0-9]/g, "")}`,
       signalAt

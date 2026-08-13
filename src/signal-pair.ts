@@ -96,6 +96,9 @@ interface PairedSignalInput {
   liveExecutionVariant: unknown;
   executionGateVerified: boolean;
   minimumConfidence?: number;
+  accountCashRisk?: number;
+  accountCashReward?: number;
+  accountTargetCurrency?: string;
 }
 
 function isSignalAction(action: unknown): action is SignalAction {
@@ -192,6 +195,16 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const mainTargets = cleanTargets(input.mainDecision?.structuralTargets, mainAction, entry);
   const unitPip = pipSize(input.symbol);
   const forexInstrument = !String(input.symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "").startsWith("XAU");
+  const accountCashRisk = Number(input.accountCashRisk);
+  const accountCashReward = Number(input.accountCashReward);
+  const accountTargetCurrency = String(input.accountTargetCurrency || "").trim().toUpperCase();
+  const accountCashRequested = input.accountCashRisk !== undefined ||
+    input.accountCashReward !== undefined || input.accountTargetCurrency !== undefined;
+  const inverseCashSelected = inverseSelected && forexInstrument && accountCashRequested;
+  const inverseCashProtectionValid =
+    Number.isFinite(accountCashRisk) && accountCashRisk > 0 &&
+    Number.isFinite(accountCashReward) && accountCashReward > 0 &&
+    accountTargetCurrency === "CHF";
   const stopPips = finite(input.mainDecision?.stopLossPips) && input.mainDecision.stopLossPips > 0
     ? input.mainDecision.stopLossPips
     : forexInstrument ? 10 : undefined;
@@ -220,7 +233,8 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
     inverseTakeProfit
   );
   const inverseTargets = inverseLevelsValid && finite(inverseTakeProfit) ? [inverseTakeProfit] : [];
-  const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence && inverseLevelsValid;
+  const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence &&
+    (inverseCashSelected ? inverseCashProtectionValid : inverseLevelsValid);
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";
 
@@ -228,7 +242,8 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   else if (liveRequested && !validVariant) executionBlockedReason = "INVALID_LIVE_EXECUTION_VARIANT";
   else if (liveRequested && input.executionGateVerified !== true) executionBlockedReason = "OANDA_SAFETY_GATES_NOT_VERIFIED";
   else if (liveRequested && !realMarketSnapshot) executionBlockedReason = marketValidationReason;
-  else if (inverseSelected && !inverseLevelsValid) executionBlockedReason = "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD";
+  else if (inverseCashSelected && !inverseCashProtectionValid) executionBlockedReason = "ACCOUNT_CASH_TARGETS_INVALID";
+  else if (inverseSelected && !inverseCashSelected && !inverseLevelsValid) executionBlockedReason = "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD";
 
   return {
     pairId: input.signalId,
@@ -264,22 +279,30 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       setupScore: input.mainDecision?.setupScore ?? confidence,
       scoreLabel: input.mainDecision?.scoreLabel,
       scoreBreakdown: input.mainDecision?.scoreBreakdown,
-      reasoning: `STRICT MIRROR sullo stesso snapshot OANDA: MAIN ${mainAction} -> MIRROR ${inverseAction}; MAIN SL diventa MIRROR TP e MAIN TP diventa MIRROR SL. ${baseReasoning}`,
+      reasoning: inverseCashSelected
+        ? `CONTRARIO sullo stesso segnale: MAIN ${mainAction} -> MIRROR ${inverseAction}. Protezione OANDA sul prezzo eseguito: TP nominale +${accountCashReward.toFixed(2)} ${accountTargetCurrency}, SL nominale -${accountCashRisk.toFixed(2)} ${accountTargetCurrency}. ${baseReasoning}`
+        : `STRICT MIRROR sullo stesso snapshot OANDA: MAIN ${mainAction} -> MIRROR ${inverseAction}; MAIN SL diventa MIRROR TP e MAIN TP diventa MIRROR SL. ${baseReasoning}`,
       setupType: input.mainDecision?.setupType ? `MIRROR_${input.mainDecision.setupType}` : "MIRROR",
       entryPrice: inverseAction === "HOLD" ? undefined : inverseEntry,
-      stopLossPrice: inverseAction === "HOLD" ? undefined : inverseStop,
-      takeProfitPrice: inverseAction === "HOLD" ? undefined : inverseTakeProfit,
-      structuralTargets: inverseAction === "HOLD" ? [] : inverseTargets,
-      riskRewardRatio: inverseAction === "HOLD" ? undefined : riskReward(inverseEntry, inverseStop, inverseTakeProfit),
+      stopLossPrice: inverseAction === "HOLD" || inverseCashSelected ? undefined : inverseStop,
+      takeProfitPrice: inverseAction === "HOLD" || inverseCashSelected ? undefined : inverseTakeProfit,
+      structuralTargets: inverseAction === "HOLD" || inverseCashSelected ? [] : inverseTargets,
+      riskRewardRatio: inverseAction === "HOLD"
+        ? undefined
+        : inverseCashSelected && inverseCashProtectionValid
+          ? accountCashReward / accountCashRisk
+          : riskReward(inverseEntry, inverseStop, inverseTakeProfit),
       mode: inverseSelected ? oandaLaneMode : "PAPER SHADOW",
       selectedForExecution: inverseSelected,
       executionState: inverseSelected ? (inverseEligible ? "READY" : "NOT_ELIGIBLE") : "SHADOW",
       executionReason: inverseSelected && !inverseEligible
         ? inverseAction === "HOLD"
           ? "HOLD"
-          : !inverseLevelsValid
-            ? "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD"
-            : "CONFIDENCE_BELOW_THRESHOLD"
+          : inverseCashSelected && !inverseCashProtectionValid
+            ? "ACCOUNT_CASH_TARGETS_INVALID"
+            : !inverseLevelsValid
+              ? "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD"
+              : "CONFIDENCE_BELOW_THRESHOLD"
         : undefined,
       derivedFrom: "MAIN"
     },

@@ -28,6 +28,16 @@ function assertOrderExecutionConfigured() {
   }
 }
 
+function assertAccountCashExecutionConfigured() {
+  assertOrderExecutionConfigured();
+  if (config.TRADING_MODE !== "OANDA_DEMO" || config.OANDA_ENVIRONMENT !== "PRACTICE") {
+    throw new Error("ACCOUNT_CASH_REQUIRES_OANDA_PRACTICE");
+  }
+  if (!config.LIVE_EXECUTION_VARIANT_VALID || config.LIVE_EXECUTION_VARIANT !== "INVERSE") {
+    throw new Error("ACCOUNT_CASH_REQUIRES_INVERSE");
+  }
+}
+
 function normalizeOandaSymbol(symbol) {
   let normalized = String(symbol).toUpperCase().replace(/[^A-Z0-9]/g, '_').replace(/__+/g, '_').trim();
   if (!normalized.includes('_') && normalized.length === 6) {
@@ -110,6 +120,11 @@ class OandaAPI {
   rememberSuccess() {
     this.lastError = null;
     this.lastSuccessAt = new Date().toISOString();
+  }
+
+  assertAccountCashExecutionConfigured() {
+    assertAccountCashExecutionConfigured();
+    return true;
   }
 
   parseError(scope, error) {
@@ -442,6 +457,39 @@ class OandaAPI {
     } catch (error) {
       if (error?.name === "OandaAPIError") throw error;
       throw this.safeError("create_order", error);
+    }
+  }
+
+  async replaceTradeDependentOrders({ tradeId, stopLoss, takeProfit, strategyVariant }) {
+    assertAccountCashExecutionConfigured();
+    if (!config.LIVE_EXECUTION_VARIANT_VALID || strategyVariant !== config.LIVE_EXECUTION_VARIANT) {
+      throw new Error("LIVE_EXECUTION_VARIANT_BLOCKED_BY_CONFIGURATION");
+    }
+
+    const normalizedTradeId = String(tradeId || "").trim();
+    if (!normalizedTradeId || !/^[A-Za-z0-9._-]+$/.test(normalizedTradeId)) {
+      throw new TypeError("TRADE_ID_REQUIRED");
+    }
+    const normalizedStopLoss = normalizeOptionalPrice(stopLoss, "STOP_LOSS");
+    const normalizedTakeProfit = normalizeOptionalPrice(takeProfit, "TAKE_PROFIT");
+    if (!normalizedStopLoss || !normalizedTakeProfit) {
+      throw new TypeError("PROTECTIVE_ORDERS_REQUIRED");
+    }
+
+    const body = {
+      stopLoss: { price: normalizedStopLoss, timeInForce: "GTC" },
+      takeProfit: { price: normalizedTakeProfit, timeInForce: "GTC" }
+    };
+    try {
+      const response = await axios.put(
+        `${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades/${encodeURIComponent(normalizedTradeId)}/orders`,
+        body,
+        this.requestOptions()
+      );
+      this.rememberSuccess();
+      return response.data;
+    } catch (error) {
+      throw this.safeError("replace_trade_dependent_orders", error);
     }
   }
 
