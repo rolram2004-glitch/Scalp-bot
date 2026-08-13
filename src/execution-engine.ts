@@ -7,6 +7,8 @@ export interface VerifiedOrderRequest {
   units: number;
   riskAmount: number;
   rewardAmount: number;
+  protectionMode?: "ACCOUNT_CASH";
+  targetAccountCurrency?: string;
   stopLossPrice?: number;
   takeProfitPrice?: number;
   strategyVariant: "MAIN" | "INVERSE";
@@ -41,6 +43,10 @@ export type VerifiedOrderResult =
 
 const instrumentsInFlight = new Set<string>();
 const verifiedSignalIds = new Set<string>();
+const INVERSE_CASH_UNITS = 1000;
+const INVERSE_CASH_RISK_CHF = 1.2;
+const INVERSE_CASH_REWARD_CHF = 0.5;
+const INVERSE_CASH_CURRENCY = "CHF";
 
 export function normalizeOandaSymbol(symbol: string) {
   const compact = String(symbol || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -96,6 +102,61 @@ function conversionFactors(
 function executablePrice(price: any, side: OrderSide) {
   const preferred = side === "BUY" ? price?.asks?.[0]?.price : price?.bids?.[0]?.price;
   return finitePositive(preferred) || finitePositive(side === "BUY" ? price?.closeoutAsk : price?.closeoutBid);
+}
+
+function fillConversionFactors(fillTransaction: any, fallback: { loss: number; gain: number }) {
+  const modern = fillTransaction?.homeConversionFactors;
+  const modernLoss = finitePositive(modern?.lossQuoteHome?.factor);
+  const modernGain = finitePositive(modern?.gainQuoteHome?.factor);
+  if (modernLoss && modernGain) return { loss: modernLoss, gain: modernGain };
+
+  const legacyLoss = finitePositive(fillTransaction?.lossQuoteHomeConversionFactor);
+  const legacyGain = finitePositive(fillTransaction?.gainQuoteHomeConversionFactor);
+  if (legacyLoss && legacyGain) return { loss: legacyLoss, gain: legacyGain };
+
+  return fallback;
+}
+
+function accountCashProtectionPlan(
+  entry: number,
+  side: OrderSide,
+  units: number,
+  factors: { loss: number; gain: number },
+  displayPrecision: number,
+  riskTarget: number,
+  rewardTarget: number
+) {
+  const direction = side === "BUY" ? 1 : -1;
+  const riskDistance = riskTarget / (units * factors.loss);
+  const rewardDistance = rewardTarget / (units * factors.gain);
+  const stopLoss = (entry - direction * riskDistance).toFixed(displayPrecision);
+  const takeProfit = (entry + direction * rewardDistance).toFixed(displayPrecision);
+  const stopLossNumber = Number(stopLoss);
+  const takeProfitNumber = Number(takeProfit);
+  if (!finitePositive(stopLossNumber) || !finitePositive(takeProfitNumber) ||
+      (entry - stopLossNumber) * direction <= 0 ||
+      (takeProfitNumber - entry) * direction <= 0) {
+    return null;
+  }
+
+  const riskAmount = Math.abs(entry - stopLossNumber) * units * factors.loss;
+  const rewardAmount = Math.abs(takeProfitNumber - entry) * units * factors.gain;
+  const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
+  const riskTolerance = priceHalfTick * units * factors.loss + 1e-10;
+  const rewardTolerance = priceHalfTick * units * factors.gain + 1e-10;
+  if (Math.abs(riskAmount - riskTarget) > riskTolerance ||
+      Math.abs(rewardAmount - rewardTarget) > rewardTolerance) {
+    return null;
+  }
+
+  return {
+    stopLoss,
+    takeProfit,
+    stopLossNumber,
+    takeProfitNumber,
+    riskAmount,
+    rewardAmount
+  };
 }
 
 function hasInstrumentExposure(instrument: string, trades: any[], positions: any[]) {
@@ -220,6 +281,8 @@ export async function executeVerifiedMarketOrder(
   const { oanda, symbol, side, riskAmount, rewardAmount } = request;
   const instrument = normalizeOandaSymbol(symbol);
   const strategyVariant = request.strategyVariant;
+  const protectionMode = request.protectionMode;
+  const accountCashProtection = protectionMode === "ACCOUNT_CASH";
   const signalId = String(request.signalId || "").trim();
   const signalAt = String(request.signalAt || "").trim();
 
@@ -231,6 +294,34 @@ export async function executeVerifiedMarketOrder(
   }
   if (strategyVariant !== "MAIN" && strategyVariant !== "INVERSE") {
     return { status: "REJECTED", reason: "INVALID_STRATEGY_VARIANT" };
+  }
+  if (protectionMode !== undefined && protectionMode !== "ACCOUNT_CASH") {
+    return { status: "REJECTED", reason: "INVALID_PROTECTION_MODE" };
+  }
+  if (accountCashProtection && strategyVariant !== "INVERSE") {
+    return { status: "REJECTED", reason: "ACCOUNT_CASH_REQUIRES_INVERSE" };
+  }
+  if (accountCashProtection &&
+      (request.stopLossPrice !== undefined || request.takeProfitPrice !== undefined)) {
+    return { status: "REJECTED", reason: "ACCOUNT_CASH_EXPLICIT_LEVELS_NOT_ALLOWED" };
+  }
+  if (accountCashProtection &&
+      String(request.targetAccountCurrency || "").trim().toUpperCase() !== INVERSE_CASH_CURRENCY) {
+    return { status: "REJECTED", reason: "ACCOUNT_TARGET_CURRENCY_MISMATCH" };
+  }
+  if (accountCashProtection && Math.abs(Number(request.units)) !== INVERSE_CASH_UNITS) {
+    return { status: "REJECTED", reason: "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000" };
+  }
+  if (accountCashProtection &&
+      (Math.abs(Number(riskAmount) - INVERSE_CASH_RISK_CHF) > 1e-12 ||
+       Math.abs(Number(rewardAmount) - INVERSE_CASH_REWARD_CHF) > 1e-12)) {
+    return { status: "REJECTED", reason: "ACCOUNT_CASH_TARGETS_INVALID" };
+  }
+  if (accountCashProtection && typeof oanda.replaceTradeDependentOrders !== "function") {
+    return { status: "REJECTED", reason: "OANDA_DEPENDENT_ORDER_REPLACEMENT_UNAVAILABLE" };
+  }
+  if (accountCashProtection && typeof oanda.assertAccountCashExecutionConfigured !== "function") {
+    return { status: "REJECTED", reason: "OANDA_ACCOUNT_CASH_EXECUTION_GUARD_UNAVAILABLE" };
   }
   if (!signalId) {
     return { status: "REJECTED", reason: "SIGNAL_ID_REQUIRED" };
@@ -248,6 +339,14 @@ export async function executeVerifiedMarketOrder(
     return { status: "SKIPPED", reason: "ORDER_SUBMISSION_ALREADY_IN_PROGRESS" };
   }
 
+  if (accountCashProtection) {
+    try {
+      oanda.assertAccountCashExecutionConfigured();
+    } catch (error) {
+      return { status: "REJECTED", reason: safeReason(error) };
+    }
+  }
+
   instrumentsInFlight.add(instrument);
   let filledTradeId: string | undefined;
 
@@ -263,6 +362,10 @@ export async function executeVerifiedMarketOrder(
 
     if (!account || !account.currency) {
       return { status: "REJECTED", reason: "OANDA_ACCOUNT_NOT_VERIFIED" };
+    }
+    if (accountCashProtection &&
+        String(account.currency).trim().toUpperCase() !== INVERSE_CASH_CURRENCY) {
+      return { status: "REJECTED", reason: "ACCOUNT_TARGET_CURRENCY_MISMATCH" };
     }
     if (!Array.isArray(openTrades) || !Array.isArray(openPositions) || !Array.isArray(pendingOrders)) {
       return { status: "REJECTED", reason: "OANDA_PREFLIGHT_RECONCILIATION_UNAVAILABLE" };
@@ -289,6 +392,9 @@ export async function executeVerifiedMarketOrder(
     const units = roundedUnits(request.units, unitsPrecision);
     if (!Number.isFinite(units) || units < minimumTradeSize) {
       return { status: "REJECTED", reason: "UNITS_BELOW_OANDA_MINIMUM" };
+    }
+    if (accountCashProtection && units !== INVERSE_CASH_UNITS) {
+      return { status: "REJECTED", reason: "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000" };
     }
 
     const price = pricing?.price;
@@ -327,7 +433,24 @@ export async function executeVerifiedMarketOrder(
     let reward: number;
     let stopLossNumber: number;
     let takeProfitNumber: number;
-    if (explicitProtectionRequested) {
+    if (accountCashProtection) {
+      const initialCashPlan = accountCashProtectionPlan(
+        entry,
+        side,
+        units,
+        factors,
+        displayPrecision,
+        INVERSE_CASH_RISK_CHF,
+        INVERSE_CASH_REWARD_CHF
+      );
+      if (!initialCashPlan) {
+        return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
+      }
+      stopLossNumber = initialCashPlan.stopLossNumber;
+      takeProfitNumber = initialCashPlan.takeProfitNumber;
+      risk = initialCashPlan.riskAmount;
+      reward = initialCashPlan.rewardAmount;
+    } else if (explicitProtectionRequested) {
       stopLossNumber = requestedStopLoss as number;
       takeProfitNumber = requestedTakeProfit as number;
       const directional = (entry - stopLossNumber) * direction > 0 &&
@@ -356,8 +479,8 @@ export async function executeVerifiedMarketOrder(
     if (stopLossNumber <= 0 || takeProfitNumber <= 0) {
       return { status: "REJECTED", reason: "INVALID_PROTECTIVE_PRICE" };
     }
-    const stopLoss = stopLossNumber.toFixed(displayPrecision);
-    const takeProfit = takeProfitNumber.toFixed(displayPrecision);
+    let stopLoss = stopLossNumber.toFixed(displayPrecision);
+    let takeProfit = takeProfitNumber.toFixed(displayPrecision);
     const roundedStopLoss = Number(stopLoss);
     const roundedTakeProfit = Number(takeProfit);
     if ((entry - roundedStopLoss) * direction <= 0 || (roundedTakeProfit - entry) * direction <= 0) {
@@ -467,10 +590,11 @@ export async function executeVerifiedMarketOrder(
       return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_ORDER_ID_NOT_VERIFIED");
     }
 
-    const [verified, positionsAfterFill] = await Promise.all([
+    const [initiallyVerified, positionsAfterFill] = await Promise.all([
       oanda.getTrade(filledTradeId),
       oanda.getOpenPositions()
     ]);
+    let verified = initiallyVerified;
     const verifiedUnits = Number(verified?.currentUnits);
     const positionUnits = signedPositionUnits(instrument, positionsAfterFill);
     const tradeMatches =
@@ -488,12 +612,80 @@ export async function executeVerifiedMarketOrder(
     }
 
     const verifiedEntry = finitePositive(verified.price);
-    const verifiedStopLoss = finitePositive(verified?.stopLossOrder?.price);
-    const verifiedTakeProfit = finitePositive(verified?.takeProfitOrder?.price);
     const verifiedOpenedAt = String(verified?.openTime || response?.orderFillTransaction?.time || "");
     if (!verifiedEntry || !Number.isFinite(Date.parse(verifiedOpenedAt))) {
       return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_TRADE_DETAILS_INCOMPLETE");
     }
+
+    let finalFactors = factors;
+    if (accountCashProtection) {
+      const initialStopLoss = finitePositive(verified?.stopLossOrder?.price);
+      const initialTakeProfit = finitePositive(verified?.takeProfitOrder?.price);
+      const initialProtectionDirectional = initialStopLoss !== null && initialTakeProfit !== null &&
+        (verifiedEntry - initialStopLoss) * direction > 0 &&
+        (initialTakeProfit - verifiedEntry) * direction > 0;
+      const initialProtectiveOrdersVerified =
+        Boolean(verified?.stopLossOrder?.id) &&
+        Boolean(verified?.takeProfitOrder?.id) &&
+        String(verified?.stopLossOrder?.state || "").toUpperCase() === "PENDING" &&
+        String(verified?.takeProfitOrder?.state || "").toUpperCase() === "PENDING" &&
+        initialProtectionDirectional &&
+        initialStopLoss === Number(stopLoss) &&
+        initialTakeProfit === Number(takeProfit);
+      if (!initialProtectiveOrdersVerified) {
+        return closeUnverifiedExposure(
+          oanda,
+          filledTradeId,
+          "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED"
+        );
+      }
+
+      finalFactors = fillConversionFactors(response?.orderFillTransaction, factors);
+      const fillCashPlan = accountCashProtectionPlan(
+        verifiedEntry,
+        side,
+        units,
+        finalFactors,
+        displayPrecision,
+        INVERSE_CASH_RISK_CHF,
+        INVERSE_CASH_REWARD_CHF
+      );
+      if (!fillCashPlan) {
+        return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED");
+      }
+      stopLoss = fillCashPlan.stopLoss;
+      takeProfit = fillCashPlan.takeProfit;
+      risk = fillCashPlan.riskAmount;
+      reward = fillCashPlan.rewardAmount;
+
+      try {
+        await oanda.replaceTradeDependentOrders({
+          tradeId: filledTradeId,
+          stopLoss,
+          takeProfit,
+          strategyVariant
+        });
+        verified = await oanda.getTrade(filledTradeId);
+      } catch (_error) {
+        return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED");
+      }
+
+      const postReplaceUnits = Number(verified?.currentUnits);
+      const postReplaceTradeMatches =
+        verified &&
+        String(verified.state).toUpperCase() === "OPEN" &&
+        normalizeOandaSymbol(verified.instrument) === instrument &&
+        Number.isFinite(postReplaceUnits) &&
+        Math.abs(postReplaceUnits - expectedSignedUnits) < tolerance &&
+        String(verified?.clientExtensions?.tag || "") === expectedClientTag &&
+        finitePositive(verified.price) === verifiedEntry;
+      if (!postReplaceTradeMatches) {
+        return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED");
+      }
+    }
+
+    const verifiedStopLoss = finitePositive(verified?.stopLossOrder?.price);
+    const verifiedTakeProfit = finitePositive(verified?.takeProfitOrder?.price);
     const priceTolerance = 0.5 / 10 ** displayPrecision;
     const verifiedProtectionDirectional = verifiedStopLoss !== null && verifiedTakeProfit !== null &&
       (verifiedEntry - verifiedStopLoss) * direction > 0 &&
@@ -509,7 +701,27 @@ export async function executeVerifiedMarketOrder(
       Math.abs(verifiedStopLoss - Number(stopLoss)) <= priceTolerance &&
       Math.abs(verifiedTakeProfit - Number(takeProfit)) <= priceTolerance;
     if (!protectiveOrdersVerified) {
-      return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED");
+      return closeUnverifiedExposure(
+        oanda,
+        filledTradeId,
+        accountCashProtection
+          ? "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED"
+          : "OANDA_PROTECTIVE_ORDERS_NOT_VERIFIED"
+      );
+    }
+
+    if (accountCashProtection) {
+      const verifiedRisk = Math.abs(verifiedEntry - verifiedStopLoss) * units * finalFactors.loss;
+      const verifiedReward = Math.abs(verifiedTakeProfit - verifiedEntry) * units * finalFactors.gain;
+      const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
+      const riskTolerance = priceHalfTick * units * finalFactors.loss + 1e-10;
+      const rewardTolerance = priceHalfTick * units * finalFactors.gain + 1e-10;
+      if (Math.abs(verifiedRisk - INVERSE_CASH_RISK_CHF) > riskTolerance ||
+          Math.abs(verifiedReward - INVERSE_CASH_REWARD_CHF) > rewardTolerance) {
+        return closeUnverifiedExposure(oanda, filledTradeId, "OANDA_CASH_PROTECTIVE_ORDERS_NOT_VERIFIED");
+      }
+      risk = verifiedRisk;
+      reward = verifiedReward;
     }
     verifiedSignalIds.add(signalId);
     if (verifiedSignalIds.size > 10000) {
@@ -552,5 +764,7 @@ export async function executeVerifiedMarketOrder(
 export const executionTestUtils = {
   hasInstrumentExposure,
   conversionFactors,
+  fillConversionFactors,
+  accountCashProtectionPlan,
   clientTag
 };

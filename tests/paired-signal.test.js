@@ -172,6 +172,37 @@ test("INVERSE OANDA execution fails closed when spread makes strict mirror level
   assert.equal(result.executionBlockedReason, "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD");
 });
 
+test("OANDA_DEMO INVERSE ACCOUNT_CASH reverses direction and defers fixed CHF protection to the fill", () => {
+  const wideMarket = {
+    ...market,
+    time: new Date().toISOString(),
+    bid: 1.1,
+    ask: 1.1015,
+    mid: 1.10075
+  };
+  const result = snapshot({
+    tradingMode: "OANDA_DEMO",
+    liveExecutionVariant: "INVERSE",
+    executionGateVerified: true,
+    market: wideMarket,
+    accountCashRisk: 1.2,
+    accountCashReward: 0.5,
+    accountTargetCurrency: "CHF"
+  });
+
+  assert.equal(result.main.action, "BUY");
+  assert.equal(result.inverse.action, "SELL");
+  assert.equal(result.inverse.selectedForExecution, true);
+  assert.equal(result.inverse.executionState, "READY");
+  assert.equal(result.inverse.stopLossPrice, undefined);
+  assert.equal(result.inverse.takeProfitPrice, undefined);
+  assert.deepEqual(result.inverse.structuralTargets, []);
+  assert.ok(Math.abs(result.inverse.riskRewardRatio - (0.5 / 1.2)) < 1e-12);
+  assert.equal(result.executionBlockedReason, undefined);
+  assert.doesNotMatch(result.inverse.reasoning, /MAIN SL|MAIN TP|20P|10P/i);
+  assert.match(result.inverse.reasoning, /TP nominale \+0\.50 CHF, SL nominale -1\.20 CHF/);
+});
+
 test("PAPER keeps MAIN local and INVERSE shadow-only", () => {
   const result = snapshot();
 

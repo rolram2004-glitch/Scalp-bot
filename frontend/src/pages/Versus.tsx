@@ -299,7 +299,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <p className="vs3-eyebrow">$Rohato$🤖111 · STRATEGY COMPARISON</p>
           <h1>MAIN contro MIRROR, senza confusione.</h1>
-          <p>Stesso Signal ID, direzione opposta e livelli realmente scambiati: MAIN SL → MIRROR TP; MAIN TP → MIRROR SL.</p>
+          <p>Stesso Signal ID e direzione opposta. La MIRROR operativa usa TP nominale +0,50 CHF e SL nominale -1,20 CHF.</p>
         </div>
         <div className={`vs3-gate ${gate.tone}`}><span>STATO OPERATIVO</span><strong>{gate.label}</strong><small>{gate.detail}</small></div>
       </section>
@@ -307,12 +307,12 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
       <section className="vs3-truth-bar" aria-label="Significato delle due corsie">
         <div className="main"><span>01 · NORMALE</span><strong>MAIN</strong><b>{mainMode}</b></div>
         <div className="rule">
-          <span>REGOLA STRICT MIRROR · ROSSO ↔ VERDE</span>
+          <span>REGOLA MIRROR OPERATIVA · PROTEZIONE FISSA</span>
           <div className="vs3-mirror-rules" aria-label="Mappatura degli esiti MAIN e MIRROR">
-            <div className="vs3-result-swap"><b className="loss">MAIN LOSS · SL</b><i>→</i><b className="win">MIRROR WIN · TP</b></div>
-            <div className="vs3-result-swap"><b className="win">MAIN WIN · TP</b><i>→</i><b className="loss">MIRROR LOSS · SL</b></div>
+            <div className="vs3-result-swap"><b className="loss">SEGNALE MAIN</b><i>→</i><b className="win">DIREZIONE OPPOSTA</b></div>
+            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,50 · SL -1,20 CHF</b></div>
           </div>
-          <small>Vengono scambiati gli stessi livelli di prezzo. Il P&amp;L monetario non viene copiato: usa bid/ask reali, quindi spread e slippage restano visibili.</small>
+          <small>Gli importi sono nominali nella valuta conto. Il risultato verificato usa i dati reali OANDA, quindi spread e slippage restano visibili.</small>
         </div>
         <div className="inverse"><span>02 · CONTRARIO</span><strong>MIRROR</strong><b>{mirrorMode}</b></div>
       </section>

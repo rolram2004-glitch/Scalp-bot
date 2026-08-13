@@ -157,7 +157,7 @@ function LaneCard({ variant, lane, symbol, executionReady }: { variant: 'MAIN' |
         <div><span>R:R</span><strong>{numeric(lane?.riskRewardRatio) === undefined ? 'N/A' : `1:${Number(lane?.riskRewardRatio).toFixed(2)}`}</strong></div>
       </div>
       <div className="pro-lane-tags"><span>{lane?.setupType || 'SETUP N/A'}</span><span>{lane?.executionState || 'STATE N/A'}</span><span>{lane?.mode || 'MODE N/A'}</span></div>
-      <p>{variant === 'INVERSE' ? 'STRICT MIRROR: MAIN SL → MIRROR TP · MAIN TP → MIRROR SL. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
+      <p>{variant === 'INVERSE' ? 'MIRROR OPERATIVA: direzione opposta, TP nominale +0,50 CHF, SL nominale -1,20 CHF. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
     </article>
   );
 }
@@ -251,7 +251,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità MIRROR: stesso segnale, direzione opposta, MAIN SL → MIRROR TP e MAIN TP → MIRROR SL. Spread e ricevute OANDA restano visibili.</p>
+          <p>Modalità MIRROR: stesso segnale, direzione opposta, TP nominale +0,50 CHF, SL nominale -1,20 CHF. Spread e ricevute OANDA restano visibili.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -322,7 +322,7 @@ export function CommandSetupPage({
 
       <section className="pro-duel">
         <LaneCard variant="MAIN" lane={primaryPair?.main} symbol={primarySymbol} executionReady={executionReady} />
-        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>Una sola corsia</b> invia OANDA.<br /><b>MIRROR</b>: MAIN SL → TP · MAIN TP → SL.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
+        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>Una sola corsia</b> invia OANDA.<br /><b>MIRROR</b>: direzione opposta · TP nominale +0,50 CHF · SL nominale -1,20 CHF.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
         <LaneCard variant="INVERSE" lane={primaryPair?.inverse} symbol={primarySymbol} executionReady={executionReady} />
       </section>
 
