@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 require("ts-node/register/transpile-only");
 
-process.env.FOREX_SIGNAL_PROFILE = "ROHATO_HYPER_100_PER_SYMBOL";
+process.env.FOREX_SIGNAL_PROFILE = "ROHATO_ULTRA_100_PER_MINUTE";
 delete require.cache[require.resolve("../src/config")];
 const { getScalpingSignal } = require("../src/trading-ai");
 
@@ -93,7 +93,7 @@ test("setup score changes only when verified market evidence changes", async () 
   assert.ok(alignedMacdAndLiquidity.setupScore > base.setupScore);
 });
 
-test("ROHATO_HYPER_100_PER_SYMBOL accepts a confirmed fast-trend continuation before the slow EMA stack", async () => {
+test("ROHATO_ULTRA_100_PER_MINUTE accepts a confirmed fast-trend continuation before the slow EMA stack", async () => {
   const decision = await getScalpingSignal(marketData({
     ema20: 1.19,
     ema50: 1.18,
@@ -106,10 +106,10 @@ test("ROHATO_HYPER_100_PER_SYMBOL accepts a confirmed fast-trend continuation be
   assert.equal(decision.action, "BUY");
   assert.equal(decision.setupType, "AGGRESSIVE_CONTINUATION");
   assert.ok(decision.confidence >= 55);
-  assert.match(decision.reasoning, /ROHATO_HYPER_100_PER_SYMBOL/);
+  assert.match(decision.reasoning, /ROHATO_ULTRA_100_PER_MINUTE/);
 });
 
-test("ROHATO_HYPER_100_PER_SYMBOL remains HOLD when fast trend has no directional confirmation", async () => {
+test("ROHATO_ULTRA_100_PER_MINUTE remains HOLD when fast trend has no directional confirmation", async () => {
   const decision = await getScalpingSignal(marketData({
     ema20: 1.19,
     ema50: 1.18,

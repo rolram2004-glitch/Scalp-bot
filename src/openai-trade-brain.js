@@ -66,7 +66,7 @@ function installOpenAiTradeBrain({ aiConfirmation, config }) {
   config.GEMINI_API_KEY = apiKey;
   config.GEMINI_MODEL = model;
   const hyperPractice = config.TRADING_MODE === "OANDA_DEMO" &&
-    config.FOREX_SIGNAL_PROFILE === "ROHATO_HYPER_100_PER_SYMBOL";
+    ["ROHATO_ULTRA_100_PER_MINUTE", "ROHATO_HYPER_100_PER_SYMBOL"].includes(config.FOREX_SIGNAL_PROFILE);
   config.AI_MIN_CONFIDENCE = Math.max(
     hyperPractice ? 50 : 55,
     Number(process.env.AI_MIN_CONFIDENCE || 60)

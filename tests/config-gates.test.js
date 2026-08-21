@@ -13,7 +13,9 @@ function readConfig(env) {
     MAX_NEW_TRADES_PER_CYCLE: process.env.MAX_NEW_TRADES_PER_CYCLE,
     MAX_DAILY_TRADES: process.env.MAX_DAILY_TRADES,
     MAX_DAILY_TRADES_PER_SYMBOL: process.env.MAX_DAILY_TRADES_PER_SYMBOL,
+    MAX_TRADES_PER_MINUTE: process.env.MAX_TRADES_PER_MINUTE,
     SCAN_INTERVAL_MS: process.env.SCAN_INTERVAL_MS,
+    SYMBOL_REENTRY_COOLDOWN_MS: process.env.SYMBOL_REENTRY_COOLDOWN_MS,
     MIN_SIGNAL_CONFIDENCE: process.env.MIN_SIGNAL_CONFIDENCE,
     FOREX_SIGNAL_PROFILE: process.env.FOREX_SIGNAL_PROFILE,
     DEFAULT_UNITS: process.env.DEFAULT_UNITS,
@@ -118,30 +120,34 @@ test("invalid numeric risk limits fall back to bounded safe values", () => {
   assert.equal(config.MAX_DAILY_LOSS, 50);
 });
 
-test("Rohato hyper Practice profile scans every 10 seconds and caps each symbol at 100", () => {
+test("Rohato ultra Practice profile scans every second and enforces the 100-per-minute cap", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
     OANDA_ORDER_EXECUTION_ENABLED: "true",
     LIVE_EXECUTION_VARIANT: "MAIN",
-    SCAN_INTERVAL_MS: "5000",
+    SCAN_INTERVAL_MS: "500",
+    SYMBOL_REENTRY_COOLDOWN_MS: "0",
     MIN_SIGNAL_CONFIDENCE: "45",
     MAX_NEW_TRADES_PER_CYCLE: "99",
     MAX_OPEN_POSITIONS: "15",
-    MAX_DAILY_TRADES: "9999",
-    MAX_DAILY_TRADES_PER_SYMBOL: "999",
-    FOREX_SIGNAL_PROFILE: "ROHATO_HYPER_100_PER_SYMBOL"
+    MAX_DAILY_TRADES: "99999",
+    MAX_DAILY_TRADES_PER_SYMBOL: "9999",
+    MAX_TRADES_PER_MINUTE: "999",
+    FOREX_SIGNAL_PROFILE: "ROHATO_ULTRA_100_PER_MINUTE"
   });
 
   assert.equal(config.LIVE_TRADING_ENABLED, true);
-  assert.equal(config.SCAN_INTERVAL, 10000);
+  assert.equal(config.SCAN_INTERVAL, 1000);
+  assert.equal(config.SYMBOL_REENTRY_COOLDOWN_MS, 0);
   assert.equal(config.MIN_CONFIDENCE, 45);
   assert.equal(config.MAX_NEW_TRADES_PER_CYCLE, 15);
   assert.equal(config.MAX_OPEN_TRADES, 15);
-  assert.equal(config.MAX_DAILY_TRADES, 1500);
-  assert.equal(config.MAX_DAILY_TRADES_PER_SYMBOL, 100);
+  assert.equal(config.MAX_DAILY_TRADES, 15000);
+  assert.equal(config.MAX_DAILY_TRADES_PER_SYMBOL, 1000);
+  assert.equal(config.MAX_TRADES_PER_MINUTE, 100);
   assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
-  assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_HYPER_100_PER_SYMBOL");
+  assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_ULTRA_100_PER_MINUTE");
 });
 
 test("MIRROR account-cash defaults are 1000 units, SL 1.20 CHF and TP 0.20 CHF", () => {
@@ -184,6 +190,7 @@ test("real-money OANDA_LIVE remains hard capped at 25", () => {
   assert.equal(config.LIVE_TRADING_ENABLED, true);
   assert.equal(config.MAX_DAILY_TRADES, 25);
   assert.equal(config.MAX_DAILY_TRADES_PER_SYMBOL, 25);
+  assert.equal(config.MAX_TRADES_PER_MINUTE, 25);
 });
 
 test("Gemini remains disabled by default and parses only explicit safe configuration", () => {

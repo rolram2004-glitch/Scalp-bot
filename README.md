@@ -59,14 +59,15 @@ Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` i
 
 La regola della MIRROR operativa non dipende dai colori dell'interfaccia: usa lo stesso segnale MAIN nella direzione opposta, con TP nominale `+0,20 CHF` e SL nominale `-1,20 CHF`. Il P&L delle due corsie viene misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
 
-Il profilo Practice `ROHATO_HYPER_100_PER_SYMBOL` scansiona 15 coppie ogni 10
-secondi, può usare tutti i 15 ingressi validi di un ciclo, mantiene una sola
-posizione contemporanea per simbolo e usa un cooldown di 1 minuto dopo la
-chiusura. Riconosce trend, continuazioni rapide, impulsi iniziali e inversioni
-confermate nei range. Il tetto è di 100 ingressi UTC per ciascun simbolo (1500
-complessivi sui 15 FX), non un obiettivo forzato. Spread, prezzi reali, conferma
-AI, riconciliazione, SL/TP e stop giornaliero restano obbligatori. PAPER resta a
-100 complessivi; `OANDA_LIVE` resta hard-capped a 25 e richiede conferma separata.
+Il profilo Practice `ROHATO_ULTRA_100_PER_MINUTE` scansiona 15 coppie ogni
+secondo, può usare tutti i 15 ingressi validi di un ciclo, mantiene una sola
+posizione contemporanea per simbolo e non impone cooldown dopo una chiusura
+verificata. Riconosce trend, continuazioni rapide, impulsi iniziali e inversioni
+confermate nei range. I tetti sono 100 ingressi in una finestra mobile di 60
+secondi, 1.000 per simbolo e 15.000 complessivi al giorno UTC; non sono obiettivi
+forzati. Spread, prezzi reali, riconciliazione, SL/TP e stop giornaliero restano
+obbligatori. PAPER resta a 100 complessivi; `OANDA_LIVE` resta hard-capped a 25
+e richiede conferma separata.
 La prontezza del feed operativo richiede le 15 coppie FX fresche e non dipende
 dall'orario separato di XAUUSD, che resta `SIGNAL ONLY`. Posizioni Rohato
 verificate della corsia precedente possono terminare ai propri SL/TP su simboli

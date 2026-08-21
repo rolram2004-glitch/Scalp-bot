@@ -123,3 +123,29 @@ test('high-activity reconciliation paginates closed trades beyond the first 500'
     axios.get = originalGet;
   }
 });
+
+test('completed daily reconciliation refreshes only the newest page at ultra volume', async () => {
+  const axios = require('axios');
+  const originalGet = axios.get;
+  let calls = 0;
+  axios.get = async () => {
+    calls += 1;
+    return {
+      data: {
+        trades: calls === 1
+          ? [{ id: '3000', instrument: 'EUR_USD', openTime: '2026-08-22T08:00:00.000Z' }]
+          : [{ id: '3001', instrument: 'GBP_USD', openTime: '2026-08-22T08:01:00.000Z' }]
+      }
+    };
+  };
+  try {
+    const oanda = require('../src/oanda');
+    const initial = await oanda.getClosedTradesSince('2026-08-22', 15000);
+    const refreshed = await oanda.getClosedTradesSince('2026-08-22', 15000);
+    assert.equal(initial.length, 1);
+    assert.equal(refreshed.length, 2);
+    assert.equal(calls, 2);
+  } finally {
+    axios.get = originalGet;
+  }
+});

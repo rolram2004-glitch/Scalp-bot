@@ -410,7 +410,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
       </section>
 
       <footer className="vs3-proof-footer">
-        <div><span>INGRESSI OGGI</span><strong>{status?.dailyTradeCount ?? 'N/A'} / {status?.maxDailyTrades ?? 'N/A'} · max {status?.maxDailyTradesPerSymbol ?? 'N/A'}/simbolo</strong></div>
+        <div><span>INGRESSI OGGI</span><strong>{status?.dailyTradeCount ?? 'N/A'} / {status?.maxDailyTrades ?? 'N/A'} · {status?.tradesLastMinute ?? 0}/{status?.maxTradesPerMinute ?? 'N/A'} ultimo minuto</strong></div>
         <div><span>POSTI RIMASTI</span><strong>{remaining ?? 'N/A'}</strong></div>
         <div><span>RESET</span><strong>{resetLabel(status?.nextDailyResetAt || status?.dailyRiskStatus?.resetAt)}</strong></div>
         <div><span>ESCLUSI DAL CONFRONTO</span><strong>{unmatchedMain} MAIN · {unmatchedInverse} MIRROR</strong></div>

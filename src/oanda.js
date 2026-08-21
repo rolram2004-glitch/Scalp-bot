@@ -105,6 +105,12 @@ class OandaAPI {
 
     this.lastError = null;
     this.lastSuccessAt = null;
+    this.closedTradesCache = {
+      dateUTC: null,
+      maximum: 0,
+      complete: false,
+      trades: new Map()
+    };
   }
 
   requestOptions(options = {}) {
@@ -380,12 +386,27 @@ class OandaAPI {
     }
   }
 
-  async getClosedTradesSince(dateUTC, maximum = 1500) {
+  async getClosedTradesSince(dateUTC, maximum = 15000) {
     const requestedDate = String(dateUTC || "");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
       throw new TypeError("UTC_TRADE_DATE_REQUIRED");
     }
-    const limit = Math.min(1500, Math.max(1, Math.floor(Number(maximum) || 1500)));
+    const limit = Math.min(15000, Math.max(1, Math.floor(Number(maximum) || 15000)));
+    const sameCompleteCache = this.closedTradesCache.dateUTC === requestedDate &&
+      this.closedTradesCache.complete === true &&
+      this.closedTradesCache.maximum >= limit;
+
+    if (sameCompleteCache) {
+      // At runtime fewer than 500 closures can occur between reconciliations
+      // because the rolling entry limiter is 100/minute. Refreshing only the
+      // newest page avoids downloading up to 15,000 trades after every order.
+      const latest = await this.getClosedTrades(500);
+      for (const trade of latest) {
+        if (trade?.id) this.closedTradesCache.trades.set(String(trade.id), trade);
+      }
+      return [...this.closedTradesCache.trades.values()];
+    }
+
     const collected = new Map();
     let beforeID;
 
@@ -413,6 +434,12 @@ class OandaAPI {
       beforeID = nextBeforeID;
     }
 
+    this.closedTradesCache = {
+      dateUTC: requestedDate,
+      maximum: limit,
+      complete: true,
+      trades: collected
+    };
     return [...collected.values()];
   }
 
