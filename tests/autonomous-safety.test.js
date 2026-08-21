@@ -193,6 +193,31 @@ test("per-symbol daily cap blocks the 101st entry but allows the 100th", () => {
   assert.equal(autonomousTestUtils.dailySymbolCapReached(101, 100), true);
 });
 
+test("rolling limiter permits the 100th entry and blocks the 101st inside 60 seconds", () => {
+  const now = Date.parse("2026-08-21T12:00:00.000Z");
+  const recent99 = Array.from({ length: 99 }, (_, index) => now - 59_000 + index);
+  const recent100 = [...recent99, now - 1_000];
+  const withExpired = [...recent100, now - 60_001];
+
+  assert.equal(autonomousTestUtils.rollingMinuteTradeCount(withExpired, now), 100);
+  assert.equal(autonomousTestUtils.minuteTradeCapReached(recent99, now, 100), false);
+  assert.equal(autonomousTestUtils.minuteTradeCapReached(recent100, now, 100), true);
+});
+
+test("recent UTC entry times deduplicate OANDA IDs for the rolling limiter", () => {
+  const times = autonomousTestUtils.recentUtcEntryTimes([
+    { id: "1", openTime: "2026-08-21T11:59:40.000Z" },
+    { id: "1", openTime: "2026-08-21T11:59:40.000Z" },
+    { id: "2", openTime: "2026-08-21T11:59:50.000Z" },
+    { id: "3", openTime: "2026-08-20T11:59:50.000Z" }
+  ], "2026-08-21");
+
+  assert.deepEqual(times, [
+    Date.parse("2026-08-21T11:59:40.000Z"),
+    Date.parse("2026-08-21T11:59:50.000Z")
+  ]);
+});
+
 test("fixed pip plan respects JPY precision and keeps 1:2 risk reward", () => {
   const jpy = autonomousTestUtils.fixedPipPlan("USDJPY", 159.232, "BUY");
   assert.equal(jpy.riskPips, 10);

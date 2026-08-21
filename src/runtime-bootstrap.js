@@ -33,22 +33,23 @@ if (
   process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.2";
 }
 
-// ROHATO_HYPER_100_PER_SYMBOL is enabled only on Practice. It evaluates all 15
-// executable FX pairs every ten seconds, can submit one candidate per symbol in
-// a cycle and permits at most 100 entries per symbol per UTC day. Broker
+// ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
+// executable FX pairs every second, can submit one candidate per symbol in a
+// cycle and permits at most 100 entries per rolling minute. Broker
 // verification, one open position per symbol and daily-loss protection remain
 // mandatory. OANDA_LIVE and PAPER keep their separate hard caps in config.js.
 const effectiveMode = String(process.env.TRADING_MODE || requestedMode).trim().toUpperCase();
-process.env.MAX_DAILY_TRADES = effectiveMode === "OANDA_DEMO" ? "1500" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
-process.env.MAX_DAILY_TRADES_PER_SYMBOL = effectiveMode === "OANDA_LIVE" ? "25" : "100";
+process.env.MAX_DAILY_TRADES = effectiveMode === "OANDA_DEMO" ? "15000" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
+process.env.MAX_DAILY_TRADES_PER_SYMBOL = effectiveMode === "OANDA_DEMO" ? "1000" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
+process.env.MAX_TRADES_PER_MINUTE = effectiveMode === "OANDA_DEMO" ? "100" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
 process.env.MAX_NEW_TRADES_PER_CYCLE = effectiveMode === "OANDA_DEMO" ? "15" : "7";
 process.env.MAX_OPEN_POSITIONS = "15";
-process.env.SCAN_INTERVAL_MS = effectiveMode === "OANDA_DEMO" ? "10000" : "30000";
+process.env.SCAN_INTERVAL_MS = effectiveMode === "OANDA_DEMO" ? "1000" : "30000";
 process.env.POSITION_MANAGEMENT_INTERVAL_MS = "5000";
-process.env.SYMBOL_REENTRY_COOLDOWN_MS = effectiveMode === "OANDA_DEMO" ? "60000" : "600000";
-process.env.MIN_SIGNAL_CONFIDENCE = effectiveMode === "OANDA_DEMO" ? "50" : hasOpenAiKey ? "50" : "55";
+process.env.SYMBOL_REENTRY_COOLDOWN_MS = effectiveMode === "OANDA_DEMO" ? "0" : "600000";
+process.env.MIN_SIGNAL_CONFIDENCE = effectiveMode === "OANDA_DEMO" ? "45" : hasOpenAiKey ? "50" : "55";
 process.env.FOREX_SIGNAL_PROFILE = effectiveMode === "OANDA_DEMO"
-  ? "ROHATO_HYPER_100_PER_SYMBOL"
+  ? "ROHATO_ULTRA_100_PER_MINUTE"
   : "ROHATO_AGGRESSIVE_100";
 process.env.NORMAL_STOP_LOSS_PIPS = "10";
 process.env.NORMAL_TAKE_PROFIT_PIPS = "20";
@@ -96,5 +97,6 @@ console.log(
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
   `MIRROR=TP+0.20CHF/SL-1.20CHF units=1000 exits=SL_TP_ONLY ` +
-  `maxDaily=${config.MAX_DAILY_TRADES} maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
+  `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
+  `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
 );

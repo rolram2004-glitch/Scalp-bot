@@ -27,11 +27,12 @@ const PRICE_INTERVAL = 1000;
 
 const MAX_DAILY_TRADES = Number(config.MAX_DAILY_TRADES);
 const MAX_DAILY_TRADES_PER_SYMBOL = Number(config.MAX_DAILY_TRADES_PER_SYMBOL || 100);
+const MAX_TRADES_PER_MINUTE = Number(config.MAX_TRADES_PER_MINUTE || 100);
 const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
 const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
 const MAX_DAILY_LOSS = Number(config.MAX_DAILY_LOSS || 50);
-const SYMBOL_REENTRY_COOLDOWN_MS = Number(config.SYMBOL_REENTRY_COOLDOWN_MS || 10 * 60 * 1000);
+const SYMBOL_REENTRY_COOLDOWN_MS = Number(config.SYMBOL_REENTRY_COOLDOWN_MS ?? 10 * 60 * 1000);
 const MINIMUM_SCORE_FOR_XAU_AI = 70;
 
 interface BotTrade {
@@ -102,9 +103,12 @@ export interface BotSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile: "ROHATO_HYPER_100_PER_SYMBOL" | "ROHATO_AGGRESSIVE_100" | "AGGRESSIVE_25" | "BALANCED";
+  signalProfile: "ROHATO_ULTRA_100_PER_MINUTE" | "ROHATO_HYPER_100_PER_SYMBOL" | "ROHATO_AGGRESSIVE_100" | "AGGRESSIVE_25" | "BALANCED";
   maxDailyTrades: number;
   maxDailyTradesPerSymbol: number;
+  maxTradesPerMinute: number;
+  tradesLastMinute: number;
+  minuteRemainingTrades: number;
   minimumConfidence: number;
   maxOpenPositions: number;
   maxNewTradesPerCycle: number;
@@ -176,6 +180,7 @@ export interface BotSnapshot {
     | "READY"
     | "SCANNER_STOPPED"
     | "EXECUTION_BLOCKED"
+    | "MINUTE_RATE_LIMIT"
     | "DAILY_TRADE_LIMIT"
     | "DAILY_LOSS_LIMIT"
     | "MAX_OPEN_POSITIONS";
@@ -206,6 +211,9 @@ const botState: BotSnapshot = {
   signalProfile: config.FOREX_SIGNAL_PROFILE,
   maxDailyTrades: MAX_DAILY_TRADES,
   maxDailyTradesPerSymbol: MAX_DAILY_TRADES_PER_SYMBOL,
+  maxTradesPerMinute: MAX_TRADES_PER_MINUTE,
+  tradesLastMinute: 0,
+  minuteRemainingTrades: MAX_TRADES_PER_MINUTE,
   minimumConfidence: MIN_CONFIDENCE,
   maxOpenPositions: MAX_OPEN_POSITIONS,
   maxNewTradesPerCycle: MAX_NEW_TRADES_PER_CYCLE,
@@ -267,6 +275,7 @@ let dailyRiskDataComplete = config.TRADING_MODE === "PAPER";
 let dailyRiskReason: string | undefined = config.TRADING_MODE === "PAPER"
   ? undefined
   : "OANDA_RECONCILIATION_NOT_RUN";
+let recentEntryTimes: number[] = [];
 
 function executionFeedOperational(
   state: Pick<BotSnapshot, "priceFeedStatus" | "priceCoverage" | "priceExpected" | "lastPriceAt">,
@@ -331,6 +340,9 @@ function entryGate(analytics: ReturnType<typeof getAnalytics>) {
   if (liveModeConfigured() && !liveExecutionActive()) {
     return { status: "EXECUTION_BLOCKED" as const, reason: dailyRiskReason || "OANDA_EXECUTION_GATES_NOT_READY" };
   }
+  if (rollingMinuteTradeCount() >= MAX_TRADES_PER_MINUTE) {
+    return { status: "MINUTE_RATE_LIMIT" as const, reason: `ROLLING_MINUTE_LIMIT_${MAX_TRADES_PER_MINUTE}` };
+  }
   if (botState.dailyTradeCount >= MAX_DAILY_TRADES) {
     return { status: "DAILY_TRADE_LIMIT" as const, reason: `DAILY_LIMIT_${MAX_DAILY_TRADES}_UTC` };
   }
@@ -349,6 +361,7 @@ function ensureDailyCounterDate() {
   dailyCounterDate = today;
   botState.dailyTradeCount = 0;
   botState.dailyTradeCountBySymbol = {};
+  recentEntryTimes = [];
   if (liveModeConfigured()) {
     botState.reconciliationStatus = "NOT_RUN";
     dailyRiskDataComplete = false;
@@ -358,6 +371,9 @@ function ensureDailyCounterDate() {
 
 function refreshDerivedState() {
   ensureDailyCounterDate();
+  const tradesLastMinute = rollingMinuteTradeCount();
+  botState.tradesLastMinute = tradesLastMinute;
+  botState.minuteRemainingTrades = Math.max(0, MAX_TRADES_PER_MINUTE - tradesLastMinute);
   const analytics = getAnalytics();
   const state = effectiveExecutionState();
   botState.effectiveExecutionState = state;
@@ -395,6 +411,7 @@ function emitState() {
   refreshDerivedState();
   const snapshot = {
     ...botState,
+    closedTrades: [...botState.closedTrades].slice(0, 500),
     logs: [...botState.logs].slice(-50)
   };
 
@@ -694,6 +711,7 @@ export function getBotSnapshot(): BotSnapshot {
   refreshDerivedState();
   return {
     ...botState,
+    closedTrades: [...botState.closedTrades].slice(0, 500),
     logs: [...botState.logs].slice(-50)
   };
 }
@@ -1034,6 +1052,37 @@ function dailySymbolCapReached(count: number, maximum = MAX_DAILY_TRADES_PER_SYM
   return Number.isFinite(count) && Number.isFinite(maximum) && maximum > 0 && count >= maximum;
 }
 
+function rollingMinuteTradeCount(entryTimes = recentEntryTimes, now = Date.now()) {
+  const cutoff = now - 60_000;
+  const filtered = entryTimes.filter((value) =>
+    Number.isFinite(value) && value > cutoff && value <= now + 5_000
+  );
+  if (entryTimes === recentEntryTimes) recentEntryTimes = filtered;
+  return filtered.length;
+}
+
+function minuteTradeCapReached(
+  entryTimes = recentEntryTimes,
+  now = Date.now(),
+  maximum = MAX_TRADES_PER_MINUTE
+) {
+  return rollingMinuteTradeCount(entryTimes, now) >= maximum;
+}
+
+function recentUtcEntryTimes(
+  trades: any[],
+  dateUTC = new Date().toISOString().slice(0, 10)
+) {
+  const unique = new Map<string, number>();
+  for (const trade of Array.isArray(trades) ? trades : []) {
+    if (typeof trade?.openTime !== "string" || trade.openTime.slice(0, 10) !== dateUTC) continue;
+    const id = String(trade?.id || "");
+    const openedAt = Date.parse(trade.openTime);
+    if (id && Number.isFinite(openedAt)) unique.set(id, openedAt);
+  }
+  return [...unique.values()];
+}
+
 function symbolCooldownRemainingMs(
   symbol: string,
   closedTrades: Pick<BotTrade, "symbol" | "closedAt">[] = botState.closedTrades,
@@ -1200,6 +1249,11 @@ async function reconcileLiveTradesOnce() {
       [...remoteOpenTrades, ...remoteClosedTrades],
       dailyCounterDate
     );
+    recentEntryTimes = recentUtcEntryTimes(
+      [...remoteOpenTrades, ...remoteClosedTrades],
+      dailyCounterDate
+    );
+    rollingMinuteTradeCount();
     const todayVerified = [...verifiedOpen, ...botState.closedTrades].filter((trade) =>
       isToday(trade.openedAt) || isToday(trade.closedAt)
     );
@@ -1379,7 +1433,7 @@ async function closeVerifiedOandaTrade(
       closeReason
     };
     botState.openTrades = botState.openTrades.filter((item) => item.oandaTradeId !== trade.oandaTradeId);
-    botState.closedTrades = [closed, ...botState.closedTrades].slice(0, 100);
+    botState.closedTrades = [closed, ...botState.closedTrades].slice(0, MAX_DAILY_TRADES);
     pushLog(`[${trade.symbol}] ${closeReason} verificata da OANDA | P&L ${Number.isFinite(closed.pnl) ? `${trade.accountCurrency || "N/A"} ${Number(closed.pnl).toFixed(2)}` : "N/A"}`);
     return true;
   } catch (error: any) {
@@ -1668,6 +1722,10 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "POSITION_ALREADY_OPEN");
       pushLog(`[${symbol}] trade skipped: one open position per symbol is already active`);
+    } else if (minuteTradeCapReached()) {
+      botState.signalsDiscarded += 1;
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "ROLLING_MINUTE_TRADE_CAP_REACHED");
+      pushLog(`[${symbol}] valid signal blocked: rolling minute cap ${MAX_TRADES_PER_MINUTE} reached`);
     } else if (cycle.opened >= MAX_NEW_TRADES_PER_CYCLE) {
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "CYCLE_CAP_REACHED");
@@ -1851,6 +1909,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       } else {
         const trade = buildTrade(symbol, rankedDecision, enrichedMarketData, pairedSignal);
         botState.dailyTradeCount += 1;
+        recentEntryTimes.push(Date.now());
         const normalizedSymbol = cleanSymbol(symbol);
         botState.dailyTradeCountBySymbol[normalizedSymbol] =
           (botState.dailyTradeCountBySymbol[normalizedSymbol] || 0) + 1;
@@ -2101,6 +2160,7 @@ export function startAutonomousBot() {
   pushLog(`Symbols: ${SYMBOLS.length}`);
   pushLog(`Max Daily Trades: ${MAX_DAILY_TRADES}`);
   pushLog(`Max Daily Trades Per FX Symbol: ${MAX_DAILY_TRADES_PER_SYMBOL}`);
+  pushLog(`Max Trades Per Rolling Minute: ${MAX_TRADES_PER_MINUTE}`);
   pushLog(`Forex Signal Profile: ${config.FOREX_SIGNAL_PROFILE}`);
   pushLog(`Minimum Signal Confidence: ${MIN_CONFIDENCE}%`);
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
@@ -2162,6 +2222,9 @@ export const autonomousTestUtils = {
   countUtcTradeEntries,
   countUtcTradeEntriesBySymbol,
   dailySymbolCapReached,
+  rollingMinuteTradeCount,
+  minuteTradeCapReached,
+  recentUtcEntryTimes,
   symbolCooldownRemainingMs,
   normalizedR
 };

@@ -17,12 +17,12 @@ const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   : "DISABLED";
 const requestedForexSignalProfile = String(
   process.env.FOREX_SIGNAL_PROFILE || (tradingMode === "OANDA_DEMO"
-    ? "ROHATO_HYPER_100_PER_SYMBOL"
+    ? "ROHATO_ULTRA_100_PER_MINUTE"
     : "ROHATO_AGGRESSIVE_100")
 ).trim().toUpperCase();
-const forexSignalProfile = ["ROHATO_HYPER_100_PER_SYMBOL", "ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
+const forexSignalProfile = ["ROHATO_ULTRA_100_PER_MINUTE", "ROHATO_HYPER_100_PER_SYMBOL", "ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
   ? requestedForexSignalProfile
-  : tradingMode === "OANDA_DEMO" ? "ROHATO_HYPER_100_PER_SYMBOL" : "ROHATO_AGGRESSIVE_100";
+  : tradingMode === "OANDA_DEMO" ? "ROHATO_ULTRA_100_PER_MINUTE" : "ROHATO_AGGRESSIVE_100";
 const geminiModelRaw = String(process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 const geminiModel = /^gemini-[a-z0-9.-]+$/i.test(geminiModelRaw)
   ? geminiModelRaw
@@ -47,11 +47,13 @@ const executionReady = Boolean(
 const maximumDailyTrades = tradingMode === "OANDA_LIVE"
   ? 25
   : tradingMode === "OANDA_DEMO"
-    ? 1500
+    ? 15000
     : 100;
-const maximumDailyTradesPerSymbol = tradingMode === "OANDA_LIVE" ? 25 : 100;
+const maximumDailyTradesPerSymbol = tradingMode === "OANDA_LIVE" ? 25 : tradingMode === "OANDA_DEMO" ? 1000 : 100;
 const hyperPracticeProfile = tradingMode === "OANDA_DEMO" &&
-  forexSignalProfile === "ROHATO_HYPER_100_PER_SYMBOL";
+  ["ROHATO_ULTRA_100_PER_MINUTE", "ROHATO_HYPER_100_PER_SYMBOL"].includes(forexSignalProfile);
+const ultraPracticeProfile = tradingMode === "OANDA_DEMO" &&
+  forexSignalProfile === "ROHATO_ULTRA_100_PER_MINUTE";
 
 module.exports = {
   // 15 forex pairs plus XAUUSD as a separate analysis-only instrument.
@@ -86,11 +88,11 @@ module.exports = {
     true
   ),
   MAX_TRADES_PER_SYMBOL: 1,
-  // Practice can run up to 100 entries per each of the 15 executable FX
+  // Practice can run up to 1,000 entries per each of the 15 executable FX
   // symbols. PAPER remains at 100 total and real money remains hard-capped at 25.
   MAX_DAILY_TRADES: boundedNumber(
     process.env.MAX_DAILY_TRADES,
-    tradingMode === "OANDA_DEMO" ? 1500 : tradingMode === "OANDA_LIVE" ? 25 : 100,
+    tradingMode === "OANDA_DEMO" ? 15000 : tradingMode === "OANDA_LIVE" ? 25 : 100,
     1,
     maximumDailyTrades,
     true
@@ -100,6 +102,13 @@ module.exports = {
     maximumDailyTradesPerSymbol,
     1,
     maximumDailyTradesPerSymbol,
+    true
+  ),
+  MAX_TRADES_PER_MINUTE: boundedNumber(
+    process.env.MAX_TRADES_PER_MINUTE,
+    ultraPracticeProfile ? 100 : tradingMode === "OANDA_LIVE" ? 25 : 100,
+    1,
+    ultraPracticeProfile ? 100 : tradingMode === "OANDA_LIVE" ? 25 : 100,
     true
   ),
   NORMAL_STOP_LOSS_PIPS: boundedNumber(process.env.NORMAL_STOP_LOSS_PIPS, 10, 1, 100),
@@ -117,8 +126,8 @@ module.exports = {
 
   SCAN_INTERVAL: boundedNumber(
     process.env.SCAN_INTERVAL_MS,
-    hyperPracticeProfile ? 10_000 : 30_000,
-    hyperPracticeProfile ? 10_000 : 30_000,
+    ultraPracticeProfile ? 1_000 : hyperPracticeProfile ? 10_000 : 30_000,
+    ultraPracticeProfile ? 1_000 : hyperPracticeProfile ? 10_000 : 30_000,
     300_000,
     true
   ),

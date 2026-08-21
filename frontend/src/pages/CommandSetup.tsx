@@ -94,6 +94,7 @@ function operationDiagnosis(status: StatusSnapshot | null, oandaStatus: OandaSta
   }
   if (status.reconciliationStatus !== 'VERIFIED') return { tone: 'danger', eyebrow: 'LEDGER GATE', title: 'RICONCILIAZIONE NON VERIFICATA', detail: 'La dashboard non considera affidabili posizioni e P&L finché OANDA non conferma il ledger.', action: 'ATTENDO RICONCILIAZIONE' };
   if (status.priceFeedStatus !== 'CONNECTED' || feedAge === undefined || feedAge > 30) return { tone: 'danger', eyebrow: 'PRICE GATE', title: 'FEED OANDA NON FRESCO', detail: `Ultimo prezzo: ${fullTime(status.lastPriceAt)}. Gli ingressi restano bloccati per sicurezza.`, action: 'RECUPERO AUTOMATICO FEED' };
+  if (status.entryGateStatus === 'MINUTE_RATE_LIMIT') return { tone: 'paused', eyebrow: 'VELOCITÀ GATE', title: '100 INGRESSI/MINUTO RAGGIUNTI', detail: 'Il bot continua a monitorare e libera automaticamente capacità nella finestra mobile di 60 secondi.', action: 'RESET MOBILE AUTOMATICO' };
   if (status.entryGateStatus === 'DAILY_TRADE_LIMIT') return { tone: 'paused', eyebrow: 'RISK GATE', title: 'LIMITE TRADE RAGGIUNTO', detail: 'Il bot continua a monitorare, ma non apre altri ingressi fino al reset UTC.', action: `RESET ${status.nextDailyResetAt ? fullTime(status.nextDailyResetAt) : 'UTC'}` };
   if (status.entryGateStatus === 'DAILY_LOSS_LIMIT') return { tone: 'danger', eyebrow: 'RISK GATE', title: 'STOP PERDITA GIORNALIERA', detail: 'La protezione di perdita ha bloccato nuovi ingressi.', action: 'ATTENDO RESET UTC' };
   if (status.entryGateStatus === 'MAX_OPEN_POSITIONS') return { tone: 'paused', eyebrow: 'CAPACITY GATE', title: 'POSIZIONI MASSIME APERTE', detail: 'Il bot attende la chiusura di una posizione prima di un nuovo ingresso.', action: 'GESTIONE POSIZIONI ATTIVA' };
@@ -251,7 +252,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità MIRROR HYPER: segnali ogni 10s su trend, impulsi e range confermati; massimo 100 ingressi al giorno per simbolo. TP nominale +0,20 CHF, SL nominale -1,20 CHF.</p>
+          <p>Modalità MIRROR ULTRA: scansione ogni 1s su trend, impulsi e range confermati; massimo 100 ingressi al minuto e 15.000 al giorno. TP nominale +0,20 CHF, SL nominale -1,20 CHF.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -264,7 +265,7 @@ export function CommandSetupPage({
         <StatusTile label="LEDGER" value={status?.reconciliationStatus || 'N/A'} detail={status?.lastReconciledAt ? `Verificato ${time(status.lastReconciledAt)}` : 'Nessuna ricevuta'} state={status?.reconciliationStatus === 'VERIFIED' ? 'ok' : 'bad'} />
         <StatusTile label="EXECUTION" value={executionLabel} detail={executionDetail} state={executionReady ? 'ok' : diagnostic.tone === 'paused' ? 'warn' : 'bad'} />
         <StatusTile label="AI GATE" value={status?.aiProvider || 'DISABLED'} detail={status?.aiStatus || status?.lastAiReason || 'Fallback deterministico'} state={status?.aiStatus === 'ERROR' ? 'bad' : status?.aiProvider && status.aiProvider !== 'DISABLED' ? 'ok' : 'idle'} />
-        <StatusTile label="PROFILO" value={status?.signalProfile || 'N/A'} detail={`${(status?.scanIntervalMs ?? 0) / 1000}s · ${status?.maxDailyTradesPerSymbol ?? 'N/A'} ingressi/simbolo`} state={status?.signalProfile === 'ROHATO_HYPER_100_PER_SYMBOL' ? 'ok' : 'warn'} />
+        <StatusTile label="PROFILO" value={status?.signalProfile || 'N/A'} detail={`${(status?.scanIntervalMs ?? 0) / 1000}s · max ${status?.maxTradesPerMinute ?? 'N/A'}/min`} state={status?.signalProfile === 'ROHATO_ULTRA_100_PER_MINUTE' ? 'ok' : 'warn'} />
         <StatusTile label="XAUUSD" value="SIGNAL ONLY" detail={`${xauLab?.orderCount ?? 0} ordini · protetto`} state={xauPass ? 'ok' : 'bad'} />
       </section>
 
@@ -273,7 +274,7 @@ export function CommandSetupPage({
         <Metric label="RISULTATO STORICO" value={formatR(performance.totalR)} detail={`${performance.sampleSize} chiusure con R`} tone={metricTone(performance.totalR)} />
         <Metric label="EXPECTANCY" value={formatR(performance.averageR)} detail="Risultato medio per trade" tone={metricTone(performance.averageR)} />
         <Metric label="PROFIT FACTOR" value={formatFactor(performance.profitFactor)} detail="Sopra 1 = profitti > perdite" tone={factorPass ? 'good' : 'bad'} />
-        <Metric label="TRADES OGGI" value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'} detail={`max ${status?.maxDailyTradesPerSymbol ?? 'N/A'} per simbolo · ${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} totali rimasti`} tone="warn" />
+        <Metric label="TRADES OGGI" value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'} detail={`${status?.tradesLastMinute ?? 0}/${status?.maxTradesPerMinute ?? 'N/A'} ultimo minuto · ${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} rimasti`} tone="warn" />
         <Metric label="POSIZIONI APERTE" value={openTrades.length} detail={`${status?.maxOpenPositions ?? 15} massime · 1 per coppia`} tone={openTrades.length >= (status?.maxOpenPositions ?? 15) ? 'warn' : 'neutral'} />
       </section>
 
@@ -282,7 +283,7 @@ export function CommandSetupPage({
         <i>→</i><div><span>QUOTE FX COPERTE</span><strong>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? 15}</strong><small>OANDA · XAU SIGNAL ONLY separato</small></div>
         <i>→</i><div><span>DIREZIONI</span><strong>{buyNow} BUY · {sellNow} SELL</strong><small>{holdNow} HOLD</small></div>
         <i>→</i><div><span>SETUP VALIDABILI</span><strong>{validNow}</strong><small>soglia {status?.minimumConfidence ?? 'N/A'}/100</small></div>
-        <i>→</i><div><span>CAPACITÀ</span><strong>{Math.max(0, (status?.maxOpenPositions ?? 15) - openTrades.length)} slot</strong><small>{status?.maxDailyTradesPerSymbol ?? 'N/A'} ingressi/simbolo UTC</small></div>
+        <i>→</i><div><span>CAPACITÀ</span><strong>{status?.minuteRemainingTrades ?? 'N/A'} ingressi/min</strong><small>{status?.maxDailyTrades ?? 'N/A'} ingressi UTC massimi</small></div>
       </section>
 
       <section className="pro-workspace">

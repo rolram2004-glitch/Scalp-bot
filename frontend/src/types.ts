@@ -302,9 +302,12 @@ export interface StatusSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile?: 'ROHATO_HYPER_100_PER_SYMBOL' | 'ROHATO_AGGRESSIVE_100' | 'AGGRESSIVE_25' | 'BALANCED';
+  signalProfile?: 'ROHATO_ULTRA_100_PER_MINUTE' | 'ROHATO_HYPER_100_PER_SYMBOL' | 'ROHATO_AGGRESSIVE_100' | 'AGGRESSIVE_25' | 'BALANCED';
   maxDailyTrades: number;
   maxDailyTradesPerSymbol?: number;
+  maxTradesPerMinute?: number;
+  tradesLastMinute?: number;
+  minuteRemainingTrades?: number;
   minimumConfidence?: number;
   maxOpenPositions: number;
   maxNewTradesPerCycle?: number;
@@ -355,6 +358,7 @@ export interface StatusSnapshot {
     | 'READY'
     | 'SCANNER_STOPPED'
     | 'EXECUTION_BLOCKED'
+    | 'MINUTE_RATE_LIMIT'
     | 'DAILY_TRADE_LIMIT'
     | 'DAILY_LOSS_LIMIT'
     | 'MAX_OPEN_POSITIONS';
