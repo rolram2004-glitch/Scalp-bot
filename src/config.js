@@ -16,11 +16,13 @@ const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
   : "DISABLED";
 const requestedForexSignalProfile = String(
-  process.env.FOREX_SIGNAL_PROFILE || "ROHATO_AGGRESSIVE_100"
+  process.env.FOREX_SIGNAL_PROFILE || (tradingMode === "OANDA_DEMO"
+    ? "ROHATO_HYPER_100_PER_SYMBOL"
+    : "ROHATO_AGGRESSIVE_100")
 ).trim().toUpperCase();
-const forexSignalProfile = ["ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
+const forexSignalProfile = ["ROHATO_HYPER_100_PER_SYMBOL", "ROHATO_AGGRESSIVE_100", "AGGRESSIVE_25", "BALANCED"].includes(requestedForexSignalProfile)
   ? requestedForexSignalProfile
-  : "ROHATO_AGGRESSIVE_100";
+  : tradingMode === "OANDA_DEMO" ? "ROHATO_HYPER_100_PER_SYMBOL" : "ROHATO_AGGRESSIVE_100";
 const geminiModelRaw = String(process.env.GEMINI_MODEL || "gemini-3.5-flash-lite").trim();
 const geminiModel = /^gemini-[a-z0-9.-]+$/i.test(geminiModelRaw)
   ? geminiModelRaw
@@ -42,7 +44,14 @@ const executionReady = Boolean(
   liveExecutionVariantValid &&
   liveModeSafetyConfirmed
 );
-const maximumDailyTrades = tradingMode === "OANDA_LIVE" ? 25 : 100;
+const maximumDailyTrades = tradingMode === "OANDA_LIVE"
+  ? 25
+  : tradingMode === "OANDA_DEMO"
+    ? 1500
+    : 100;
+const maximumDailyTradesPerSymbol = tradingMode === "OANDA_LIVE" ? 25 : 100;
+const hyperPracticeProfile = tradingMode === "OANDA_DEMO" &&
+  forexSignalProfile === "ROHATO_HYPER_100_PER_SYMBOL";
 
 module.exports = {
   // 15 forex pairs plus XAUUSD as a separate analysis-only instrument.
@@ -69,25 +78,50 @@ module.exports = {
 
   MAX_SPREAD: 35.0,
   MAX_OPEN_TRADES: boundedNumber(process.env.MAX_OPEN_POSITIONS, 15, 1, 15, true),
-  MAX_NEW_TRADES_PER_CYCLE: boundedNumber(process.env.MAX_NEW_TRADES_PER_CYCLE, 7, 1, 7, true),
+  MAX_NEW_TRADES_PER_CYCLE: boundedNumber(
+    process.env.MAX_NEW_TRADES_PER_CYCLE,
+    hyperPracticeProfile ? 15 : 7,
+    1,
+    hyperPracticeProfile ? 15 : 7,
+    true
+  ),
   MAX_TRADES_PER_SYMBOL: 1,
-  // Practice/PAPER can run the requested aggressive laboratory. Real-money
-  // mode remains hard-capped at 25 until the owner explicitly redesigns risk.
+  // Practice can run up to 100 entries per each of the 15 executable FX
+  // symbols. PAPER remains at 100 total and real money remains hard-capped at 25.
   MAX_DAILY_TRADES: boundedNumber(
     process.env.MAX_DAILY_TRADES,
-    tradingMode === "OANDA_LIVE" ? 25 : 100,
+    tradingMode === "OANDA_DEMO" ? 1500 : tradingMode === "OANDA_LIVE" ? 25 : 100,
     1,
     maximumDailyTrades,
+    true
+  ),
+  MAX_DAILY_TRADES_PER_SYMBOL: boundedNumber(
+    process.env.MAX_DAILY_TRADES_PER_SYMBOL,
+    maximumDailyTradesPerSymbol,
+    1,
+    maximumDailyTradesPerSymbol,
     true
   ),
   NORMAL_STOP_LOSS_PIPS: boundedNumber(process.env.NORMAL_STOP_LOSS_PIPS, 10, 1, 100),
   NORMAL_TAKE_PROFIT_PIPS: boundedNumber(process.env.NORMAL_TAKE_PROFIT_PIPS, 20, 1, 200),
 
-  // Aggressive demo threshold; trades are still opened only on qualifying signals.
-  MIN_CONFIDENCE: boundedNumber(process.env.MIN_SIGNAL_CONFIDENCE, 55, 50, 100),
+  // The hyper threshold applies only to OANDA Practice; other modes keep the
+  // previous 50-point floor. Every candidate still passes broker and AI gates.
+  MIN_CONFIDENCE: boundedNumber(
+    process.env.MIN_SIGNAL_CONFIDENCE,
+    hyperPracticeProfile ? 50 : 55,
+    hyperPracticeProfile ? 45 : 50,
+    100
+  ),
   FOREX_SIGNAL_PROFILE: forexSignalProfile,
 
-  SCAN_INTERVAL: boundedNumber(process.env.SCAN_INTERVAL_MS, 30_000, 30_000, 300_000, true),
+  SCAN_INTERVAL: boundedNumber(
+    process.env.SCAN_INTERVAL_MS,
+    hyperPracticeProfile ? 10_000 : 30_000,
+    hyperPracticeProfile ? 10_000 : 30_000,
+    300_000,
+    true
+  ),
   POSITION_MANAGEMENT_INTERVAL: boundedNumber(process.env.POSITION_MANAGEMENT_INTERVAL_MS, 10_000, 5_000, 20_000, true),
   SYMBOL_REENTRY_COOLDOWN_MS: boundedNumber(
     process.env.SYMBOL_REENTRY_COOLDOWN_MS,

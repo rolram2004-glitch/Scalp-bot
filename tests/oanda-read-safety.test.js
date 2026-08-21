@@ -96,3 +96,30 @@ test('closed-trade reconciliation requests the bounded 500-trade OANDA window', 
     axios.get = originalGet;
   }
 });
+
+test('high-activity reconciliation paginates closed trades beyond the first 500', async () => {
+  const axios = require('axios');
+  const originalGet = axios.get;
+  const requestedBeforeIds = [];
+  axios.get = async (_url, options) => {
+    requestedBeforeIds.push(options?.params?.beforeID);
+    const firstId = options?.params?.beforeID ? 1500 : 2000;
+    return {
+      data: {
+        trades: Array.from({ length: 500 }, (_, index) => ({
+          id: String(firstId - index),
+          instrument: 'EUR_USD',
+          openTime: '2026-08-21T12:00:00.000Z'
+        }))
+      }
+    };
+  };
+  try {
+    const oanda = require('../src/oanda');
+    const trades = await oanda.getClosedTradesSince('2026-08-21', 1000);
+    assert.equal(trades.length, 1000);
+    assert.deepEqual(requestedBeforeIds, [undefined, '1501']);
+  } finally {
+    axios.get = originalGet;
+  }
+});

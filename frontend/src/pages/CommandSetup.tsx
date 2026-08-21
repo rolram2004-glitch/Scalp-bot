@@ -251,7 +251,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità MIRROR: stesso segnale, direzione opposta, TP nominale +0,20 CHF, SL nominale -1,20 CHF. Spread e ricevute OANDA restano visibili.</p>
+          <p>Modalità MIRROR HYPER: segnali ogni 10s su trend, impulsi e range confermati; massimo 100 ingressi al giorno per simbolo. TP nominale +0,20 CHF, SL nominale -1,20 CHF.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -264,6 +264,7 @@ export function CommandSetupPage({
         <StatusTile label="LEDGER" value={status?.reconciliationStatus || 'N/A'} detail={status?.lastReconciledAt ? `Verificato ${time(status.lastReconciledAt)}` : 'Nessuna ricevuta'} state={status?.reconciliationStatus === 'VERIFIED' ? 'ok' : 'bad'} />
         <StatusTile label="EXECUTION" value={executionLabel} detail={executionDetail} state={executionReady ? 'ok' : diagnostic.tone === 'paused' ? 'warn' : 'bad'} />
         <StatusTile label="AI GATE" value={status?.aiProvider || 'DISABLED'} detail={status?.aiStatus || status?.lastAiReason || 'Fallback deterministico'} state={status?.aiStatus === 'ERROR' ? 'bad' : status?.aiProvider && status.aiProvider !== 'DISABLED' ? 'ok' : 'idle'} />
+        <StatusTile label="PROFILO" value={status?.signalProfile || 'N/A'} detail={`${(status?.scanIntervalMs ?? 0) / 1000}s · ${status?.maxDailyTradesPerSymbol ?? 'N/A'} ingressi/simbolo`} state={status?.signalProfile === 'ROHATO_HYPER_100_PER_SYMBOL' ? 'ok' : 'warn'} />
         <StatusTile label="XAUUSD" value="SIGNAL ONLY" detail={`${xauLab?.orderCount ?? 0} ordini · protetto`} state={xauPass ? 'ok' : 'bad'} />
       </section>
 
@@ -272,7 +273,7 @@ export function CommandSetupPage({
         <Metric label="RISULTATO STORICO" value={formatR(performance.totalR)} detail={`${performance.sampleSize} chiusure con R`} tone={metricTone(performance.totalR)} />
         <Metric label="EXPECTANCY" value={formatR(performance.averageR)} detail="Risultato medio per trade" tone={metricTone(performance.averageR)} />
         <Metric label="PROFIT FACTOR" value={formatFactor(performance.profitFactor)} detail="Sopra 1 = profitti > perdite" tone={factorPass ? 'good' : 'bad'} />
-        <Metric label="TRADES OGGI" value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'} detail={`${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} rimasti su ${dailyRisk?.maxTrades ?? status?.maxDailyTrades ?? 'N/A'}`} tone="warn" />
+        <Metric label="TRADES OGGI" value={dailyRisk?.tradeCount ?? status?.dailyTradeCount ?? 'N/A'} detail={`max ${status?.maxDailyTradesPerSymbol ?? 'N/A'} per simbolo · ${status?.dailyRemainingTrades ?? dailyRisk?.remainingTrades ?? 'N/A'} totali rimasti`} tone="warn" />
         <Metric label="POSIZIONI APERTE" value={openTrades.length} detail={`${status?.maxOpenPositions ?? 15} massime · 1 per coppia`} tone={openTrades.length >= (status?.maxOpenPositions ?? 15) ? 'warn' : 'neutral'} />
       </section>
 
@@ -281,7 +282,7 @@ export function CommandSetupPage({
         <i>→</i><div><span>QUOTE FX COPERTE</span><strong>{status?.priceCoverage ?? 0}/{status?.priceExpected ?? 15}</strong><small>OANDA · XAU SIGNAL ONLY separato</small></div>
         <i>→</i><div><span>DIREZIONI</span><strong>{buyNow} BUY · {sellNow} SELL</strong><small>{holdNow} HOLD</small></div>
         <i>→</i><div><span>SETUP VALIDABILI</span><strong>{validNow}</strong><small>soglia {status?.minimumConfidence ?? 'N/A'}/100</small></div>
-        <i>→</i><div><span>CAPACITÀ</span><strong>{Math.max(0, (status?.maxOpenPositions ?? 15) - openTrades.length)} slot</strong><small>{status?.dailyRemainingTrades ?? 'N/A'} ingressi UTC</small></div>
+        <i>→</i><div><span>CAPACITÀ</span><strong>{Math.max(0, (status?.maxOpenPositions ?? 15) - openTrades.length)} slot</strong><small>{status?.maxDailyTradesPerSymbol ?? 'N/A'} ingressi/simbolo UTC</small></div>
       </section>
 
       <section className="pro-workspace">
