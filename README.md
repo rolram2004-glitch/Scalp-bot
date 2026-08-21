@@ -1,6 +1,6 @@
 # SEL SCALP BOT — $Rohato$🤖111
 
-Cockpit professionale White Glass di analisi e trading OANDA Practice. MAIN e MIRROR (INVERSE) nascono dallo stesso segnale. La MIRROR operativa usa la direzione opposta, TP nominale `+0,50 CHF` e SL nominale `-1,20 CHF`. Una sola corsia puo essere OANDA; l'altra resta PAPER SHADOW. Il confronto usa risultati in R e mantiene separate le valute originali.
+Cockpit professionale White Glass di analisi e trading OANDA Practice. MAIN e MIRROR (INVERSE) nascono dallo stesso segnale. La MIRROR operativa usa la direzione opposta, TP nominale `+0,20 CHF` e SL nominale `-1,20 CHF`. Una sola corsia puo essere OANDA; l'altra resta PAPER SHADOW. Il confronto usa risultati in R e mantiene separate le valute originali.
 
 ## Confronto e diagnostica professionale
 
@@ -55,9 +55,9 @@ Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` i
 - `TRADING_MODE=OANDA_DEMO`, `OANDA_ENVIRONMENT=PRACTICE` and both execution enable gates: verified orders on OANDA Practice only.
 - `TRADING_MODE=OANDA_LIVE`: real-money mode; blocked unless endpoint, enable flags and explicit real-money confirmation all match. Never enable it during development or automatic tests.
 - `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one OANDA execution lane. The other lane is an explicit paper shadow and never calls OANDA.
-- `PRACTICE_EXECUTION_VARIANT=INVERSE`: seleziona la MIRROR operativa su OANDA Practice: direzione opposta, TP nominale `+0,50 CHF`, SL nominale `-1,20 CHF`. Non abilita `OANDA_LIVE`.
+- `PRACTICE_EXECUTION_VARIANT=INVERSE`: seleziona la MIRROR operativa su OANDA Practice: direzione opposta, TP nominale `+0,20 CHF`, SL nominale `-1,20 CHF`. Non abilita `OANDA_LIVE`.
 
-La regola della MIRROR operativa non dipende dai colori dell'interfaccia: usa lo stesso segnale MAIN nella direzione opposta, con TP nominale `+0,50 CHF` e SL nominale `-1,20 CHF`. Il P&L delle due corsie viene misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
+La regola della MIRROR operativa non dipende dai colori dell'interfaccia: usa lo stesso segnale MAIN nella direzione opposta, con TP nominale `+0,20 CHF` e SL nominale `-1,20 CHF`. Il P&L delle due corsie viene misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
 
 Il profilo `ROHATO_AGGRESSIVE_100` scansiona 15 coppie ogni 30 secondi, usa un
 massimo di 7 ingressi validi per ciclo, 15 posizioni, una posizione per simbolo,

@@ -45,7 +45,7 @@ const instrumentsInFlight = new Set<string>();
 const verifiedSignalIds = new Set<string>();
 const INVERSE_CASH_UNITS = 1000;
 const INVERSE_CASH_RISK_CHF = 1.2;
-const INVERSE_CASH_REWARD_CHF = 0.5;
+const INVERSE_CASH_REWARD_CHF = 0.2;
 const INVERSE_CASH_CURRENCY = "CHF";
 
 export function normalizeOandaSymbol(symbol: string) {

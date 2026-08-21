@@ -403,7 +403,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
 
         <section className="signal-duel cockpit-panel">
           <header className="cockpit-panel__header">
-            <div><span>MIRROR OPERATIVA · DIREZIONE OPPOSTA · TP NOMINALE +0,50 CHF · SL NOMINALE -1,20 CHF</span><h2>MAIN / MIRROR</h2></div>
+            <div><span>MIRROR OPERATIVA · DIREZIONE OPPOSTA · TP NOMINALE +0,20 CHF · SL NOMINALE -1,20 CHF</span><h2>MAIN / MIRROR</h2></div>
             <div className="panel-header-tags">
               <b>{primaryPair?.pairId ? primaryPair.pairId.slice(-12) : 'PAIR N/A'}</b>
               <Link to="/vs">APRI VS</Link>

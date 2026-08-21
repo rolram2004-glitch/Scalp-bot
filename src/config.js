@@ -117,12 +117,12 @@ module.exports = {
   ),
   NORMAL_TAKE_PROFIT_ACCOUNT: boundedNumber(
     process.env.NORMAL_TAKE_PROFIT_ACCOUNT ?? process.env.NORMAL_TAKE_PROFIT_USD,
-    0.5,
+    0.2,
     0.01,
     100000
   ),
   NORMAL_STOP_LOSS_USD: boundedNumber(process.env.NORMAL_STOP_LOSS_USD, 1.2, 0.01, 100000),
-  NORMAL_TAKE_PROFIT_USD: boundedNumber(process.env.NORMAL_TAKE_PROFIT_USD, 0.5, 0.01, 100000),
+  NORMAL_TAKE_PROFIT_USD: boundedNumber(process.env.NORMAL_TAKE_PROFIT_USD, 0.2, 0.01, 100000),
   ACCOUNT_TARGET_CURRENCY: String(process.env.ACCOUNT_TARGET_CURRENCY || "CHF").trim().toUpperCase(),
   XAUUSD_STOP_LOSS_AMOUNT: boundedNumber(process.env.XAUUSD_STOP_LOSS_AMOUNT, 7.5, 0.01, 100000),
   XAUUSD_TAKE_PROFIT_USD: boundedNumber(process.env.XAUUSD_TAKE_PROFIT_USD, 15, 0.01, 100000),

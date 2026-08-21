@@ -199,7 +199,7 @@ function accountCashRequest(oanda, overrides = {}) {
     protectionMode: "ACCOUNT_CASH",
     targetAccountCurrency: "CHF",
     riskAmount: 1.2,
-    rewardAmount: 0.5,
+    rewardAmount: 0.2,
     ...overrides
   });
 }
@@ -529,8 +529,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "0.89890", takeProfit: "0.90060" },
-      SELL: { stopLoss: "0.90120", takeProfit: "0.89950" }
+      BUY: { stopLoss: "0.89890", takeProfit: "0.90030" },
+      SELL: { stopLoss: "0.90120", takeProfit: "0.89980" }
     }
   },
   {
@@ -545,8 +545,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: { negativeUnits: "0.90000", positiveUnits: "0.91000" },
     expected: {
-      BUY: { stopLoss: "1.09877", takeProfit: "1.10065" },
-      SELL: { stopLoss: "1.10133", takeProfit: "1.09945" }
+      BUY: { stopLoss: "1.09877", takeProfit: "1.10032" },
+      SELL: { stopLoss: "1.10133", takeProfit: "1.09978" }
     }
   },
   {
@@ -561,15 +561,15 @@ const fixedCashCases = [
     homeConversions: [{ currency: "JPY", accountLoss: "0.00610", accountGain: "0.00600" }],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "159.036", takeProfit: "159.316" },
-      SELL: { stopLoss: "159.428", takeProfit: "159.148" }
+      BUY: { stopLoss: "159.036", takeProfit: "159.266" },
+      SELL: { stopLoss: "159.428", takeProfit: "159.198" }
     }
   }
 ];
 
 for (const cashCase of fixedCashCases) {
   for (const side of ["BUY", "SELL"]) {
-    test(`INVERSE ACCOUNT_CASH ${side} fixes SL 1.20 CHF and TP 0.50 CHF using ${cashCase.label}`, async () => {
+    test(`INVERSE ACCOUNT_CASH ${side} fixes SL 1.20 CHF and TP 0.20 CHF using ${cashCase.label}`, async () => {
       const entry = side === "BUY" ? cashCase.ask : cashCase.bid;
       const signedUnits = side === "BUY" ? "1000" : "-1000";
       const { oanda, calls } = buildOandaMock({
@@ -640,7 +640,7 @@ for (const cashCase of fixedCashCases) {
         )
       );
       assert.ok(
-        Math.abs(actual.reward - 0.5) <= cashRoundingTolerance(
+        Math.abs(actual.reward - 0.2) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.gainFactor
@@ -661,7 +661,7 @@ test("INVERSE ACCOUNT_CASH recalculates protection from the verified post-fill e
       state: "OPEN",
       instrument: "EUR_USD",
       currentUnits: "1000",
-      price: "1.10040",
+      price: "1.10020",
       openTime: "2026-08-13T12:05:00.000Z"
     },
     orderResponse: {
@@ -685,14 +685,14 @@ test("INVERSE ACCOUNT_CASH recalculates protection from the verified post-fill e
   assert.equal(calls.getTrade, 2);
   assert.deepEqual(calls.lastReplacement, {
     tradeId: "post-fill-cash",
-    stopLoss: "1.09890",
-    takeProfit: "1.10101",
+    stopLoss: "1.09870",
+    takeProfit: "1.10044",
     strategyVariant: "INVERSE"
   });
   assert.notEqual(calls.lastReplacement.stopLoss, calls.lastOrder.stopLoss);
   assert.notEqual(calls.lastReplacement.takeProfit, calls.lastOrder.takeProfit);
 
-  const actual = cashAtProtection(1.10040, "1.09890", "1.10101", 1000, 0.8, 0.82);
+  const actual = cashAtProtection(1.10020, "1.09870", "1.10044", 1000, 0.8, 0.82);
   assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
   assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
 });
@@ -701,7 +701,7 @@ test("INVERSE ACCOUNT_CASH rejects any units, cash target, or explicit-price ove
   for (const [overrides, reason] of [
     [{ units: 999 }, "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000"],
     [{ riskAmount: 1.19 }, "ACCOUNT_CASH_TARGETS_INVALID"],
-    [{ rewardAmount: 0.51 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ rewardAmount: 0.21 }, "ACCOUNT_CASH_TARGETS_INVALID"],
     [{ stopLossPrice: 1.099, takeProfitPrice: 1.101 }, "ACCOUNT_CASH_EXPLICIT_LEVELS_NOT_ALLOWED"]
   ]) {
     const { oanda, calls } = buildOandaMock();
@@ -805,7 +805,7 @@ test("INVERSE ACCOUNT_CASH closes exposure when recalculated post-fill protectio
       state: "OPEN",
       instrument: "EUR_USD",
       currentUnits: "1000",
-      price: "1.10040",
+      price: "1.10020",
       openTime: "2026-08-13T12:10:00.000Z"
     },
     postReplaceVerifiedTrade: {
@@ -813,7 +813,7 @@ test("INVERSE ACCOUNT_CASH closes exposure when recalculated post-fill protectio
       state: "OPEN",
       instrument: "EUR_USD",
       currentUnits: "1000",
-      price: "1.10040",
+      price: "1.10020",
       openTime: "2026-08-13T12:10:00.000Z",
       stopLossOrder: { id: "bad-sl", state: "PENDING", price: "1.09800" },
       takeProfitOrder: { id: "bad-tp", state: "PENDING", price: "1.10200" }
