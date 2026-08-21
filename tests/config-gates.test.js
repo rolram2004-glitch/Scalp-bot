@@ -141,7 +141,7 @@ test("Rohato Practice profile accepts 30 second scans and caps the demo day at 1
   assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_AGGRESSIVE_100");
 });
 
-test("MIRROR account-cash defaults are 1000 units, SL 1.20 CHF and TP 0.50 CHF", () => {
+test("MIRROR account-cash defaults are 1000 units, SL 1.20 CHF and TP 0.20 CHF", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
@@ -149,13 +149,13 @@ test("MIRROR account-cash defaults are 1000 units, SL 1.20 CHF and TP 0.50 CHF",
     LIVE_EXECUTION_VARIANT: "INVERSE",
     DEFAULT_UNITS: "1000",
     NORMAL_STOP_LOSS_ACCOUNT: "1.2",
-    NORMAL_TAKE_PROFIT_ACCOUNT: "0.5",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.2",
     ACCOUNT_TARGET_CURRENCY: "chf"
   });
 
   assert.equal(config.DEFAULT_UNITS, 1000);
   assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 1.2);
-  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.5);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.2);
   assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
 });
 

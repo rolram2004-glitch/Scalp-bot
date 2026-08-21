@@ -186,7 +186,7 @@ test("OANDA_DEMO INVERSE ACCOUNT_CASH reverses direction and defers fixed CHF pr
     executionGateVerified: true,
     market: wideMarket,
     accountCashRisk: 1.2,
-    accountCashReward: 0.5,
+    accountCashReward: 0.2,
     accountTargetCurrency: "CHF"
   });
 
@@ -197,10 +197,10 @@ test("OANDA_DEMO INVERSE ACCOUNT_CASH reverses direction and defers fixed CHF pr
   assert.equal(result.inverse.stopLossPrice, undefined);
   assert.equal(result.inverse.takeProfitPrice, undefined);
   assert.deepEqual(result.inverse.structuralTargets, []);
-  assert.ok(Math.abs(result.inverse.riskRewardRatio - (0.5 / 1.2)) < 1e-12);
+  assert.ok(Math.abs(result.inverse.riskRewardRatio - (0.2 / 1.2)) < 1e-12);
   assert.equal(result.executionBlockedReason, undefined);
   assert.doesNotMatch(result.inverse.reasoning, /MAIN SL|MAIN TP|20P|10P/i);
-  assert.match(result.inverse.reasoning, /TP nominale \+0\.50 CHF, SL nominale -1\.20 CHF/);
+  assert.match(result.inverse.reasoning, /TP nominale \+0\.20 CHF, SL nominale -1\.20 CHF/);
 });
 
 test("PAPER keeps MAIN local and INVERSE shadow-only", () => {

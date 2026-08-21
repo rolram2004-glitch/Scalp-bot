@@ -30,7 +30,7 @@ if (
   process.env.DEFAULT_UNITS = "1000";
   process.env.ACCOUNT_TARGET_CURRENCY = "CHF";
   process.env.NORMAL_STOP_LOSS_ACCOUNT = "1.2";
-  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.5";
+  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.2";
 }
 
 // ROHATO_AGGRESSIVE_100 is a Practice/PAPER laboratory profile. It scans all
@@ -89,5 +89,5 @@ console.log(
   `orders=${process.env.OANDA_ORDER_EXECUTION_ENABLED === "true" ? "enabled" : "disabled"} ` +
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=30s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
-  `maxNew=7 maxOpen=15 cooldown=10m MIRROR=TP+0.50CHF/SL-1.20CHF units=1000 exits=SL_TP_ONLY maxDaily=${config.MAX_DAILY_TRADES}`
+  `maxNew=7 maxOpen=15 cooldown=10m MIRROR=TP+0.20CHF/SL-1.20CHF units=1000 exits=SL_TP_ONLY maxDaily=${config.MAX_DAILY_TRADES}`
 );

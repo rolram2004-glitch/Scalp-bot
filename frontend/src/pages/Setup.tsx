@@ -102,7 +102,7 @@ function Lane({ lane, executionReady, symbol }: { lane?: SignalLaneSnapshot; exe
         <dt>Order ID</dt><dd>{lane.oandaOrderId || 'N/A'}</dd>
         <dt>Trade ID</dt><dd>{lane.oandaTradeId || 'N/A'}</dd>
       </dl>
-      <p>{lane.variant === 'INVERSE' ? 'MIRROR OPERATIVA · direzione opposta · TP nominale +0,50 CHF · SL nominale -1,20 CHF. ' : ''}{lane.reasoning || 'N/A'}</p>
+      <p>{lane.variant === 'INVERSE' ? 'MIRROR OPERATIVA · direzione opposta · TP nominale +0,20 CHF · SL nominale -1,20 CHF. ' : ''}{lane.reasoning || 'N/A'}</p>
     </article>
   );
 }
