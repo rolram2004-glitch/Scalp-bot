@@ -359,13 +359,18 @@ class OandaAPI {
     }
   }
 
-  async getClosedTrades(count = 50) {
+  async getClosedTrades(count = 50, beforeID) {
     try {
+      const params = {
+        state: "CLOSED",
+        count: Math.min(500, Math.max(1, Number(count) || 50))
+      };
+      if (/^[1-9][0-9]*$/.test(String(beforeID || ""))) params.beforeID = String(beforeID);
       const response = await axios.get(`${this.baseURL}/accounts/${config.OANDA_ACCOUNT_ID}/trades`, {
         ...this.requestOptions(),
         // OANDA accepts up to 500 trades per page. Fetching the wider bounded
         // window keeps the UTC entry counter complete on high-activity demo days.
-        params: { state: "CLOSED", count: Math.min(500, Math.max(1, Number(count) || 50)) }
+        params
       });
       if (!Array.isArray(response.data?.trades)) throw new Error("OANDA_CLOSED_TRADES_RESPONSE_INVALID");
       this.rememberSuccess();
@@ -373,6 +378,42 @@ class OandaAPI {
     } catch (error) {
       throw this.safeError("closed_trades", error);
     }
+  }
+
+  async getClosedTradesSince(dateUTC, maximum = 1500) {
+    const requestedDate = String(dateUTC || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      throw new TypeError("UTC_TRADE_DATE_REQUIRED");
+    }
+    const limit = Math.min(1500, Math.max(1, Math.floor(Number(maximum) || 1500)));
+    const collected = new Map();
+    let beforeID;
+
+    while (collected.size < limit) {
+      const pageSize = Math.min(500, limit - collected.size);
+      const page = await this.getClosedTrades(pageSize, beforeID);
+      for (const trade of page) {
+        if (trade?.id) collected.set(String(trade.id), trade);
+      }
+      if (page.length < pageSize) break;
+
+      const pageDates = page
+        .map((trade) => String(trade?.openTime || "").slice(0, 10))
+        .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value));
+      if (pageDates.some((value) => value < requestedDate)) break;
+
+      const numericIds = page
+        .map((trade) => String(trade?.id || ""))
+        .filter((value) => /^[1-9][0-9]*$/.test(value))
+        .map((value) => BigInt(value));
+      if (numericIds.length === 0) break;
+      const oldestId = numericIds.reduce((minimum, value) => value < minimum ? value : minimum);
+      const nextBeforeID = String(oldestId);
+      if (nextBeforeID === beforeID) break;
+      beforeID = nextBeforeID;
+    }
+
+    return [...collected.values()];
   }
 
   async getOpenPositions() {

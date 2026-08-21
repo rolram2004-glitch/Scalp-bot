@@ -65,7 +65,12 @@ function installOpenAiTradeBrain({ aiConfirmation, config }) {
   config.OPENAI_MODEL = model;
   config.GEMINI_API_KEY = apiKey;
   config.GEMINI_MODEL = model;
-  config.AI_MIN_CONFIDENCE = Math.max(55, Number(process.env.AI_MIN_CONFIDENCE || 60));
+  const hyperPractice = config.TRADING_MODE === "OANDA_DEMO" &&
+    config.FOREX_SIGNAL_PROFILE === "ROHATO_HYPER_100_PER_SYMBOL";
+  config.AI_MIN_CONFIDENCE = Math.max(
+    hyperPractice ? 50 : 55,
+    Number(process.env.AI_MIN_CONFIDENCE || 60)
+  );
   // More candidates reach GPT; GPT remains the final gate.
   config.MIN_CONFIDENCE = Math.min(Number(config.MIN_CONFIDENCE || 60), 55);
 

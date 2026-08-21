@@ -26,6 +26,7 @@ const CLOSE_INTERVAL = 15000;
 const PRICE_INTERVAL = 1000;
 
 const MAX_DAILY_TRADES = Number(config.MAX_DAILY_TRADES);
+const MAX_DAILY_TRADES_PER_SYMBOL = Number(config.MAX_DAILY_TRADES_PER_SYMBOL || 100);
 const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
 const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
@@ -101,8 +102,9 @@ export interface BotSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile: "ROHATO_AGGRESSIVE_100" | "AGGRESSIVE_25" | "BALANCED";
+  signalProfile: "ROHATO_HYPER_100_PER_SYMBOL" | "ROHATO_AGGRESSIVE_100" | "AGGRESSIVE_25" | "BALANCED";
   maxDailyTrades: number;
+  maxDailyTradesPerSymbol: number;
   minimumConfidence: number;
   maxOpenPositions: number;
   maxNewTradesPerCycle: number;
@@ -122,6 +124,7 @@ export interface BotSnapshot {
   rewardAmount?: number;
   profitLoss?: number;
   dailyTradeCount: number;
+  dailyTradeCountBySymbol: Record<string, number>;
   signalsAnalyzed: number;
   signalsDiscarded: number;
   openTrades: BotTrade[];
@@ -202,6 +205,7 @@ const botState: BotSnapshot = {
   symbols: SYMBOLS,
   signalProfile: config.FOREX_SIGNAL_PROFILE,
   maxDailyTrades: MAX_DAILY_TRADES,
+  maxDailyTradesPerSymbol: MAX_DAILY_TRADES_PER_SYMBOL,
   minimumConfidence: MIN_CONFIDENCE,
   maxOpenPositions: MAX_OPEN_POSITIONS,
   maxNewTradesPerCycle: MAX_NEW_TRADES_PER_CYCLE,
@@ -210,6 +214,7 @@ const botState: BotSnapshot = {
   maxDailyLoss: MAX_DAILY_LOSS,
   symbolReentryCooldownMs: SYMBOL_REENTRY_COOLDOWN_MS,
   dailyTradeCount: 0,
+  dailyTradeCountBySymbol: {},
   signalsAnalyzed: 0,
   signalsDiscarded: 0,
   openTrades: [],
@@ -343,6 +348,7 @@ function ensureDailyCounterDate() {
   if (today === dailyCounterDate) return;
   dailyCounterDate = today;
   botState.dailyTradeCount = 0;
+  botState.dailyTradeCountBySymbol = {};
   if (liveModeConfigured()) {
     botState.reconciliationStatus = "NOT_RUN";
     dailyRiskDataComplete = false;
@@ -1008,6 +1014,26 @@ function countUtcTradeEntries(trades: any[], dateUTC = new Date().toISOString().
   ).size;
 }
 
+function countUtcTradeEntriesBySymbol(
+  trades: any[],
+  dateUTC = new Date().toISOString().slice(0, 10)
+) {
+  const uniqueEntries = new Map<string, string>();
+  for (const trade of Array.isArray(trades) ? trades : []) {
+    if (typeof trade?.openTime !== "string" || trade.openTime.slice(0, 10) !== dateUTC) continue;
+    const id = String(trade?.id || "");
+    const symbol = cleanSymbol(trade?.instrument || trade?.symbol || "");
+    if (id && symbol) uniqueEntries.set(id, symbol);
+  }
+  const counts: Record<string, number> = {};
+  for (const symbol of uniqueEntries.values()) counts[symbol] = (counts[symbol] || 0) + 1;
+  return counts;
+}
+
+function dailySymbolCapReached(count: number, maximum = MAX_DAILY_TRADES_PER_SYMBOL) {
+  return Number.isFinite(count) && Number.isFinite(maximum) && maximum > 0 && count >= maximum;
+}
+
 function symbolCooldownRemainingMs(
   symbol: string,
   closedTrades: Pick<BotTrade, "symbol" | "closedAt">[] = botState.closedTrades,
@@ -1026,11 +1052,12 @@ function symbolCooldownRemainingMs(
 
 async function reconcileLiveTradesOnce() {
   try {
+    const reconciliationDateUTC = new Date().toISOString().slice(0, 10);
     const [account, remoteOpenTrades, remoteOpenPositions, remoteClosedTrades, remotePendingOrders] = await Promise.all([
       oanda.getAccount(),
       oanda.getOpenTrades(),
       oanda.getOpenPositions(),
-      oanda.getClosedTrades(500),
+      oanda.getClosedTradesSince(reconciliationDateUTC, MAX_DAILY_TRADES),
       oanda.getPendingOrders()
     ]);
     if (!account?.currency || !Array.isArray(remoteOpenTrades) || !Array.isArray(remoteOpenPositions) ||
@@ -1140,7 +1167,7 @@ async function reconcileLiveTradesOnce() {
     }
     botState.closedTrades = [...closedById.values()]
       .sort((a, b) => String(b.closedAt || "").localeCompare(String(a.closedAt || "")))
-      .slice(0, 100);
+      .slice(0, MAX_DAILY_TRADES);
 
     if (newlyClosed.length > 0) {
       newlyClosed.forEach((trade) => pushLog(
@@ -1162,10 +1189,14 @@ async function reconcileLiveTradesOnce() {
         clientTag: order?.clientExtensions?.tag ? String(order.clientExtensions.tag) : undefined
       };
     });
-    dailyCounterDate = new Date().toISOString().slice(0, 10);
+    dailyCounterDate = reconciliationDateUTC;
     // The daily entry cap counts entries opened today. A position opened
     // yesterday and merely closed today must affect P&L, not consume a new slot.
     botState.dailyTradeCount = countUtcTradeEntries(
+      [...remoteOpenTrades, ...remoteClosedTrades],
+      dailyCounterDate
+    );
+    botState.dailyTradeCountBySymbol = countUtcTradeEntriesBySymbol(
       [...remoteOpenTrades, ...remoteClosedTrades],
       dailyCounterDate
     );
@@ -1601,6 +1632,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     }
 
     const cooldownRemaining = symbolCooldownRemainingMs(symbol);
+    const symbolDailyTradeCount = botState.dailyTradeCountBySymbol[cleanSymbol(symbol)] || 0;
 
     if (rankedDecision.action === "HOLD" || rankedDecision.confidence < MIN_CONFIDENCE) {
       botState.signalsDiscarded += 1;
@@ -1640,6 +1672,10 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "CYCLE_CAP_REACHED");
       pushLog(`[${symbol}] valid signal queued: cycle cap ${MAX_NEW_TRADES_PER_CYCLE} reached`);
+    } else if (dailySymbolCapReached(symbolDailyTradeCount)) {
+      botState.signalsDiscarded += 1;
+      if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "DAILY_SYMBOL_TRADE_CAP_REACHED");
+      pushLog(`[${symbol}] valid signal blocked: daily symbol cap ${MAX_DAILY_TRADES_PER_SYMBOL} reached`);
     } else if (cooldownRemaining > 0) {
       botState.signalsDiscarded += 1;
       if (liveExecutionActive()) updatePairExecution(pairedSignal, "SKIPPED", "SYMBOL_REENTRY_COOLDOWN");
@@ -1815,6 +1851,9 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       } else {
         const trade = buildTrade(symbol, rankedDecision, enrichedMarketData, pairedSignal);
         botState.dailyTradeCount += 1;
+        const normalizedSymbol = cleanSymbol(symbol);
+        botState.dailyTradeCountBySymbol[normalizedSymbol] =
+          (botState.dailyTradeCountBySymbol[normalizedSymbol] || 0) + 1;
         cycle.opened += 1;
         botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
         openPairedShadowTrade(symbol, pairedSignal, enrichedMarketData, cycle, trade.id);
@@ -1842,7 +1881,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
 
 async function scanAllSymbols() {
   if (!botState.isRunning || scanInProgress) {
-    if (scanInProgress) pushLog("Market scan skipped: previous two-minute cycle is still running");
+    if (scanInProgress) pushLog("Market scan skipped: previous fast cycle is still running");
     return;
   }
 
@@ -2061,6 +2100,7 @@ export function startAutonomousBot() {
   pushLog("AUTONOMOUS BOT STARTED");
   pushLog(`Symbols: ${SYMBOLS.length}`);
   pushLog(`Max Daily Trades: ${MAX_DAILY_TRADES}`);
+  pushLog(`Max Daily Trades Per FX Symbol: ${MAX_DAILY_TRADES_PER_SYMBOL}`);
   pushLog(`Forex Signal Profile: ${config.FOREX_SIGNAL_PROFILE}`);
   pushLog(`Minimum Signal Confidence: ${MIN_CONFIDENCE}%`);
   pushLog(`Max Open Positions: ${MAX_OPEN_POSITIONS}`);
@@ -2120,6 +2160,8 @@ export const autonomousTestUtils = {
   variantPipDefaults,
   laneProtectionPlan,
   countUtcTradeEntries,
+  countUtcTradeEntriesBySymbol,
+  dailySymbolCapReached,
   symbolCooldownRemainingMs,
   normalizedR
 };

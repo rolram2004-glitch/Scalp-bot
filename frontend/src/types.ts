@@ -302,8 +302,9 @@ export interface StatusSnapshot {
   lastAiSignalId?: string;
   accountCurrency?: string;
   symbols: string[];
-  signalProfile?: 'ROHATO_AGGRESSIVE_100' | 'AGGRESSIVE_25' | 'BALANCED';
+  signalProfile?: 'ROHATO_HYPER_100_PER_SYMBOL' | 'ROHATO_AGGRESSIVE_100' | 'AGGRESSIVE_25' | 'BALANCED';
   maxDailyTrades: number;
+  maxDailyTradesPerSymbol?: number;
   minimumConfidence?: number;
   maxOpenPositions: number;
   maxNewTradesPerCycle?: number;
@@ -323,6 +324,7 @@ export interface StatusSnapshot {
   rewardAmount?: number;
   profitLoss?: number;
   dailyTradeCount: number;
+  dailyTradeCountBySymbol?: Record<string, number>;
   signalsAnalyzed: number;
   signalsDiscarded: number;
   openTrades: BotTrade[];

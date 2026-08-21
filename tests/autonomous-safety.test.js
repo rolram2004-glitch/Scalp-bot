@@ -172,6 +172,27 @@ test("UTC daily cap counts entries only, not positions merely closed today", () 
   assert.equal(autonomousTestUtils.countUtcTradeEntries(trades, dateUTC), 2);
 });
 
+test("UTC daily cap counts unique entries separately for every normalized symbol", () => {
+  const trades = [
+    { id: "1", instrument: "EUR_USD", openTime: "2026-08-21T08:00:00.000Z" },
+    { id: "2", instrument: "EUR_USD", openTime: "2026-08-21T08:01:00.000Z" },
+    { id: "2", instrument: "EUR_USD", openTime: "2026-08-21T08:01:00.000Z" },
+    { id: "3", instrument: "GBP_JPY", openTime: "2026-08-21T08:02:00.000Z" },
+    { id: "4", instrument: "EUR_USD", openTime: "2026-08-20T23:59:00.000Z" }
+  ];
+
+  assert.deepEqual(
+    autonomousTestUtils.countUtcTradeEntriesBySymbol(trades, "2026-08-21"),
+    { EURUSD: 2, GBPJPY: 1 }
+  );
+});
+
+test("per-symbol daily cap blocks the 101st entry but allows the 100th", () => {
+  assert.equal(autonomousTestUtils.dailySymbolCapReached(99, 100), false);
+  assert.equal(autonomousTestUtils.dailySymbolCapReached(100, 100), true);
+  assert.equal(autonomousTestUtils.dailySymbolCapReached(101, 100), true);
+});
+
 test("fixed pip plan respects JPY precision and keeps 1:2 risk reward", () => {
   const jpy = autonomousTestUtils.fixedPipPlan("USDJPY", 159.232, "BUY");
   assert.equal(jpy.riskPips, 10);
