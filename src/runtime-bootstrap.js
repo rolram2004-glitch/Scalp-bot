@@ -21,16 +21,19 @@ if (
 ) {
   process.env.TRADING_MODE = "OANDA_DEMO";
   process.env.OANDA_ORDER_EXECUTION_ENABLED = "true";
-  // This Practice deployment is intentionally the CONTRARIO/MIRROR lane. The
-  // old strategy still decides the signal, but only the opposite direction is
-  // submitted. Protective prices are derived from fixed CHF amounts after the
-  // broker quote/fill is known; the old 20/10-pip levels are never submitted.
-  process.env.PRACTICE_EXECUTION_VARIANT = "INVERSE";
-  process.env.LIVE_EXECUTION_VARIANT = "INVERSE";
+  // This Practice deployment intentionally executes the NORMAL/MAIN lane: a
+  // BUY signal submits BUY and a SELL signal submits SELL. Protective prices
+  // are derived from fixed CHF amounts after the broker quote/fill is known;
+  // the old 20/10-pip levels are never submitted.
+  process.env.PRACTICE_EXECUTION_VARIANT = "MAIN";
+  process.env.LIVE_EXECUTION_VARIANT = "MAIN";
   process.env.DEFAULT_UNITS = "1000";
   process.env.ACCOUNT_TARGET_CURRENCY = "CHF";
-  process.env.NORMAL_STOP_LOSS_ACCOUNT = "1.2";
-  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.2";
+  // Returning from MIRROR to NORMAL swaps the old outcomes: the former
+  // MIRROR TP 0.20 CHF is the NORMAL stop, while the former MIRROR stop
+  // 1.20 CHF is the NORMAL take profit.
+  process.env.NORMAL_STOP_LOSS_ACCOUNT = "0.2";
+  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "1.2";
 }
 
 // ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
@@ -96,7 +99,7 @@ console.log(
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
-  `MIRROR=TP+0.20CHF/SL-1.20CHF units=1000 exits=SL_TP_ONLY ` +
+  `NORMAL=TP+1.20CHF/SL-0.20CHF units=1000 exits=SL_TP_ONLY ` +
   `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
   `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
 );

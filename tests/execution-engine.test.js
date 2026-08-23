@@ -195,11 +195,11 @@ function request(oanda, overrides = {}) {
 
 function accountCashRequest(oanda, overrides = {}) {
   return request(oanda, {
-    strategyVariant: "INVERSE",
+    strategyVariant: "MAIN",
     protectionMode: "ACCOUNT_CASH",
     targetAccountCurrency: "CHF",
-    riskAmount: 1.2,
-    rewardAmount: 0.2,
+    riskAmount: 0.2,
+    rewardAmount: 1.2,
     ...overrides
   });
 }
@@ -529,8 +529,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "0.89890", takeProfit: "0.90030" },
-      SELL: { stopLoss: "0.90120", takeProfit: "0.89980" }
+      BUY: { stopLoss: "0.89990", takeProfit: "0.90130" },
+      SELL: { stopLoss: "0.90020", takeProfit: "0.89880" }
     }
   },
   {
@@ -545,8 +545,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: { negativeUnits: "0.90000", positiveUnits: "0.91000" },
     expected: {
-      BUY: { stopLoss: "1.09877", takeProfit: "1.10032" },
-      SELL: { stopLoss: "1.10133", takeProfit: "1.09978" }
+      BUY: { stopLoss: "1.09988", takeProfit: "1.10142" },
+      SELL: { stopLoss: "1.10022", takeProfit: "1.09868" }
     }
   },
   {
@@ -561,15 +561,15 @@ const fixedCashCases = [
     homeConversions: [{ currency: "JPY", accountLoss: "0.00610", accountGain: "0.00600" }],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "159.036", takeProfit: "159.266" },
-      SELL: { stopLoss: "159.428", takeProfit: "159.198" }
+      BUY: { stopLoss: "159.200", takeProfit: "159.433" },
+      SELL: { stopLoss: "159.264", takeProfit: "159.031" }
     }
   }
 ];
 
 for (const cashCase of fixedCashCases) {
   for (const side of ["BUY", "SELL"]) {
-    test(`INVERSE ACCOUNT_CASH ${side} fixes SL 1.20 CHF and TP 0.20 CHF using ${cashCase.label}`, async () => {
+    test(`MAIN ACCOUNT_CASH ${side} fixes SL 0.20 CHF and TP 1.20 CHF using ${cashCase.label}`, async () => {
       const entry = side === "BUY" ? cashCase.ask : cashCase.bid;
       const signedUnits = side === "BUY" ? "1000" : "-1000";
       const { oanda, calls } = buildOandaMock({
@@ -620,7 +620,7 @@ for (const cashCase of fixedCashCases) {
       assert.equal(calls.replaceTradeDependentOrders, 1);
       assert.equal(calls.getTrade, 2);
       assert.equal(calls.lastReplacement.tradeId, "cash-trade");
-      assert.equal(calls.lastReplacement.strategyVariant, "INVERSE");
+      assert.equal(calls.lastReplacement.strategyVariant, "MAIN");
       assert.equal(String(calls.lastReplacement.stopLoss), cashCase.expected[side].stopLoss);
       assert.equal(String(calls.lastReplacement.takeProfit), cashCase.expected[side].takeProfit);
 
@@ -633,14 +633,14 @@ for (const cashCase of fixedCashCases) {
         cashCase.gainFactor
       );
       assert.ok(
-        Math.abs(actual.risk - 1.2) <= cashRoundingTolerance(
+        Math.abs(actual.risk - 0.2) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.lossFactor
         )
       );
       assert.ok(
-        Math.abs(actual.reward - 0.2) <= cashRoundingTolerance(
+        Math.abs(actual.reward - 1.2) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.gainFactor
@@ -649,12 +649,12 @@ for (const cashCase of fixedCashCases) {
       assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
       assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
       assert.equal(result.trade.accountCurrency, "CHF");
-      assert.equal(result.trade.strategyVariant, "INVERSE");
+      assert.equal(result.trade.strategyVariant, "MAIN");
     });
   }
 }
 
-test("INVERSE ACCOUNT_CASH recalculates protection from the verified post-fill entry", async () => {
+test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entry", async () => {
   const { oanda, calls } = buildOandaMock({
     verifiedTrade: {
       id: "post-fill-cash",
@@ -685,23 +685,23 @@ test("INVERSE ACCOUNT_CASH recalculates protection from the verified post-fill e
   assert.equal(calls.getTrade, 2);
   assert.deepEqual(calls.lastReplacement, {
     tradeId: "post-fill-cash",
-    stopLoss: "1.09870",
-    takeProfit: "1.10044",
-    strategyVariant: "INVERSE"
+    stopLoss: "1.09995",
+    takeProfit: "1.10166",
+    strategyVariant: "MAIN"
   });
   assert.notEqual(calls.lastReplacement.stopLoss, calls.lastOrder.stopLoss);
   assert.notEqual(calls.lastReplacement.takeProfit, calls.lastOrder.takeProfit);
 
-  const actual = cashAtProtection(1.10020, "1.09870", "1.10044", 1000, 0.8, 0.82);
+  const actual = cashAtProtection(1.10020, "1.09995", "1.10166", 1000, 0.8, 0.82);
   assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
   assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
 });
 
-test("INVERSE ACCOUNT_CASH rejects any units, cash target, or explicit-price override outside its fixed contract", async () => {
+test("MAIN ACCOUNT_CASH rejects any units, cash target, or explicit-price override outside its fixed contract", async () => {
   for (const [overrides, reason] of [
     [{ units: 999 }, "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000"],
-    [{ riskAmount: 1.19 }, "ACCOUNT_CASH_TARGETS_INVALID"],
-    [{ rewardAmount: 0.21 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ riskAmount: 0.19 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ rewardAmount: 1.21 }, "ACCOUNT_CASH_TARGETS_INVALID"],
     [{ stopLossPrice: 1.099, takeProfitPrice: 1.101 }, "ACCOUNT_CASH_EXPLICIT_LEVELS_NOT_ALLOWED"]
   ]) {
     const { oanda, calls } = buildOandaMock();
@@ -713,7 +713,7 @@ test("INVERSE ACCOUNT_CASH rejects any units, cash target, or explicit-price ove
   }
 });
 
-test("INVERSE ACCOUNT_CASH rejects a non-CHF account before submitting an order", async () => {
+test("MAIN ACCOUNT_CASH rejects a non-CHF account before submitting an order", async () => {
   const { oanda, calls } = buildOandaMock({
     account: { id: "practice-account", currency: "USD" }
   });
@@ -725,7 +725,7 @@ test("INVERSE ACCOUNT_CASH rejects a non-CHF account before submitting an order"
   assert.equal(calls.replaceTradeDependentOrders, 0);
 });
 
-test("INVERSE ACCOUNT_CASH Practice guard blocks before every OANDA read or order", async () => {
+test("MAIN ACCOUNT_CASH Practice guard blocks before every OANDA read or order", async () => {
   const { oanda, calls } = buildOandaMock({
     practiceGuardError: new Error("ACCOUNT_CASH_REQUIRES_OANDA_PRACTICE")
   });
@@ -742,7 +742,7 @@ test("INVERSE ACCOUNT_CASH Practice guard blocks before every OANDA read or orde
   assert.equal(calls.replaceTradeDependentOrders, 0);
 });
 
-test("INVERSE ACCOUNT_CASH fails closed when quote-to-CHF conversion is incomplete", async () => {
+test("MAIN ACCOUNT_CASH fails closed when quote-to-CHF conversion is incomplete", async () => {
   const { oanda, calls } = buildOandaMock({
     pricing: {
       price: {
@@ -765,7 +765,7 @@ test("INVERSE ACCOUNT_CASH fails closed when quote-to-CHF conversion is incomple
   assert.equal(calls.replaceTradeDependentOrders, 0);
 });
 
-test("INVERSE ACCOUNT_CASH fails before submission when fixed CHF protection collapses at price precision", async () => {
+test("MAIN ACCOUNT_CASH fails before submission when fixed CHF protection collapses at price precision", async () => {
   const { oanda, calls } = buildOandaMock({
     account: { id: "practice-account", currency: "CHF" },
     instrument: {
@@ -798,7 +798,7 @@ test("INVERSE ACCOUNT_CASH fails before submission when fixed CHF protection col
   assert.equal(calls.replaceTradeDependentOrders, 0);
 });
 
-test("INVERSE ACCOUNT_CASH closes exposure when recalculated post-fill protection is not verified", async () => {
+test("MAIN ACCOUNT_CASH closes exposure when recalculated post-fill protection is not verified", async () => {
   const { oanda, calls } = buildOandaMock({
     verifiedTrade: {
       id: "cash-mismatch",

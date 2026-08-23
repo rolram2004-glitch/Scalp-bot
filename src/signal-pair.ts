@@ -186,7 +186,6 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const minimumConfidence = Number.isFinite(requestedThreshold)
     ? Math.min(100, Math.max(0, requestedThreshold))
     : 65;
-  const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence;
   const baseReasoning = String(input.mainDecision?.reasoning || "Decisione MAIN non disponibile.");
   const entry = finite(input.mainDecision?.entryPrice)
     ? input.mainDecision.entryPrice
@@ -200,11 +199,15 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   const accountTargetCurrency = String(input.accountTargetCurrency || "").trim().toUpperCase();
   const accountCashRequested = input.accountCashRisk !== undefined ||
     input.accountCashReward !== undefined || input.accountTargetCurrency !== undefined;
+  const mainCashSelected = mainSelected && forexInstrument && accountCashRequested;
   const inverseCashSelected = inverseSelected && forexInstrument && accountCashRequested;
-  const inverseCashProtectionValid =
+  const accountCashSelected = mainCashSelected || inverseCashSelected;
+  const accountCashProtectionValid =
     Number.isFinite(accountCashRisk) && accountCashRisk > 0 &&
     Number.isFinite(accountCashReward) && accountCashReward > 0 &&
     accountTargetCurrency === "CHF";
+  const mainEligible = mainAction !== "HOLD" && confidence >= minimumConfidence &&
+    (!mainCashSelected || accountCashProtectionValid);
   const stopPips = finite(input.mainDecision?.stopLossPips) && input.mainDecision.stopLossPips > 0
     ? input.mainDecision.stopLossPips
     : forexInstrument ? 10 : undefined;
@@ -234,7 +237,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   );
   const inverseTargets = inverseLevelsValid && finite(inverseTakeProfit) ? [inverseTakeProfit] : [];
   const inverseEligible = inverseAction !== "HOLD" && confidence >= minimumConfidence &&
-    (inverseCashSelected ? inverseCashProtectionValid : inverseLevelsValid);
+    (inverseCashSelected ? accountCashProtectionValid : inverseLevelsValid);
   let executionBlockedReason: string | undefined;
   const marketValidationReason = realMarketSnapshot ? undefined : "OANDA_SIGNAL_SNAPSHOT_NOT_TRADEABLE_OR_FRESH";
 
@@ -242,7 +245,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
   else if (liveRequested && !validVariant) executionBlockedReason = "INVALID_LIVE_EXECUTION_VARIANT";
   else if (liveRequested && input.executionGateVerified !== true) executionBlockedReason = "OANDA_SAFETY_GATES_NOT_VERIFIED";
   else if (liveRequested && !realMarketSnapshot) executionBlockedReason = marketValidationReason;
-  else if (inverseCashSelected && !inverseCashProtectionValid) executionBlockedReason = "ACCOUNT_CASH_TARGETS_INVALID";
+  else if (accountCashSelected && !accountCashProtectionValid) executionBlockedReason = "ACCOUNT_CASH_TARGETS_INVALID";
   else if (inverseSelected && !inverseCashSelected && !inverseLevelsValid) executionBlockedReason = "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD";
 
   return {
@@ -260,17 +263,29 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       setupScore: input.mainDecision?.setupScore ?? confidence,
       scoreLabel: input.mainDecision?.scoreLabel,
       scoreBreakdown: input.mainDecision?.scoreBreakdown,
-      reasoning: baseReasoning,
+      reasoning: mainCashSelected
+        ? `NORMALE sul segnale: ${mainAction} resta ${mainAction}. Protezione OANDA sul prezzo eseguito: TP nominale +${accountCashReward.toFixed(2)} ${accountTargetCurrency}, SL nominale -${accountCashRisk.toFixed(2)} ${accountTargetCurrency}. ${baseReasoning}`
+        : baseReasoning,
       setupType: input.mainDecision?.setupType,
       entryPrice: mainAction === "HOLD" ? undefined : entry,
-      stopLossPrice: mainAction === "HOLD" ? undefined : mainStop,
-      takeProfitPrice: mainAction === "HOLD" ? undefined : mainTakeProfit,
-      structuralTargets: mainAction === "HOLD" ? [] : mainTargets,
-      riskRewardRatio: input.mainDecision?.riskRewardRatio,
+      stopLossPrice: mainAction === "HOLD" || mainCashSelected ? undefined : mainStop,
+      takeProfitPrice: mainAction === "HOLD" || mainCashSelected ? undefined : mainTakeProfit,
+      structuralTargets: mainAction === "HOLD" || mainCashSelected ? [] : mainTargets,
+      riskRewardRatio: mainAction === "HOLD"
+        ? undefined
+        : mainCashSelected && accountCashProtectionValid
+          ? accountCashReward / accountCashRisk
+          : input.mainDecision?.riskRewardRatio,
       mode: mainSelected ? oandaLaneMode : paperMode ? "PAPER" : "PAPER SHADOW",
       selectedForExecution: mainSelected,
       executionState: mainSelected ? (mainEligible ? "READY" : "NOT_ELIGIBLE") : paperMode ? "PAPER" : "SHADOW",
-      executionReason: mainSelected && !mainEligible ? (mainAction === "HOLD" ? "HOLD" : "CONFIDENCE_BELOW_THRESHOLD") : undefined
+      executionReason: mainSelected && !mainEligible
+        ? mainAction === "HOLD"
+          ? "HOLD"
+          : mainCashSelected && !accountCashProtectionValid
+            ? "ACCOUNT_CASH_TARGETS_INVALID"
+            : "CONFIDENCE_BELOW_THRESHOLD"
+        : undefined
     },
     inverse: {
       variant: "INVERSE",
@@ -289,7 +304,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       structuralTargets: inverseAction === "HOLD" || inverseCashSelected ? [] : inverseTargets,
       riskRewardRatio: inverseAction === "HOLD"
         ? undefined
-        : inverseCashSelected && inverseCashProtectionValid
+        : inverseCashSelected && accountCashProtectionValid
           ? accountCashReward / accountCashRisk
           : riskReward(inverseEntry, inverseStop, inverseTakeProfit),
       mode: inverseSelected ? oandaLaneMode : "PAPER SHADOW",
@@ -298,7 +313,7 @@ export function createPairedSignalSnapshot(input: PairedSignalInput): PairedSign
       executionReason: inverseSelected && !inverseEligible
         ? inverseAction === "HOLD"
           ? "HOLD"
-          : inverseCashSelected && !inverseCashProtectionValid
+          : inverseCashSelected && !accountCashProtectionValid
             ? "ACCOUNT_CASH_TARGETS_INVALID"
             : !inverseLevelsValid
               ? "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD"
