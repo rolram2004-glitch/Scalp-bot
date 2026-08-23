@@ -11,6 +11,8 @@ const orderExecutionEnabled = process.env.OANDA_ORDER_EXECUTION_ENABLED === "tru
 const oandaLiveConfirmed = process.env.OANDA_LIVE_CONFIRMATION === "I_CONFIRM_REAL_MONEY";
 const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "").trim().toUpperCase();
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
+const defaultAccountCashRisk = liveExecutionVariantRaw === "INVERSE" ? 1.2 : 0.2;
+const defaultAccountCashReward = liveExecutionVariantRaw === "INVERSE" ? 0.2 : 1.2;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
@@ -154,18 +156,18 @@ module.exports = {
   XAUUSD_UNITS: boundedNumber(process.env.XAUUSD_UNITS, 1, 0.000001, 1000000),
   NORMAL_STOP_LOSS_ACCOUNT: boundedNumber(
     process.env.NORMAL_STOP_LOSS_ACCOUNT ?? process.env.NORMAL_STOP_LOSS_USD,
-    1.2,
+    defaultAccountCashRisk,
     0.01,
     100000
   ),
   NORMAL_TAKE_PROFIT_ACCOUNT: boundedNumber(
     process.env.NORMAL_TAKE_PROFIT_ACCOUNT ?? process.env.NORMAL_TAKE_PROFIT_USD,
-    0.2,
+    defaultAccountCashReward,
     0.01,
     100000
   ),
-  NORMAL_STOP_LOSS_USD: boundedNumber(process.env.NORMAL_STOP_LOSS_USD, 1.2, 0.01, 100000),
-  NORMAL_TAKE_PROFIT_USD: boundedNumber(process.env.NORMAL_TAKE_PROFIT_USD, 0.2, 0.01, 100000),
+  NORMAL_STOP_LOSS_USD: boundedNumber(process.env.NORMAL_STOP_LOSS_USD, defaultAccountCashRisk, 0.01, 100000),
+  NORMAL_TAKE_PROFIT_USD: boundedNumber(process.env.NORMAL_TAKE_PROFIT_USD, defaultAccountCashReward, 0.01, 100000),
   ACCOUNT_TARGET_CURRENCY: String(process.env.ACCOUNT_TARGET_CURRENCY || "CHF").trim().toUpperCase(),
   XAUUSD_STOP_LOSS_AMOUNT: boundedNumber(process.env.XAUUSD_STOP_LOSS_AMOUNT, 7.5, 0.01, 100000),
   XAUUSD_TAKE_PROFIT_USD: boundedNumber(process.env.XAUUSD_TAKE_PROFIT_USD, 15, 0.01, 100000),

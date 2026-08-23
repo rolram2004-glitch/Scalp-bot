@@ -33,8 +33,8 @@ function assertAccountCashExecutionConfigured() {
   if (config.TRADING_MODE !== "OANDA_DEMO" || config.OANDA_ENVIRONMENT !== "PRACTICE") {
     throw new Error("ACCOUNT_CASH_REQUIRES_OANDA_PRACTICE");
   }
-  if (!config.LIVE_EXECUTION_VARIANT_VALID || config.LIVE_EXECUTION_VARIANT !== "INVERSE") {
-    throw new Error("ACCOUNT_CASH_REQUIRES_INVERSE");
+  if (!config.LIVE_EXECUTION_VARIANT_VALID) {
+    throw new Error("ACCOUNT_CASH_REQUIRES_VALID_EXECUTION_VARIANT");
   }
 }
 
