@@ -193,6 +193,13 @@ test("per-symbol daily cap blocks the 101st entry but allows the 100th", () => {
   assert.equal(autonomousTestUtils.dailySymbolCapReached(101, 100), true);
 });
 
+test("OANDA Practice can ignore account daily loss while protected modes still stop", () => {
+  assert.equal(autonomousTestUtils.dailyLossCapReached(-1000, 50, false), false);
+  assert.equal(autonomousTestUtils.dailyLossCapReached(-49.99, 50, true), false);
+  assert.equal(autonomousTestUtils.dailyLossCapReached(-50, 50, true), true);
+  assert.equal(autonomousTestUtils.dailyLossCapReached(-50.01, 50, true), true);
+});
+
 test("rolling limiter permits the 100th entry and blocks the 101st inside 60 seconds", () => {
   const now = Date.parse("2026-08-21T12:00:00.000Z");
   const recent99 = Array.from({ length: 99 }, (_, index) => now - 59_000 + index);

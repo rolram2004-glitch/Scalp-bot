@@ -313,7 +313,8 @@ export interface StatusSnapshot {
   maxNewTradesPerCycle?: number;
   maxTradesPerSymbol?: number;
   scanIntervalMs?: number;
-  maxDailyLoss?: number;
+  dailyLossLimitEnabled?: boolean;
+  maxDailyLoss?: number | null;
   symbolReentryCooldownMs?: number;
   currentSymbol?: string;
   currentAction?: string;

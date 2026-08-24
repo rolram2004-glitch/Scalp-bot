@@ -39,9 +39,11 @@ if (
 // ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
 // executable FX pairs every second, can submit one candidate per symbol in a
 // cycle and permits at most 100 entries per rolling minute. Broker
-// verification, one open position per symbol and daily-loss protection remain
-// mandatory. OANDA_LIVE and PAPER keep their separate hard caps in config.js.
+// verification and one open position per symbol remain mandatory. The account-
+// level daily loss cap is disabled only on OANDA Practice; OANDA_LIVE and PAPER
+// keep that protection in config.js.
 const effectiveMode = String(process.env.TRADING_MODE || requestedMode).trim().toUpperCase();
+process.env.DAILY_LOSS_LIMIT_ENABLED = effectiveMode === "OANDA_DEMO" ? "false" : "true";
 process.env.MAX_DAILY_TRADES = effectiveMode === "OANDA_DEMO" ? "15000" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
 process.env.MAX_DAILY_TRADES_PER_SYMBOL = effectiveMode === "OANDA_DEMO" ? "1000" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
 process.env.MAX_TRADES_PER_MINUTE = effectiveMode === "OANDA_DEMO" ? "100" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
@@ -100,6 +102,7 @@ console.log(
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
   `NORMAL=TP+1.20CHF/SL-0.20CHF units=1000 exits=SL_TP_ONLY ` +
+  `dailyLoss=${config.DAILY_LOSS_LIMIT_ENABLED ? `${config.MAX_DAILY_LOSS}CHF` : "UNLIMITED_PRACTICE"} ` +
   `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
   `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
 );

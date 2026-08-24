@@ -252,7 +252,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno. Il vecchio TP 0,20 diventa SL -0,20 CHF; il vecchio SL 1,20 diventa TP +1,20 CHF.</p>
+          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Il vecchio TP 0,20 diventa SL -0,20 CHF; il vecchio SL 1,20 diventa TP +1,20 CHF.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -270,7 +270,7 @@ export function CommandSetupPage({
       </section>
 
       <section className="pro-metrics">
-        <Metric label="P&L OGGI" value={dailyRisk?.complete ? money(dailyRisk.pnl, dailyRisk.currency || accountCurrency) : 'N/A'} detail={dailyRisk?.complete ? `UTC ${dailyRisk.dateUTC}` : dailyRisk?.reason || 'Ledger non completo'} tone={numeric(dailyRisk?.pnl) === undefined ? 'neutral' : Number(dailyRisk?.pnl) >= 0 ? 'good' : 'bad'} />
+        <Metric label="P&L OGGI" value={dailyRisk?.complete ? money(dailyRisk.pnl, dailyRisk.currency || accountCurrency) : 'N/A'} detail={dailyRisk?.complete ? `${status?.dailyLossLimitEnabled === false ? 'LIMITE PERDITA DISATTIVATO · ' : ''}UTC ${dailyRisk.dateUTC}` : dailyRisk?.reason || 'Ledger non completo'} tone={numeric(dailyRisk?.pnl) === undefined ? 'neutral' : Number(dailyRisk?.pnl) >= 0 ? 'good' : 'bad'} />
         <Metric label="RISULTATO STORICO" value={formatR(performance.totalR)} detail={`${performance.sampleSize} chiusure con R`} tone={metricTone(performance.totalR)} />
         <Metric label="EXPECTANCY" value={formatR(performance.averageR)} detail="Risultato medio per trade" tone={metricTone(performance.averageR)} />
         <Metric label="PROFIT FACTOR" value={formatFactor(performance.profitFactor)} detail="Sopra 1 = profitti > perdite" tone={factorPass ? 'good' : 'bad'} />

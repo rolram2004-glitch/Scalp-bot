@@ -23,6 +23,7 @@ function readConfig(env) {
     NORMAL_TAKE_PROFIT_ACCOUNT: process.env.NORMAL_TAKE_PROFIT_ACCOUNT,
     ACCOUNT_TARGET_CURRENCY: process.env.ACCOUNT_TARGET_CURRENCY,
     MAX_RISK_PERCENT: process.env.MAX_RISK_PERCENT,
+    DAILY_LOSS_LIMIT_ENABLED: process.env.DAILY_LOSS_LIMIT_ENABLED,
     MAX_DAILY_LOSS: process.env.MAX_DAILY_LOSS,
     AI_PROVIDER: process.env.AI_PROVIDER,
     AI_CONFIRMATION_REQUIRED: process.env.AI_CONFIRMATION_REQUIRED,
@@ -148,6 +149,7 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   assert.equal(config.MAX_TRADES_PER_MINUTE, 100);
   assert.equal(config.MAX_TRADES_PER_SYMBOL, 1);
   assert.equal(config.FOREX_SIGNAL_PROFILE, "ROHATO_ULTRA_100_PER_MINUTE");
+  assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, false);
 });
 
 test("NORMAL Practice account-cash swaps the former MIRROR levels to SL 0.20 CHF and TP 1.20 CHF", () => {
@@ -191,6 +193,7 @@ test("real-money OANDA_LIVE remains hard capped at 25", () => {
   assert.equal(config.MAX_DAILY_TRADES, 25);
   assert.equal(config.MAX_DAILY_TRADES_PER_SYMBOL, 25);
   assert.equal(config.MAX_TRADES_PER_MINUTE, 25);
+  assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, true);
 });
 
 test("Gemini remains disabled by default and parses only explicit safe configuration", () => {

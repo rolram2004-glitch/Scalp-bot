@@ -344,7 +344,7 @@ export function TerminalPage({ status, marketData, news = [], oandaStatus }: { s
         <MetricTile
           label="P&L OGGI"
           value={money(pnlToday, pnlCurrency)}
-          detail={mode.paper ? 'Aggregato PAPER non convertito' : oandaLedgerAvailable ? `${activeLaneLabel} · UTC ${dailyRisk?.dateUTC || 'N/A'}` : 'Riconciliazione OANDA richiesta'}
+          detail={mode.paper ? 'Aggregato PAPER non convertito' : oandaLedgerAvailable ? `${activeLaneLabel} · ${status?.dailyLossLimitEnabled === false ? 'NESSUN LIMITE PERDITA · ' : ''}UTC ${dailyRisk?.dateUTC || 'N/A'}` : 'Riconciliazione OANDA richiesta'}
           tone={typeof pnlToday === 'number' && pnlToday < 0 ? 'red' : 'green'}
           spark={cumulativePnl}
         />
