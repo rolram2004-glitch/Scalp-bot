@@ -56,6 +56,11 @@ const hyperPracticeProfile = tradingMode === "OANDA_DEMO" &&
   ["ROHATO_ULTRA_100_PER_MINUTE", "ROHATO_HYPER_100_PER_SYMBOL"].includes(forexSignalProfile);
 const ultraPracticeProfile = tradingMode === "OANDA_DEMO" &&
   forexSignalProfile === "ROHATO_ULTRA_100_PER_MINUTE";
+// This deployment intentionally has no account-level daily loss stop on the
+// OANDA Practice account. PAPER and, especially, OANDA_LIVE always keep it.
+// The mode check is hard-coded so a stale environment variable can never
+// disable the real-money protection.
+const dailyLossLimitEnabled = tradingMode !== "OANDA_DEMO";
 
 module.exports = {
   // 15 forex pairs plus XAUUSD as a separate analysis-only instrument.
@@ -143,6 +148,7 @@ module.exports = {
   ),
 
   RISK_PERCENT: boundedNumber(process.env.MAX_RISK_PERCENT, 0.25, 0.01, 5),
+  DAILY_LOSS_LIMIT_ENABLED: dailyLossLimitEnabled,
   MAX_DAILY_LOSS: boundedNumber(process.env.MAX_DAILY_LOSS, 50, 0.01, 100000),
   TRADING_MODE: tradingMode,
   OANDA_ENVIRONMENT: oandaEnvironment,

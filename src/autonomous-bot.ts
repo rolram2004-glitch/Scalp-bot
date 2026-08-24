@@ -32,6 +32,7 @@ const MIN_CONFIDENCE = Number(config.MIN_CONFIDENCE);
 const MAX_OPEN_POSITIONS = Number(config.MAX_OPEN_TRADES || 15);
 const MAX_NEW_TRADES_PER_CYCLE = Number(config.MAX_NEW_TRADES_PER_CYCLE || 6);
 const MAX_DAILY_LOSS = Number(config.MAX_DAILY_LOSS || 50);
+const DAILY_LOSS_LIMIT_ENABLED = config.DAILY_LOSS_LIMIT_ENABLED === true;
 const SYMBOL_REENTRY_COOLDOWN_MS = Number(config.SYMBOL_REENTRY_COOLDOWN_MS ?? 10 * 60 * 1000);
 const MINIMUM_SCORE_FOR_XAU_AI = 70;
 
@@ -114,7 +115,8 @@ export interface BotSnapshot {
   maxNewTradesPerCycle: number;
   maxTradesPerSymbol: number;
   scanIntervalMs: number;
-  maxDailyLoss: number;
+  dailyLossLimitEnabled: boolean;
+  maxDailyLoss: number | null;
   symbolReentryCooldownMs: number;
   currentSymbol?: string;
   currentAction?: "BUY" | "SELL" | "HOLD";
@@ -219,7 +221,8 @@ const botState: BotSnapshot = {
   maxNewTradesPerCycle: MAX_NEW_TRADES_PER_CYCLE,
   maxTradesPerSymbol: Number(config.MAX_TRADES_PER_SYMBOL || 1),
   scanIntervalMs: SIGNAL_INTERVAL,
-  maxDailyLoss: MAX_DAILY_LOSS,
+  dailyLossLimitEnabled: DAILY_LOSS_LIMIT_ENABLED,
+  maxDailyLoss: DAILY_LOSS_LIMIT_ENABLED ? MAX_DAILY_LOSS : null,
   symbolReentryCooldownMs: SYMBOL_REENTRY_COOLDOWN_MS,
   dailyTradeCount: 0,
   dailyTradeCountBySymbol: {},
@@ -346,7 +349,7 @@ function entryGate(analytics: ReturnType<typeof getAnalytics>) {
   if (botState.dailyTradeCount >= MAX_DAILY_TRADES) {
     return { status: "DAILY_TRADE_LIMIT" as const, reason: `DAILY_LIMIT_${MAX_DAILY_TRADES}_UTC` };
   }
-  if (typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
+  if (dailyLossCapReached(analytics.pnlToday)) {
     return { status: "DAILY_LOSS_LIMIT" as const, reason: `DAILY_LOSS_LIMIT_${MAX_DAILY_LOSS}` };
   }
   if (botState.openTrades.length >= MAX_OPEN_POSITIONS) {
@@ -1052,6 +1055,19 @@ function dailySymbolCapReached(count: number, maximum = MAX_DAILY_TRADES_PER_SYM
   return Number.isFinite(count) && Number.isFinite(maximum) && maximum > 0 && count >= maximum;
 }
 
+function dailyLossCapReached(
+  pnl: number | null | undefined,
+  maximum = MAX_DAILY_LOSS,
+  enabled = DAILY_LOSS_LIMIT_ENABLED
+) {
+  return enabled === true &&
+    typeof pnl === "number" &&
+    Number.isFinite(pnl) &&
+    Number.isFinite(maximum) &&
+    maximum > 0 &&
+    pnl <= -maximum;
+}
+
 function rollingMinuteTradeCount(entryTimes = recentEntryTimes, now = Date.now()) {
   const cutoff = now - 60_000;
   const filtered = entryTimes.filter((value) =>
@@ -1450,7 +1466,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
       pushLog(`[${symbol}] skipped: OANDA daily risk data incomplete`);
       return;
     }
-    if (!isGold(symbol) && liveExecutionActive() && typeof analytics.pnlToday === "number" && analytics.pnlToday <= -MAX_DAILY_LOSS) {
+    if (!isGold(symbol) && liveExecutionActive() && dailyLossCapReached(analytics.pnlToday)) {
       pushLog(`[${symbol}] skipped: daily loss guard active`);
       return;
     }
@@ -2222,6 +2238,7 @@ export const autonomousTestUtils = {
   countUtcTradeEntries,
   countUtcTradeEntriesBySymbol,
   dailySymbolCapReached,
+  dailyLossCapReached,
   rollingMinuteTradeCount,
   minuteTradeCapReached,
   recentUtcEntryTimes,
