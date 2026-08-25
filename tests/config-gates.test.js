@@ -152,21 +152,21 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, false);
 });
 
-test("NORMAL Practice account-cash swaps the former MIRROR levels to SL 0.20 CHF and TP 1.20 CHF", () => {
+test("NORMAL Practice keeps direction and swaps only cash protection to SL 1.20 CHF and TP 0.20 CHF", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
     OANDA_ORDER_EXECUTION_ENABLED: "true",
     LIVE_EXECUTION_VARIANT: "MAIN",
     DEFAULT_UNITS: "1000",
-    NORMAL_STOP_LOSS_ACCOUNT: "0.2",
-    NORMAL_TAKE_PROFIT_ACCOUNT: "1.2",
+    NORMAL_STOP_LOSS_ACCOUNT: "1.2",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.2",
     ACCOUNT_TARGET_CURRENCY: "chf"
   });
 
   assert.equal(config.DEFAULT_UNITS, 1000);
-  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 0.2);
-  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 1.2);
+  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 1.2);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.2);
   assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
 });
 
