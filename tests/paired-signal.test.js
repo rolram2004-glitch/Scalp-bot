@@ -208,8 +208,8 @@ test("OANDA_DEMO MAIN ACCOUNT_CASH keeps the normal direction and defers fixed C
     tradingMode: "OANDA_DEMO",
     liveExecutionVariant: "MAIN",
     executionGateVerified: true,
-    accountCashRisk: 0.2,
-    accountCashReward: 1.2,
+    accountCashRisk: 1.2,
+    accountCashReward: 0.2,
     accountTargetCurrency: "CHF"
   });
 
@@ -220,10 +220,35 @@ test("OANDA_DEMO MAIN ACCOUNT_CASH keeps the normal direction and defers fixed C
   assert.equal(result.main.stopLossPrice, undefined);
   assert.equal(result.main.takeProfitPrice, undefined);
   assert.deepEqual(result.main.structuralTargets, []);
-  assert.ok(Math.abs(result.main.riskRewardRatio - (1.2 / 0.2)) < 1e-12);
+  assert.ok(Math.abs(result.main.riskRewardRatio - (0.2 / 1.2)) < 1e-12);
   assert.equal(result.executionBlockedReason, undefined);
   assert.match(result.main.reasoning, /NORMALE sul segnale: BUY resta BUY/);
-  assert.match(result.main.reasoning, /TP nominale \+1\.20 CHF, SL nominale -0\.20 CHF/);
+  assert.match(result.main.reasoning, /TP nominale \+0\.20 CHF, SL nominale -1\.20 CHF/);
+});
+
+test("OANDA_DEMO MAIN ACCOUNT_CASH keeps SELL as SELL with TP 0.20 CHF and SL 1.20 CHF", () => {
+  const result = snapshot({
+    tradingMode: "OANDA_DEMO",
+    liveExecutionVariant: "MAIN",
+    executionGateVerified: true,
+    accountCashRisk: 1.2,
+    accountCashReward: 0.2,
+    accountTargetCurrency: "CHF",
+    mainDecision: {
+      action: "SELL",
+      confidence: 72,
+      setupType: "EMA_TREND",
+      reasoning: "MAIN unchanged"
+    }
+  });
+
+  assert.equal(result.main.action, "SELL");
+  assert.equal(result.inverse.action, "BUY");
+  assert.equal(result.main.selectedForExecution, true);
+  assert.equal(result.main.executionState, "READY");
+  assert.ok(Math.abs(result.main.riskRewardRatio - (0.2 / 1.2)) < 1e-12);
+  assert.match(result.main.reasoning, /NORMALE sul segnale: SELL resta SELL/);
+  assert.match(result.main.reasoning, /TP nominale \+0\.20 CHF, SL nominale -1\.20 CHF/);
 });
 
 test("PAPER keeps MAIN local and INVERSE shadow-only", () => {

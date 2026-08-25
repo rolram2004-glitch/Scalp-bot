@@ -47,9 +47,11 @@ const PRACTICE_CASH_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
-  return variant === "MAIN"
-    ? { risk: 0.2, reward: 1.2 }
-    : { risk: 1.2, reward: 0.2 };
+  const contracts = {
+    MAIN: { risk: 1.2, reward: 0.2 },
+    INVERSE: { risk: 1.2, reward: 0.2 }
+  } as const;
+  return contracts[variant];
 }
 
 export function normalizeOandaSymbol(symbol: string) {
