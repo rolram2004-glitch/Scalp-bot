@@ -158,7 +158,7 @@ function LaneCard({ variant, lane, symbol, executionReady }: { variant: 'MAIN' |
         <div><span>R:R</span><strong>{numeric(lane?.riskRewardRatio) === undefined ? 'N/A' : `1:${Number(lane?.riskRewardRatio).toFixed(2)}`}</strong></div>
       </div>
       <div className="pro-lane-tags"><span>{lane?.setupType || 'SETUP N/A'}</span><span>{lane?.executionState || 'STATE N/A'}</span><span>{lane?.mode || 'MODE N/A'}</span></div>
-      <p>{selected ? variant === 'MAIN' ? 'MAIN OPERATIVA: direzione normale invariata, TP nominale +0,20 CHF, SL nominale -1,20 CHF. ' : 'MIRROR OPERATIVA: direzione opposta, TP nominale +0,20 CHF, SL nominale -1,20 CHF. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
+      <p>{selected ? variant === 'MAIN' ? 'MAIN OPERATIVA: direzione normale invariata, TP nominale +0,20 CHF, SL nominale -0,60 CHF. ' : 'MIRROR OPERATIVA: direzione opposta, TP nominale +0,20 CHF, SL nominale -0,60 CHF. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
     </article>
   );
 }
@@ -252,7 +252,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Cambiano solo le protezioni: TP +0,20 CHF e SL -1,20 CHF.</p>
+          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Protezioni fisse: TP +0,20 CHF e SL -0,60 CHF.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -324,7 +324,7 @@ export function CommandSetupPage({
 
       <section className="pro-duel">
         <LaneCard variant="MAIN" lane={primaryPair?.main} symbol={primarySymbol} executionReady={executionReady} />
-        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>MAIN/NORMALE</b> invia OANDA senza invertire BUY/SELL.<br />TP nominale +0,20 CHF · SL nominale -1,20 CHF; MIRROR resta PAPER SHADOW.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
+        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>MAIN/NORMALE</b> invia OANDA senza invertire BUY/SELL.<br />TP nominale +0,20 CHF · SL nominale -0,60 CHF; MIRROR resta PAPER SHADOW.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
         <LaneCard variant="INVERSE" lane={primaryPair?.inverse} symbol={primarySymbol} executionReady={executionReady} />
       </section>
 
