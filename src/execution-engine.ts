@@ -48,8 +48,8 @@ const PRACTICE_CASH_CURRENCY = "CHF";
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
-    MAIN: { risk: 0.6, reward: 0.2 },
-    INVERSE: { risk: 0.6, reward: 0.2 }
+    MAIN: { risk: 0.2, reward: 0.6 },
+    INVERSE: { risk: 0.2, reward: 0.6 }
   } as const;
   return contracts[variant];
 }
