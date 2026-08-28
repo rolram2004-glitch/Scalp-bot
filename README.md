@@ -61,13 +61,15 @@ La regola operativa non dipende dai colori dell'interfaccia: MAIN esegue lo stes
 
 Il profilo Practice `ROHATO_ULTRA_100_PER_MINUTE` scansiona 15 coppie ogni
 secondo, può usare tutti i 15 ingressi validi di un ciclo, mantiene una sola
-posizione contemporanea per simbolo e non impone cooldown dopo una chiusura
-verificata. Riconosce trend, continuazioni rapide, impulsi iniziali e inversioni
-confermate nei range. I tetti sono 100 ingressi in una finestra mobile di 60
-secondi, 1.000 per simbolo e 15.000 complessivi al giorno UTC; non sono obiettivi
-forzati. Spread, prezzi reali, riconciliazione, SL/TP e stop giornaliero restano
-obbligatori. PAPER resta a 100 complessivi; `OANDA_LIVE` resta hard-capped a 25
-e richiede conferma separata.
+posizione contemporanea per simbolo e aspetta cinque minuti prima di riaprire
+lo stesso simbolo dopo una chiusura verificata. Riconosce trend, continuazioni
+rapide, impulsi iniziali e inversioni confermate nei range. I tetti sono 100
+ingressi in una finestra mobile di 60 secondi, 1.000 per simbolo e 15.000
+complessivi al giorno UTC; non sono obiettivi forzati. Prima di ogni ordine, la
+protezione monetaria piu vicina deve distare almeno due spread reali dal prezzo
+eseguibile; altrimenti l'ingresso viene saltato. Prezzi reali, riconciliazione e
+SL/TP restano obbligatori. PAPER resta a 100 complessivi; `OANDA_LIVE` resta
+hard-capped a 25 e richiede conferma separata.
 La prontezza del feed operativo richiede le 15 coppie FX fresche e non dipende
 dall'orario separato di XAUUSD, che resta `SIGNAL ONLY`. Posizioni Rohato
 verificate della corsia precedente possono terminare ai propri SL/TP su simboli

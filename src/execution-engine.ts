@@ -45,6 +45,11 @@ const instrumentsInFlight = new Set<string>();
 const verifiedSignalIds = new Set<string>();
 const PRACTICE_CASH_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
+// A cash protection that sits inside normal bid/ask noise is not executable
+// as a strategy: the trade can hit SL before price moves in the signal's
+// direction. Require the nearest protective level to be at least two current
+// spreads away from the executable entry quote.
+const ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE = 2;
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
@@ -108,6 +113,13 @@ function conversionFactors(
 function executablePrice(price: any, side: OrderSide) {
   const preferred = side === "BUY" ? price?.asks?.[0]?.price : price?.bids?.[0]?.price;
   return finitePositive(preferred) || finitePositive(side === "BUY" ? price?.closeoutAsk : price?.closeoutBid);
+}
+
+function executableSpread(price: any) {
+  const ask = finitePositive(price?.asks?.[0]?.price) || finitePositive(price?.closeoutAsk);
+  const bid = finitePositive(price?.bids?.[0]?.price) || finitePositive(price?.closeoutBid);
+  if (!ask || !bid || ask < bid) return null;
+  return ask - bid;
 }
 
 function fillConversionFactors(fillTransaction: any, fallback: { loss: number; gain: number }) {
@@ -490,6 +502,21 @@ export async function executeVerifiedMarketOrder(
     if ((entry - roundedStopLoss) * direction <= 0 || (roundedTakeProfit - entry) * direction <= 0) {
       return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
     }
+    if (accountCashProtection) {
+      const spread = executableSpread(price);
+      if (spread === null) {
+        return { status: "REJECTED", reason: "OANDA_BID_ASK_SPREAD_UNAVAILABLE" };
+      }
+      const nearestProtectionDistance = Math.min(
+        Math.abs(entry - roundedStopLoss),
+        Math.abs(roundedTakeProfit - entry)
+      );
+      const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
+      const minimumDistance = spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE;
+      if (nearestProtectionDistance + priceHalfTick < minimumDistance) {
+        return { status: "SKIPPED", reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD" };
+      }
+    }
 
     const expectedClientTag = clientTag(strategyVariant, signalId);
     const expectedSignedUnits = side === "BUY" ? units : -units;
@@ -770,5 +797,6 @@ export const executionTestUtils = {
   conversionFactors,
   fillConversionFactors,
   accountCashProtectionPlan,
+  executableSpread,
   clientTag
 };
