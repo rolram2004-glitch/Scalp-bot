@@ -198,8 +198,8 @@ function accountCashRequest(oanda, overrides = {}) {
     strategyVariant: "MAIN",
     protectionMode: "ACCOUNT_CASH",
     targetAccountCurrency: "CHF",
-    riskAmount: 0.6,
-    rewardAmount: 0.2,
+    riskAmount: 0.2,
+    rewardAmount: 0.6,
     ...overrides
   });
 }
@@ -529,8 +529,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "0.89950", takeProfit: "0.90030" },
-      SELL: { stopLoss: "0.90060", takeProfit: "0.89980" }
+      BUY: { stopLoss: "0.89990", takeProfit: "0.90070" },
+      SELL: { stopLoss: "0.90020", takeProfit: "0.89940" }
     }
   },
   {
@@ -545,8 +545,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: { negativeUnits: "0.90000", positiveUnits: "0.91000" },
     expected: {
-      BUY: { stopLoss: "1.09943", takeProfit: "1.10032" },
-      SELL: { stopLoss: "1.10067", takeProfit: "1.09978" }
+      BUY: { stopLoss: "1.09988", takeProfit: "1.10076" },
+      SELL: { stopLoss: "1.10022", takeProfit: "1.09934" }
     }
   },
   {
@@ -561,15 +561,15 @@ const fixedCashCases = [
     homeConversions: [{ currency: "JPY", accountLoss: "0.00610", accountGain: "0.00600" }],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "159.135", takeProfit: "159.266" },
-      SELL: { stopLoss: "159.329", takeProfit: "159.198" }
+      BUY: { stopLoss: "159.200", takeProfit: "159.333" },
+      SELL: { stopLoss: "159.264", takeProfit: "159.131" }
     }
   }
 ];
 
 for (const cashCase of fixedCashCases) {
   for (const side of ["BUY", "SELL"]) {
-    test(`MAIN ACCOUNT_CASH ${side} fixes SL 0.60 CHF and TP 0.20 CHF using ${cashCase.label}`, async () => {
+    test(`MAIN ACCOUNT_CASH ${side} fixes SL 0.20 CHF and TP 0.60 CHF using ${cashCase.label}`, async () => {
       const entry = side === "BUY" ? cashCase.ask : cashCase.bid;
       const signedUnits = side === "BUY" ? "1000" : "-1000";
       const { oanda, calls } = buildOandaMock({
@@ -633,14 +633,14 @@ for (const cashCase of fixedCashCases) {
         cashCase.gainFactor
       );
       assert.ok(
-        Math.abs(actual.risk - 0.6) <= cashRoundingTolerance(
+        Math.abs(actual.risk - 0.2) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.lossFactor
         )
       );
       assert.ok(
-        Math.abs(actual.reward - 0.2) <= cashRoundingTolerance(
+        Math.abs(actual.reward - 0.6) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.gainFactor
@@ -685,14 +685,14 @@ test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entr
   assert.equal(calls.getTrade, 2);
   assert.deepEqual(calls.lastReplacement, {
     tradeId: "post-fill-cash",
-    stopLoss: "1.09945",
-    takeProfit: "1.10044",
+    stopLoss: "1.09995",
+    takeProfit: "1.10093",
     strategyVariant: "MAIN"
   });
   assert.notEqual(calls.lastReplacement.stopLoss, calls.lastOrder.stopLoss);
   assert.notEqual(calls.lastReplacement.takeProfit, calls.lastOrder.takeProfit);
 
-  const actual = cashAtProtection(1.10020, "1.09945", "1.10044", 1000, 0.8, 0.82);
+  const actual = cashAtProtection(1.10020, "1.09995", "1.10093", 1000, 0.8, 0.82);
   assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
   assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
 });
@@ -700,8 +700,8 @@ test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entr
 test("MAIN ACCOUNT_CASH rejects any units, cash target, or explicit-price override outside its fixed contract", async () => {
   for (const [overrides, reason] of [
     [{ units: 999 }, "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000"],
-    [{ riskAmount: 0.59 }, "ACCOUNT_CASH_TARGETS_INVALID"],
-    [{ rewardAmount: 0.21 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ riskAmount: 0.19 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ rewardAmount: 0.59 }, "ACCOUNT_CASH_TARGETS_INVALID"],
     [{ stopLossPrice: 1.099, takeProfitPrice: 1.101 }, "ACCOUNT_CASH_EXPLICIT_LEVELS_NOT_ALLOWED"]
   ]) {
     const { oanda, calls } = buildOandaMock();
