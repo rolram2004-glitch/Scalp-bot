@@ -39,10 +39,10 @@ if (
 // ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
 // executable FX pairs every second, can submit one candidate per symbol in a
 // cycle and permits at most 100 entries per rolling minute. Broker
-// verification, one open position per symbol, a five-minute re-entry cooldown
-// and the cash-protection spread guard remain mandatory. The account-level
-// daily loss cap is disabled only on OANDA Practice; OANDA_LIVE and PAPER keep
-// that protection in config.js.
+// verification, one open position per symbol and the cash-protection spread
+// guard remain mandatory. Practice keeps immediate re-entry available so the
+// original scan rhythm is unchanged. The account-level daily loss cap is
+// disabled only on OANDA Practice; OANDA_LIVE and PAPER keep that protection.
 const effectiveMode = String(process.env.TRADING_MODE || requestedMode).trim().toUpperCase();
 process.env.DAILY_LOSS_LIMIT_ENABLED = effectiveMode === "OANDA_DEMO" ? "false" : "true";
 process.env.MAX_DAILY_TRADES = effectiveMode === "OANDA_DEMO" ? "15000" : effectiveMode === "OANDA_LIVE" ? "25" : "100";
@@ -52,7 +52,7 @@ process.env.MAX_NEW_TRADES_PER_CYCLE = effectiveMode === "OANDA_DEMO" ? "15" : "
 process.env.MAX_OPEN_POSITIONS = "15";
 process.env.SCAN_INTERVAL_MS = effectiveMode === "OANDA_DEMO" ? "1000" : "30000";
 process.env.POSITION_MANAGEMENT_INTERVAL_MS = "5000";
-process.env.SYMBOL_REENTRY_COOLDOWN_MS = effectiveMode === "OANDA_DEMO" ? "300000" : "600000";
+process.env.SYMBOL_REENTRY_COOLDOWN_MS = effectiveMode === "OANDA_DEMO" ? "0" : "600000";
 process.env.MIN_SIGNAL_CONFIDENCE = effectiveMode === "OANDA_DEMO" ? "45" : hasOpenAiKey ? "50" : "55";
 process.env.FOREX_SIGNAL_PROFILE = effectiveMode === "OANDA_DEMO"
   ? "ROHATO_ULTRA_100_PER_MINUTE"
