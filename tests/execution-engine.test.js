@@ -654,6 +654,35 @@ for (const cashCase of fixedCashCases) {
   }
 }
 
+test("ACCOUNT_CASH skips an entry when the nearest protection is inside two current spreads", async () => {
+  const { oanda, calls } = buildOandaMock({
+    pricing: {
+      price: {
+        instrument: "EUR_USD",
+        status: "tradeable",
+        tradeable: true,
+        time: new Date().toISOString(),
+        asks: [{ price: "1.10030" }],
+        bids: [{ price: "1.10000" }],
+        quoteHomeConversionFactors: {
+          negativeUnits: "0.90000",
+          positiveUnits: "0.91000"
+        }
+      },
+      homeConversions: []
+    }
+  });
+
+  const result = await executeVerifiedMarketOrder(accountCashRequest(oanda));
+
+  assert.deepEqual(result, {
+    status: "SKIPPED",
+    reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD"
+  });
+  assert.equal(calls.createMarketOrder, 0);
+  assert.equal(calls.replaceTradeDependentOrders, 0);
+});
+
 test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entry", async () => {
   const { oanda, calls } = buildOandaMock({
     verifiedTrade: {
