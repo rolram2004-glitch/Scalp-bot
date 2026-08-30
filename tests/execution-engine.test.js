@@ -654,8 +654,65 @@ for (const cashCase of fixedCashCases) {
   }
 }
 
-test("ACCOUNT_CASH skips an entry when the stop loss is inside two current spreads", async () => {
+for (const side of ["BUY", "SELL"]) {
+  test(`ACCOUNT_CASH ${side} reduces units when needed and preserves TP 0.10 / SL 0.60 CHF`, async () => {
+    const expectedUnits = 833;
+    const signedUnits = side === "BUY" ? String(expectedUnits) : String(-expectedUnits);
+    const fillPrice = side === "BUY" ? "1.10040" : "1.10000";
+    const { oanda, calls } = buildOandaMock({
+      pricing: {
+        price: {
+          instrument: "EUR_USD",
+          status: "tradeable",
+          tradeable: true,
+          time: new Date().toISOString(),
+          asks: [{ price: "1.10040" }],
+          bids: [{ price: "1.10000" }],
+          quoteHomeConversionFactors: {
+            negativeUnits: "0.90000",
+            positiveUnits: "0.91000"
+          }
+        },
+        homeConversions: []
+      },
+      verifiedTrade: {
+        id: "adaptive-cash-trade",
+        state: "OPEN",
+        instrument: "EUR_USD",
+        currentUnits: signedUnits,
+        price: fillPrice,
+        openTime: "2026-08-30T22:00:00.000Z"
+      },
+      orderResponse: {
+        orderCreateTransaction: { id: "adaptive-cash-order" },
+        orderFillTransaction: {
+          id: "adaptive-cash-fill",
+          time: "2026-08-30T22:00:00.000Z",
+          tradeOpened: { tradeID: "adaptive-cash-trade" }
+        }
+      }
+    });
+
+    const result = await executeVerifiedMarketOrder(accountCashRequest(oanda, { side }));
+
+    assert.equal(result.status, "OPENED");
+    assert.equal(calls.lastOrder.side, side);
+    assert.equal(calls.lastOrder.units, expectedUnits);
+    assert.equal(result.trade.units, expectedUnits);
+    assert.equal(calls.replaceTradeDependentOrders, 1);
+    assert.ok(Math.abs(result.trade.riskAmount - 0.6) <= cashRoundingTolerance(5, expectedUnits, 0.9));
+    assert.ok(Math.abs(result.trade.rewardAmount - 0.1) <= cashRoundingTolerance(5, expectedUnits, 0.91));
+  });
+}
+
+test("ACCOUNT_CASH skips only when even OANDA minimum units cannot keep the stop outside spread", async () => {
   const { oanda, calls } = buildOandaMock({
+    instrument: {
+      name: "EUR_USD",
+      displayPrecision: 5,
+      tradeUnitsPrecision: 0,
+      minimumTradeSize: "900"
+    },
     pricing: {
       price: {
         instrument: "EUR_USD",
@@ -677,10 +734,9 @@ test("ACCOUNT_CASH skips an entry when the stop loss is inside two current sprea
 
   assert.deepEqual(result, {
     status: "SKIPPED",
-    reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD"
+    reason: "ACCOUNT_CASH_SPREAD_TOO_WIDE_FOR_MINIMUM_UNITS"
   });
   assert.equal(calls.createMarketOrder, 0);
-  assert.equal(calls.replaceTradeDependentOrders, 0);
 });
 
 test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entry", async () => {

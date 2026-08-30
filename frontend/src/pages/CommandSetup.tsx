@@ -252,7 +252,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Protezioni fisse: TP +0,10 CHF e SL -0,60 CHF.</p>
+          <p>Modalità NORMALE ULTRA: il segnale BUY apre BUY e SELL apre SELL. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Protezioni fisse: TP +0,10 CHF e SL -0,60 CHF. Size massima 1.000 unità, ridotta automaticamente soltanto quando lo spread lo richiede.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>

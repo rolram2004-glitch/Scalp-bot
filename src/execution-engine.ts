@@ -43,7 +43,7 @@ export type VerifiedOrderResult =
 
 const instrumentsInFlight = new Set<string>();
 const verifiedSignalIds = new Set<string>();
-const PRACTICE_CASH_UNITS = 1000;
+const PRACTICE_CASH_MAX_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
 // A stop loss that sits inside normal bid/ask noise can close the trade before
 // price moves in the signal's direction. Require the stop to be at least two
@@ -261,6 +261,27 @@ function roundedUnits(units: number, precision: number) {
   return Math.round(Math.abs(units) * factor) / factor;
 }
 
+function roundedUnitsDown(units: number, precision: number) {
+  const factor = 10 ** Math.max(0, precision);
+  return Math.floor((Math.abs(units) + Number.EPSILON) * factor) / factor;
+}
+
+function adaptivePracticeCashUnits(
+  requestedUnits: number,
+  minimumTradeSize: number,
+  unitsPrecision: number,
+  riskTarget: number,
+  lossFactor: number,
+  spread: number
+) {
+  if (!Number.isFinite(spread) || spread < 0 || !finitePositive(lossFactor)) return null;
+  if (spread === 0) return roundedUnits(requestedUnits, unitsPrecision);
+  const maximumSafeUnits = riskTarget /
+    (spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE * lossFactor);
+  const units = roundedUnitsDown(Math.min(requestedUnits, maximumSafeUnits), unitsPrecision);
+  return units >= minimumTradeSize ? units : null;
+}
+
 function clientTag(variant: "MAIN" | "INVERSE", signalId?: string) {
   const suffix = String(signalId || "UNTRACKED").replace(/[^A-Za-z0-9._-]/g, "-");
   return `GEMMO-${variant}-${suffix}`.slice(0, 128);
@@ -325,7 +346,7 @@ export async function executeVerifiedMarketOrder(
       String(request.targetAccountCurrency || "").trim().toUpperCase() !== PRACTICE_CASH_CURRENCY) {
     return { status: "REJECTED", reason: "ACCOUNT_TARGET_CURRENCY_MISMATCH" };
   }
-  if (accountCashProtection && Math.abs(Number(request.units)) !== PRACTICE_CASH_UNITS) {
+  if (accountCashProtection && Math.abs(Number(request.units)) !== PRACTICE_CASH_MAX_UNITS) {
     return { status: "REJECTED", reason: "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000" };
   }
   if (accountCashProtection &&
@@ -405,11 +426,11 @@ export async function executeVerifiedMarketOrder(
     if (unitsPrecision === null || displayPrecision === null || minimumTradeSize === null) {
       return { status: "REJECTED", reason: "INSTRUMENT_METADATA_INCOMPLETE" };
     }
-    const units = roundedUnits(request.units, unitsPrecision);
+    let units = roundedUnits(request.units, unitsPrecision);
     if (!Number.isFinite(units) || units < minimumTradeSize) {
       return { status: "REJECTED", reason: "UNITS_BELOW_OANDA_MINIMUM" };
     }
-    if (accountCashProtection && units !== PRACTICE_CASH_UNITS) {
+    if (accountCashProtection && units !== PRACTICE_CASH_MAX_UNITS) {
       return { status: "REJECTED", reason: "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000" };
     }
 
@@ -435,6 +456,25 @@ export async function executeVerifiedMarketOrder(
     );
     if (!factors) {
       return { status: "REJECTED", reason: "QUOTE_TO_ACCOUNT_CONVERSION_UNAVAILABLE" };
+    }
+
+    const executionSpread = accountCashProtection ? executableSpread(price) : null;
+    if (accountCashProtection && executionSpread === null) {
+      return { status: "REJECTED", reason: "OANDA_BID_ASK_SPREAD_UNAVAILABLE" };
+    }
+    if (accountCashProtection) {
+      const adaptiveUnits = adaptivePracticeCashUnits(
+        units,
+        minimumTradeSize,
+        unitsPrecision,
+        cashContract.risk,
+        factors.loss,
+        executionSpread as number
+      );
+      if (!adaptiveUnits) {
+        return { status: "SKIPPED", reason: "ACCOUNT_CASH_SPREAD_TOO_WIDE_FOR_MINIMUM_UNITS" };
+      }
+      units = adaptiveUnits;
     }
 
     const direction = side === "BUY" ? 1 : -1;
@@ -503,13 +543,9 @@ export async function executeVerifiedMarketOrder(
       return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
     }
     if (accountCashProtection) {
-      const spread = executableSpread(price);
-      if (spread === null) {
-        return { status: "REJECTED", reason: "OANDA_BID_ASK_SPREAD_UNAVAILABLE" };
-      }
       const stopLossDistance = Math.abs(entry - roundedStopLoss);
       const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
-      const minimumDistance = spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE;
+      const minimumDistance = (executionSpread as number) * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE;
       if (stopLossDistance + priceHalfTick < minimumDistance) {
         return { status: "SKIPPED", reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD" };
       }
@@ -794,6 +830,7 @@ export const executionTestUtils = {
   conversionFactors,
   fillConversionFactors,
   accountCashProtectionPlan,
+  adaptivePracticeCashUnits,
   executableSpread,
   clientTag
 };
