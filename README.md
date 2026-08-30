@@ -1,6 +1,6 @@
 # SEL SCALP BOT — $Rohato$🤖111
 
-Cockpit professionale White Glass di analisi e trading OANDA Practice. MAIN e MIRROR (INVERSE) nascono dallo stesso segnale. La corsia operativa resta MAIN/NORMALE: BUY resta BUY e SELL resta SELL. Si scambiano soltanto gli importi delle protezioni: il precedente SL `-0,60 CHF` diventa TP `+0,60 CHF`, mentre il precedente TP `+0,20 CHF` diventa SL `-0,20 CHF`. MIRROR rimane PAPER SHADOW per il confronto. Una sola corsia può essere OANDA e i risultati mantengono separate le valute originali.
+Cockpit professionale White Glass di analisi e trading OANDA Practice. MAIN e MIRROR (INVERSE) nascono dallo stesso segnale. La corsia operativa resta MAIN/NORMALE: BUY resta BUY e SELL resta SELL. Le protezioni monetarie sono TP `+0,20 CHF` e SL `-0,60 CHF`. MIRROR rimane PAPER SHADOW per il confronto. Una sola corsia può essere OANDA e i risultati mantengono separate le valute originali.
 
 ## Confronto e diagnostica professionale
 
@@ -55,9 +55,9 @@ Il processo resta online e viene riavviato automaticamente. Lo stato `RUNNING` i
 - `TRADING_MODE=OANDA_DEMO`, `OANDA_ENVIRONMENT=PRACTICE` and both execution enable gates: verified orders on OANDA Practice only.
 - `TRADING_MODE=OANDA_LIVE`: real-money mode; blocked unless endpoint, enable flags and explicit real-money confirmation all match. Never enable it during development or automatic tests.
 - `LIVE_EXECUTION_VARIANT=MAIN|INVERSE`: selects exactly one OANDA execution lane. The other lane is an explicit paper shadow and never calls OANDA.
-- `PRACTICE_EXECUTION_VARIANT=MAIN`: seleziona la NORMALE operativa su OANDA Practice: stessa direzione del segnale, TP nominale `+0,60 CHF`, SL nominale `-0,20 CHF`. Non abilita `OANDA_LIVE`.
+- `PRACTICE_EXECUTION_VARIANT=MAIN`: seleziona la NORMALE operativa su OANDA Practice: stessa direzione del segnale, TP nominale `+0,20 CHF`, SL nominale `-0,60 CHF`. Non abilita `OANDA_LIVE`.
 
-La regola operativa non dipende dai colori dell'interfaccia: MAIN esegue lo stesso verso del segnale (`BUY→BUY`, `SELL→SELL`) con TP nominale `+0,60 CHF` e SL nominale `-0,20 CHF`. MIRROR mantiene il verso opposto come PAPER SHADOW. Il P&L delle due corsie viene misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
+La regola operativa non dipende dai colori dell'interfaccia: MAIN esegue lo stesso verso del segnale (`BUY→BUY`, `SELL→SELL`) con TP nominale `+0,20 CHF` e SL nominale `-0,60 CHF`. MIRROR mantiene il verso opposto come PAPER SHADOW. Il P&L delle due corsie viene misurato separatamente con bid/ask reali, quindi spread e slippage non vengono nascosti.
 
 Il profilo Practice `ROHATO_ULTRA_100_PER_MINUTE` scansiona 15 coppie ogni
 secondo, può usare tutti i 15 ingressi validi di un ciclo, mantiene una sola

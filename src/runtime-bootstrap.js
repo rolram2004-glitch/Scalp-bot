@@ -29,11 +29,11 @@ if (
   process.env.LIVE_EXECUTION_VARIANT = "MAIN";
   process.env.DEFAULT_UNITS = "1000";
   process.env.ACCOUNT_TARGET_CURRENCY = "CHF";
-  // Keep the NORMAL direction and swap only the monetary protection amounts:
-  // the former 0.60 CHF stop becomes TP, and the former 0.20 CHF target
-  // becomes SL. BUY stays BUY and SELL stays SELL.
-  process.env.NORMAL_STOP_LOSS_ACCOUNT = "0.2";
-  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.6";
+  // Keep the NORMAL direction unchanged and restore the original monetary
+  // protection amounts: TP +0.20 CHF and SL -0.60 CHF. BUY stays BUY and
+  // SELL stays SELL.
+  process.env.NORMAL_STOP_LOSS_ACCOUNT = "0.6";
+  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.2";
 }
 
 // ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
@@ -102,7 +102,7 @@ console.log(
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
-  `NORMAL=TP+0.60CHF/SL-0.20CHF units=1000 exits=SL_TP_ONLY ` +
+  `NORMAL=TP+0.20CHF/SL-0.60CHF units=1000 exits=SL_TP_ONLY ` +
   `dailyLoss=${config.DAILY_LOSS_LIMIT_ENABLED ? `${config.MAX_DAILY_LOSS}CHF` : "UNLIMITED_PRACTICE"} ` +
   `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
   `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
