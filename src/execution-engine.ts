@@ -45,16 +45,16 @@ const instrumentsInFlight = new Set<string>();
 const verifiedSignalIds = new Set<string>();
 const PRACTICE_CASH_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
-// A cash protection that sits inside normal bid/ask noise is not executable
-// as a strategy: the trade can hit SL before price moves in the signal's
-// direction. Require the nearest protective level to be at least two current
-// spreads away from the executable entry quote.
+// A stop loss that sits inside normal bid/ask noise can close the trade before
+// price moves in the signal's direction. Require the stop to be at least two
+// current spreads from the executable quote. A deliberately close take profit
+// is allowed because it cannot trigger on the loss side of the entry.
 const ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE = 2;
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
-    MAIN: { risk: 0.6, reward: 0.2 },
-    INVERSE: { risk: 0.6, reward: 0.2 }
+    MAIN: { risk: 0.6, reward: 0.1 },
+    INVERSE: { risk: 0.6, reward: 0.1 }
   } as const;
   return contracts[variant];
 }
@@ -507,13 +507,10 @@ export async function executeVerifiedMarketOrder(
       if (spread === null) {
         return { status: "REJECTED", reason: "OANDA_BID_ASK_SPREAD_UNAVAILABLE" };
       }
-      const nearestProtectionDistance = Math.min(
-        Math.abs(entry - roundedStopLoss),
-        Math.abs(roundedTakeProfit - entry)
-      );
+      const stopLossDistance = Math.abs(entry - roundedStopLoss);
       const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
       const minimumDistance = spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE;
-      if (nearestProtectionDistance + priceHalfTick < minimumDistance) {
+      if (stopLossDistance + priceHalfTick < minimumDistance) {
         return { status: "SKIPPED", reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD" };
       }
     }

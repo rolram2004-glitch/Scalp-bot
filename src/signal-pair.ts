@@ -1,4 +1,4 @@
-import { TradingDecision } from "./types";
+import type { TradingDecision } from "./types";
 
 export type StrategyVariant = "MAIN" | "INVERSE";
 export type SignalAction = "BUY" | "SELL" | "HOLD";
