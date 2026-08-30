@@ -26,7 +26,7 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `SYMBOL_REENTRY_COOLDOWN_MS=600000`;
    - `MIN_SIGNAL_CONFIDENCE=55`;
    - `FOREX_SIGNAL_PROFILE=ROHATO_AGGRESSIVE_100`;
-   - `DEFAULT_UNITS=1000` o il valore approvato dall'utente;
+   - `DEFAULT_UNITS=1000` come massimo; OANDA Practice riduce automaticamente la size quando serve per tenere lo SL fuori dallo spread;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
    - `ENABLE_OANDA_DEMO_TEST=false`;

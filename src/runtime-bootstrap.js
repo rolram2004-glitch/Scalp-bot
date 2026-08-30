@@ -102,7 +102,7 @@ console.log(
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
-  `NORMAL=TP+0.10CHF/SL-0.60CHF units=1000 exits=SL_TP_ONLY ` +
+  `NORMAL=TP+0.10CHF/SL-0.60CHF maxUnits=1000 adaptiveSpreadSize=true exits=SL_TP_ONLY ` +
   `dailyLoss=${config.DAILY_LOSS_LIMIT_ENABLED ? `${config.MAX_DAILY_LOSS}CHF` : "UNLIMITED_PRACTICE"} ` +
   `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
   `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`

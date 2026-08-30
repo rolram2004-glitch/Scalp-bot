@@ -67,7 +67,8 @@ confermate nei range. I tetti sono 100 ingressi in una finestra mobile di 60
 secondi, 1.000 per simbolo e 15.000 complessivi al giorno UTC; non sono obiettivi
 forzati. Prima di ogni ordine, lo stop loss deve distare almeno due spread reali
 dal prezzo eseguibile; altrimenti l'ingresso viene
-saltato. Prezzi reali, riconciliazione e SL/TP restano obbligatori. PAPER resta a
+ridimensionato automaticamente sotto il massimo di 1.000 unità, conservando
+TP `+0,10 CHF` e SL `-0,60 CHF`. Prezzi reali, riconciliazione e SL/TP restano obbligatori. PAPER resta a
 100 complessivi; `OANDA_LIVE` resta hard-capped a 25 e richiede conferma separata.
 La prontezza del feed operativo richiede le 15 coppie FX fresche e non dipende
 dall'orario separato di XAUUSD, che resta `SIGNAL ONLY`. Posizioni Rohato
