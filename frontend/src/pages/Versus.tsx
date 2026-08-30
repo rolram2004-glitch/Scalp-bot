@@ -299,7 +299,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <p className="vs3-eyebrow">$Rohato$🤖111 · STRATEGY COMPARISON</p>
           <h1>MAIN contro MIRROR, senza confusione.</h1>
-          <p>Stesso Signal ID e direzione opposta. La corsia {selectedLane === 'MAIN' ? 'MAIN/NORMALE è operativa con direzione invariata, TP +0,20 CHF e SL -0,60 CHF' : 'MIRROR è operativa con TP +0,20 CHF e SL -0,60 CHF'}.</p>
+          <p>Stesso Signal ID e direzione opposta. La corsia {selectedLane === 'MAIN' ? 'MAIN/NORMALE è operativa con direzione invariata, TP +0,10 CHF e SL -0,60 CHF' : 'MIRROR è operativa con TP +0,10 CHF e SL -0,60 CHF'}.</p>
         </div>
         <div className={`vs3-gate ${gate.tone}`}><span>STATO OPERATIVO</span><strong>{gate.label}</strong><small>{gate.detail}</small></div>
       </section>
@@ -310,7 +310,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
           <span>{selectedLane === 'MAIN' ? 'REGOLA MAIN/NORMALE OPERATIVA' : 'REGOLA MIRROR OPERATIVA'} · PROTEZIONE FISSA</span>
           <div className="vs3-mirror-rules" aria-label="Mappatura degli esiti MAIN e MIRROR">
             <div className="vs3-result-swap"><b className="loss">SEGNALE MAIN</b><i>→</i><b className="win">{selectedLane === 'MAIN' ? 'STESSA DIREZIONE' : 'DIREZIONE OPPOSTA'}</b></div>
-            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,20 · SL -0,60 CHF</b></div>
+            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,10 · SL -0,60 CHF</b></div>
           </div>
           <small>Gli importi sono nominali nella valuta conto. Il risultato verificato usa i dati reali OANDA, quindi spread e slippage restano visibili.</small>
         </div>

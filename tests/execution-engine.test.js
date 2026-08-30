@@ -199,7 +199,7 @@ function accountCashRequest(oanda, overrides = {}) {
     protectionMode: "ACCOUNT_CASH",
     targetAccountCurrency: "CHF",
     riskAmount: 0.6,
-    rewardAmount: 0.2,
+    rewardAmount: 0.1,
     ...overrides
   });
 }
@@ -529,8 +529,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "0.89950", takeProfit: "0.90030" },
-      SELL: { stopLoss: "0.90060", takeProfit: "0.89980" }
+      BUY: { stopLoss: "0.89950", takeProfit: "0.90020" },
+      SELL: { stopLoss: "0.90060", takeProfit: "0.89990" }
     }
   },
   {
@@ -545,8 +545,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: { negativeUnits: "0.90000", positiveUnits: "0.91000" },
     expected: {
-      BUY: { stopLoss: "1.09943", takeProfit: "1.10032" },
-      SELL: { stopLoss: "1.10067", takeProfit: "1.09978" }
+      BUY: { stopLoss: "1.09943", takeProfit: "1.10021" },
+      SELL: { stopLoss: "1.10067", takeProfit: "1.09989" }
     }
   },
   {
@@ -561,15 +561,15 @@ const fixedCashCases = [
     homeConversions: [{ currency: "JPY", accountLoss: "0.00610", accountGain: "0.00600" }],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "159.135", takeProfit: "159.266" },
-      SELL: { stopLoss: "159.329", takeProfit: "159.198" }
+      BUY: { stopLoss: "159.135", takeProfit: "159.250" },
+      SELL: { stopLoss: "159.329", takeProfit: "159.214" }
     }
   }
 ];
 
 for (const cashCase of fixedCashCases) {
   for (const side of ["BUY", "SELL"]) {
-    test(`MAIN ACCOUNT_CASH ${side} fixes SL 0.60 CHF and TP 0.20 CHF using ${cashCase.label}`, async () => {
+    test(`MAIN ACCOUNT_CASH ${side} fixes SL 0.60 CHF and TP 0.10 CHF using ${cashCase.label}`, async () => {
       const entry = side === "BUY" ? cashCase.ask : cashCase.bid;
       const signedUnits = side === "BUY" ? "1000" : "-1000";
       const { oanda, calls } = buildOandaMock({
@@ -640,7 +640,7 @@ for (const cashCase of fixedCashCases) {
         )
       );
       assert.ok(
-        Math.abs(actual.reward - 0.2) <= cashRoundingTolerance(
+        Math.abs(actual.reward - 0.1) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           1000,
           cashCase.gainFactor
@@ -654,7 +654,7 @@ for (const cashCase of fixedCashCases) {
   }
 }
 
-test("ACCOUNT_CASH skips an entry when the nearest protection is inside two current spreads", async () => {
+test("ACCOUNT_CASH skips an entry when the stop loss is inside two current spreads", async () => {
   const { oanda, calls } = buildOandaMock({
     pricing: {
       price: {
@@ -662,7 +662,7 @@ test("ACCOUNT_CASH skips an entry when the nearest protection is inside two curr
         status: "tradeable",
         tradeable: true,
         time: new Date().toISOString(),
-        asks: [{ price: "1.10030" }],
+        asks: [{ price: "1.10040" }],
         bids: [{ price: "1.10000" }],
         quoteHomeConversionFactors: {
           negativeUnits: "0.90000",
@@ -715,13 +715,13 @@ test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entr
   assert.deepEqual(calls.lastReplacement, {
     tradeId: "post-fill-cash",
     stopLoss: "1.09945",
-    takeProfit: "1.10044",
+    takeProfit: "1.10032",
     strategyVariant: "MAIN"
   });
   assert.notEqual(calls.lastReplacement.stopLoss, calls.lastOrder.stopLoss);
   assert.notEqual(calls.lastReplacement.takeProfit, calls.lastOrder.takeProfit);
 
-  const actual = cashAtProtection(1.10020, "1.09945", "1.10044", 1000, 0.8, 0.82);
+  const actual = cashAtProtection(1.10020, "1.09945", "1.10032", 1000, 0.8, 0.82);
   assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
   assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
 });
@@ -730,7 +730,7 @@ test("MAIN ACCOUNT_CASH rejects any units, cash target, or explicit-price overri
   for (const [overrides, reason] of [
     [{ units: 999 }, "ACCOUNT_CASH_UNITS_MUST_EQUAL_1000"],
     [{ riskAmount: 0.59 }, "ACCOUNT_CASH_TARGETS_INVALID"],
-    [{ rewardAmount: 0.19 }, "ACCOUNT_CASH_TARGETS_INVALID"],
+    [{ rewardAmount: 0.09 }, "ACCOUNT_CASH_TARGETS_INVALID"],
     [{ stopLossPrice: 1.099, takeProfitPrice: 1.101 }, "ACCOUNT_CASH_EXPLICIT_LEVELS_NOT_ALLOWED"]
   ]) {
     const { oanda, calls } = buildOandaMock();

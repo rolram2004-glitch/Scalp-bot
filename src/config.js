@@ -15,7 +15,7 @@ const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExec
 // Practice contract; runtime-bootstrap still pins live execution to MAIN so a
 // BUY signal remains BUY and a SELL signal remains SELL.
 const defaultAccountCashRisk = 0.6;
-const defaultAccountCashReward = 0.2;
+const defaultAccountCashReward = 0.1;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider

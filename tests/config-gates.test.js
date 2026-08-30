@@ -152,7 +152,7 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, false);
 });
 
-test("NORMAL Practice keeps direction with SL 0.60 CHF and TP 0.20 CHF", () => {
+test("NORMAL Practice keeps direction with SL 0.60 CHF and TP 0.10 CHF", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
@@ -160,13 +160,13 @@ test("NORMAL Practice keeps direction with SL 0.60 CHF and TP 0.20 CHF", () => {
     LIVE_EXECUTION_VARIANT: "MAIN",
     DEFAULT_UNITS: "1000",
     NORMAL_STOP_LOSS_ACCOUNT: "0.6",
-    NORMAL_TAKE_PROFIT_ACCOUNT: "0.2",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.1",
     ACCOUNT_TARGET_CURRENCY: "chf"
   });
 
   assert.equal(config.DEFAULT_UNITS, 1000);
   assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 0.6);
-  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.2);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.1);
   assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
 });
 
