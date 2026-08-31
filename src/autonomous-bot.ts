@@ -456,7 +456,7 @@ function cashRules(symbol: string) {
       }
     : {
         riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT || 0.2),
-        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.6)
+        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.25)
       };
 }
 
