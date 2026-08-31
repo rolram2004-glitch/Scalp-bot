@@ -53,8 +53,8 @@ const ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE = 2;
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
-    MAIN: { risk: 0.6, reward: 0.1 },
-    INVERSE: { risk: 0.6, reward: 0.1 }
+    MAIN: { risk: 0.1, reward: 0.6 },
+    INVERSE: { risk: 0.1, reward: 0.6 }
   } as const;
   return contracts[variant];
 }

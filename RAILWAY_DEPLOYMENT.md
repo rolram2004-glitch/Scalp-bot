@@ -18,7 +18,7 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `OANDA_ORDER_EXECUTION_ENABLED=false`;
    - `LIVE_TRADING_ENABLED=false`;
    - `LIVE_EXECUTION_VARIANT=MAIN` (selettore esplicito usato da `OANDA_LIVE`; unico valore alternativo valido: `INVERSE`);
-   - `PRACTICE_EXECUTION_VARIANT=MAIN` per la NORMALE operativa su OANDA Practice: direzione invariata, TP nominale `+0,10 CHF`, SL nominale `-0,60 CHF`;
+   - `PRACTICE_EXECUTION_VARIANT=MAIN` per la NORMALE operativa su OANDA Practice: direzione invariata, TP nominale `+0,60 CHF`, SL nominale `-0,10 CHF`;
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
@@ -87,8 +87,8 @@ Prima dell'attivazione devono essere tutti veri:
 - test automatici superati e conferma esplicita dell'utente.
 
 La dashboard calcola MAIN e MIRROR (INVERSE) dallo stesso snapshot OANDA e dallo stesso
-segnale. La corsia operativa usa TP nominale `+0,10 CHF` e
-SL nominale `-0,60 CHF`. La corsia non selezionata resta
+segnale. La corsia operativa usa TP nominale `+0,60 CHF` e
+SL nominale `-0,10 CHF`. La corsia non selezionata resta
 sempre `PAPER SHADOW`, non invia ordini e viene aperta soltanto dopo l'ingresso
 verificato della corsia operativa corrispondente. Il confronto usa R; il P&L
 originale resta separato per valuta. Non configurare mai entrambe le
@@ -119,8 +119,8 @@ Per eseguire esclusivamente la corsia MIRROR usare invece
 `LIVE_EXECUTION_VARIANT=INVERSE`. La strategia MAIN non viene modificata:
 l'azione inversa e derivata una sola volta (`BUY` diventa `SELL`, `SELL`
 diventa `BUY`, `HOLD` resta `HOLD`) dallo stesso timestamp e dalla stessa
-quotazione. La corsia operativa usa TP nominale `+0,10 CHF` e SL nominale
-`-0,60 CHF`. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
+quotazione. La corsia operativa usa TP nominale `+0,60 CHF` e SL nominale
+`-0,10 CHF`. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
 dedicato non e validato.
 
 Se uno solo dei gate manca, ogni ordine resta bloccato. `OANDA_LIVE` richiede inoltre `OANDA_ENVIRONMENT=LIVE` e `OANDA_LIVE_CONFIRMATION=I_CONFIRM_REAL_MONEY`; questa conferma non deve essere impostata senza un'autorizzazione finale esplicita.

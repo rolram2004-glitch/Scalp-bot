@@ -14,8 +14,8 @@ const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExec
 // Direction and cash protection are independent. Both lanes use the requested
 // Practice contract; runtime-bootstrap still pins live execution to MAIN so a
 // BUY signal remains BUY and a SELL signal remains SELL.
-const defaultAccountCashRisk = 0.6;
-const defaultAccountCashReward = 0.1;
+const defaultAccountCashRisk = 0.1;
+const defaultAccountCashReward = 0.6;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
