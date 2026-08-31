@@ -18,7 +18,7 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `OANDA_ORDER_EXECUTION_ENABLED=false`;
    - `LIVE_TRADING_ENABLED=false`;
    - `LIVE_EXECUTION_VARIANT=INVERSE` (selettore esplicito usato da `OANDA_LIVE`; unico valore alternativo valido: `MAIN`);
-   - `PRACTICE_EXECUTION_VARIANT=INVERSE` per la MIRROR operativa su OANDA Practice: `BUY→SELL`, `SELL→BUY`, TP nominale `+0,60 CHF`, SL nominale `-0,20 CHF`;
+   - `PRACTICE_EXECUTION_VARIANT=INVERSE` per la MIRROR operativa su OANDA Practice: `BUY→SELL`, `SELL→BUY`, TP nominale `+0,25 CHF`, SL nominale `-0,20 CHF`;
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
@@ -87,7 +87,7 @@ Prima dell'attivazione devono essere tutti veri:
 - test automatici superati e conferma esplicita dell'utente.
 
 La dashboard calcola MAIN e MIRROR (INVERSE) dallo stesso snapshot OANDA e dallo stesso
-segnale. MIRROR/INVERSE e la corsia operativa e usa TP nominale `+0,60 CHF` e
+segnale. MIRROR/INVERSE e la corsia operativa e usa TP nominale `+0,25 CHF` e
 SL nominale `-0,20 CHF`; il segnale BUY apre SELL e il segnale SELL apre BUY. La corsia MAIN non selezionata resta
 sempre `PAPER SHADOW`, non invia ordini e viene aperta soltanto dopo l'ingresso
 verificato della corsia operativa corrispondente. Il confronto usa R; il P&L
@@ -119,7 +119,7 @@ PRACTICE_EXECUTION_VARIANT=INVERSE
 La configurazione esegue esclusivamente la corsia MIRROR. La strategia MAIN non viene modificata:
 l'azione inversa e derivata una sola volta (`BUY` diventa `SELL`, `SELL`
 diventa `BUY`, `HOLD` resta `HOLD`) dallo stesso timestamp e dalla stessa
-quotazione. La corsia operativa usa TP nominale `+0,60 CHF` e SL nominale
+quotazione. La corsia operativa usa TP nominale `+0,25 CHF` e SL nominale
 `-0,20 CHF`. Il generatore dei segnali e il ritmo di scansione restano invariati. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
 dedicato non e validato.
 
