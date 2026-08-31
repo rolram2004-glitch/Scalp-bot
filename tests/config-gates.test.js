@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 
 function readConfig(env) {
   const previous = {
@@ -126,7 +127,7 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
     OANDA_ORDER_EXECUTION_ENABLED: "true",
-    LIVE_EXECUTION_VARIANT: "MAIN",
+    LIVE_EXECUTION_VARIANT: "INVERSE",
     SCAN_INTERVAL_MS: "500",
     SYMBOL_REENTRY_COOLDOWN_MS: "0",
     MIN_SIGNAL_CONFIDENCE: "45",
@@ -139,6 +140,7 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   });
 
   assert.equal(config.LIVE_TRADING_ENABLED, true);
+  assert.equal(config.LIVE_EXECUTION_VARIANT, "INVERSE");
   assert.equal(config.SCAN_INTERVAL, 1000);
   assert.equal(config.SYMBOL_REENTRY_COOLDOWN_MS, 0);
   assert.equal(config.MIN_CONFIDENCE, 45);
@@ -152,22 +154,85 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, false);
 });
 
-test("NORMAL Practice keeps direction with SL 0.30 CHF and TP 0.03 CHF", () => {
+test("INVERSE Practice uses the fixed SL 0.20 CHF and TP 0.60 CHF contract", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
     OANDA_ORDER_EXECUTION_ENABLED: "true",
-    LIVE_EXECUTION_VARIANT: "MAIN",
+    LIVE_EXECUTION_VARIANT: "INVERSE",
     DEFAULT_UNITS: "1000",
-    NORMAL_STOP_LOSS_ACCOUNT: "0.3",
-    NORMAL_TAKE_PROFIT_ACCOUNT: "0.03",
+    NORMAL_STOP_LOSS_ACCOUNT: "0.2",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.6",
     ACCOUNT_TARGET_CURRENCY: "chf"
   });
 
   assert.equal(config.DEFAULT_UNITS, 1000);
-  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 0.3);
-  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.03);
+  assert.equal(config.LIVE_EXECUTION_VARIANT, "INVERSE");
+  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 0.2);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.6);
   assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
+});
+
+test("Railway bootstrap forces Practice INVERSE without changing the ultra scan rhythm", () => {
+  const script = `
+    const Module = require("node:module");
+    const originalLoad = Module._load;
+    Module._load = function (request, parent, isMain) {
+      if (request === "dotenv") return { config() {} };
+      if (request === "ts-node/register/transpile-only") return {};
+      if (request === "./ai-confirmation") return {};
+      if (request === "./openai-trade-brain") {
+        return { installOpenAiTradeBrain() { return false; } };
+      }
+      if (request === "./oanda") {
+        return { getPrices: async () => [], getPrice: async () => null };
+      }
+      return originalLoad.call(this, request, parent, isMain);
+    };
+    require("./src/runtime-bootstrap.js");
+    console.log("BOOT_STATE=" + JSON.stringify({
+      mode: process.env.TRADING_MODE,
+      environment: process.env.OANDA_ENVIRONMENT,
+      executionEnabled: process.env.OANDA_ORDER_EXECUTION_ENABLED,
+      practiceVariant: process.env.PRACTICE_EXECUTION_VARIANT,
+      liveVariant: process.env.LIVE_EXECUTION_VARIANT,
+      risk: process.env.NORMAL_STOP_LOSS_ACCOUNT,
+      reward: process.env.NORMAL_TAKE_PROFIT_ACCOUNT,
+      scan: process.env.SCAN_INTERVAL_MS,
+      cooldown: process.env.SYMBOL_REENTRY_COOLDOWN_MS,
+      maxMinute: process.env.MAX_TRADES_PER_MINUTE
+    }));
+  `;
+  const child = spawnSync(process.execPath, ["-e", script], {
+    cwd: require("node:path").resolve(__dirname, ".."),
+    env: {
+      ...process.env,
+      OANDA_ENVIRONMENT: "PRACTICE",
+      TRADING_MODE: "PAPER",
+      OANDA_API_KEY: "practice-test-key",
+      OANDA_ACCOUNT_ID: "practice-test-account",
+      FORCE_PAPER_MODE: "false",
+      OPENAI_API_KEY: ""
+    },
+    encoding: "utf8"
+  });
+
+  assert.equal(child.status, 0, child.stderr);
+  const stateLine = child.stdout.split(/\r?\n/).find((line) => line.startsWith("BOOT_STATE="));
+  assert.ok(stateLine, child.stdout);
+  const state = JSON.parse(stateLine.slice("BOOT_STATE=".length));
+  assert.deepEqual(state, {
+    mode: "OANDA_DEMO",
+    environment: "PRACTICE",
+    executionEnabled: "true",
+    practiceVariant: "INVERSE",
+    liveVariant: "INVERSE",
+    risk: "0.2",
+    reward: "0.6",
+    scan: "1000",
+    cooldown: "0",
+    maxMinute: "100"
+  });
 });
 
 test("PAPER daily trade cap cannot be raised above 100 by a stale Railway variable", () => {

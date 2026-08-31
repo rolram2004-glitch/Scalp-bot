@@ -455,8 +455,8 @@ function cashRules(symbol: string) {
         rewardAmount: Number(config.XAUUSD_TAKE_PROFIT_USD || 15)
       }
     : {
-        riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT || 0.3),
-        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.03)
+        riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT || 0.2),
+        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.6)
       };
 }
 
