@@ -47,14 +47,17 @@ const PRACTICE_CASH_MAX_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
 // A stop loss that sits inside normal bid/ask noise can close the trade before
 // price moves in the signal's direction. Require the stop to be at least two
-// current spreads from the executable quote. A deliberately close take profit
-// is allowed because it cannot trigger on the loss side of the entry.
+// current spreads from the executable quote. A deliberately close final take
+// profit is allowed. The provisional TP submitted with the market order is at
+// least as wide as the SL cash target so normal fill slippage cannot move it to
+// the wrong side; immediately after the verified fill it is replaced with the
+// exact configured TP calculated from the real fill price.
 const ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE = 2;
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
-    MAIN: { risk: 0.1, reward: 0.6 },
-    INVERSE: { risk: 0.1, reward: 0.6 }
+    MAIN: { risk: 0.3, reward: 0.03 },
+    INVERSE: { risk: 0.3, reward: 0.03 }
   } as const;
   return contracts[variant];
 }
@@ -490,6 +493,7 @@ export async function executeVerifiedMarketOrder(
     let stopLossNumber: number;
     let takeProfitNumber: number;
     if (accountCashProtection) {
+      const provisionalRewardTarget = Math.max(cashContract.reward, cashContract.risk);
       const initialCashPlan = accountCashProtectionPlan(
         entry,
         side,
@@ -497,7 +501,7 @@ export async function executeVerifiedMarketOrder(
         factors,
         displayPrecision,
         cashContract.risk,
-        cashContract.reward
+        provisionalRewardTarget
       );
       if (!initialCashPlan) {
         return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
