@@ -299,7 +299,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <p className="vs3-eyebrow">$Rohato$🤖111 · STRATEGY COMPARISON</p>
           <h1>MAIN contro MIRROR, senza confusione.</h1>
-          <p>Stesso Signal ID e direzione opposta. La corsia {selectedLane === 'MAIN' ? 'MAIN/NORMALE è operativa con direzione invariata, TP +0,03 CHF e SL -0,30 CHF' : 'MIRROR è operativa con TP +0,03 CHF e SL -0,30 CHF'}.</p>
+          <p>Stesso Signal ID e motore dei segnali invariato. La corsia {selectedLane === 'MAIN' ? 'MAIN è operativa nella stessa direzione, con TP +0,60 CHF e SL -0,20 CHF' : 'MIRROR/INVERSE è operativa: BUY→SELL e SELL→BUY, con TP +0,60 CHF e SL -0,20 CHF'}.</p>
         </div>
         <div className={`vs3-gate ${gate.tone}`}><span>STATO OPERATIVO</span><strong>{gate.label}</strong><small>{gate.detail}</small></div>
       </section>
@@ -307,10 +307,10 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
       <section className="vs3-truth-bar" aria-label="Significato delle due corsie">
         <div className="main"><span>01 · NORMALE</span><strong>MAIN</strong><b>{mainMode}</b></div>
         <div className="rule">
-          <span>{selectedLane === 'MAIN' ? 'REGOLA MAIN/NORMALE OPERATIVA' : 'REGOLA MIRROR OPERATIVA'} · PROTEZIONE FISSA</span>
+          <span>{selectedLane === 'MAIN' ? 'REGOLA CORSIA MAIN SELEZIONATA' : 'REGOLA MIRROR OPERATIVA'} · PROTEZIONE FISSA</span>
           <div className="vs3-mirror-rules" aria-label="Mappatura degli esiti MAIN e MIRROR">
             <div className="vs3-result-swap"><b className="loss">SEGNALE MAIN</b><i>→</i><b className="win">{selectedLane === 'MAIN' ? 'STESSA DIREZIONE' : 'DIREZIONE OPPOSTA'}</b></div>
-            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,03 · SL -0,30 CHF</b></div>
+            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,60 · SL -0,20 CHF</b></div>
           </div>
           <small>Gli importi sono nominali nella valuta conto. Il risultato verificato usa i dati reali OANDA, quindi spread e slippage restano visibili.</small>
         </div>
