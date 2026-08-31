@@ -172,7 +172,7 @@ test("INVERSE OANDA execution fails closed when spread makes strict mirror level
   assert.equal(result.executionBlockedReason, "MIRROR_PROTECTIVE_LEVELS_INVALID_AFTER_SPREAD");
 });
 
-test("OANDA_DEMO INVERSE ACCOUNT_CASH maps BUY to SELL and SELL to BUY with SL 0.20 / TP 0.60 CHF", () => {
+test("OANDA_DEMO INVERSE ACCOUNT_CASH maps BUY to SELL and SELL to BUY with SL 0.20 / TP 0.25 CHF", () => {
   const wideMarket = {
     ...market,
     time: new Date().toISOString(),
@@ -187,7 +187,7 @@ test("OANDA_DEMO INVERSE ACCOUNT_CASH maps BUY to SELL and SELL to BUY with SL 0
       executionGateVerified: true,
       market: wideMarket,
       accountCashRisk: 0.2,
-      accountCashReward: 0.6,
+      accountCashReward: 0.25,
       accountTargetCurrency: "CHF",
       mainDecision: {
         action: mainAction,
@@ -205,11 +205,11 @@ test("OANDA_DEMO INVERSE ACCOUNT_CASH maps BUY to SELL and SELL to BUY with SL 0
     assert.equal(result.inverse.stopLossPrice, undefined);
     assert.equal(result.inverse.takeProfitPrice, undefined);
     assert.deepEqual(result.inverse.structuralTargets, []);
-    assert.ok(Math.abs(result.inverse.riskRewardRatio - (0.6 / 0.2)) < 1e-12);
+    assert.ok(Math.abs(result.inverse.riskRewardRatio - (0.25 / 0.2)) < 1e-12);
     assert.equal(result.executionBlockedReason, undefined);
     assert.doesNotMatch(result.inverse.reasoning, /MAIN SL|MAIN TP|20P|10P/i);
     assert.match(result.inverse.reasoning, new RegExp(`MAIN ${mainAction} -> MIRROR ${expectedOrderAction}`));
-    assert.match(result.inverse.reasoning, /TP nominale \+0\.60 CHF, SL nominale -0\.20 CHF/);
+    assert.match(result.inverse.reasoning, /TP nominale \+0\.25 CHF, SL nominale -0\.20 CHF/);
   }
 });
 
@@ -219,7 +219,7 @@ test("OANDA_DEMO MAIN ACCOUNT_CASH keeps the normal direction and defers fixed C
     liveExecutionVariant: "MAIN",
     executionGateVerified: true,
     accountCashRisk: 0.2,
-    accountCashReward: 0.6,
+    accountCashReward: 0.25,
     accountTargetCurrency: "CHF"
   });
 
@@ -230,19 +230,19 @@ test("OANDA_DEMO MAIN ACCOUNT_CASH keeps the normal direction and defers fixed C
   assert.equal(result.main.stopLossPrice, undefined);
   assert.equal(result.main.takeProfitPrice, undefined);
   assert.deepEqual(result.main.structuralTargets, []);
-  assert.ok(Math.abs(result.main.riskRewardRatio - (0.6 / 0.2)) < 1e-12);
+  assert.ok(Math.abs(result.main.riskRewardRatio - (0.25 / 0.2)) < 1e-12);
   assert.equal(result.executionBlockedReason, undefined);
   assert.match(result.main.reasoning, /NORMALE sul segnale: BUY resta BUY/);
-  assert.match(result.main.reasoning, /TP nominale \+0\.60 CHF, SL nominale -0\.20 CHF/);
+  assert.match(result.main.reasoning, /TP nominale \+0\.25 CHF, SL nominale -0\.20 CHF/);
 });
 
-test("OANDA_DEMO MAIN ACCOUNT_CASH keeps SELL as SELL with TP 0.60 CHF and SL 0.20 CHF", () => {
+test("OANDA_DEMO MAIN ACCOUNT_CASH keeps SELL as SELL with TP 0.25 CHF and SL 0.20 CHF", () => {
   const result = snapshot({
     tradingMode: "OANDA_DEMO",
     liveExecutionVariant: "MAIN",
     executionGateVerified: true,
     accountCashRisk: 0.2,
-    accountCashReward: 0.6,
+    accountCashReward: 0.25,
     accountTargetCurrency: "CHF",
     mainDecision: {
       action: "SELL",
@@ -256,9 +256,9 @@ test("OANDA_DEMO MAIN ACCOUNT_CASH keeps SELL as SELL with TP 0.60 CHF and SL 0.
   assert.equal(result.inverse.action, "BUY");
   assert.equal(result.main.selectedForExecution, true);
   assert.equal(result.main.executionState, "READY");
-  assert.ok(Math.abs(result.main.riskRewardRatio - (0.6 / 0.2)) < 1e-12);
+  assert.ok(Math.abs(result.main.riskRewardRatio - (0.25 / 0.2)) < 1e-12);
   assert.match(result.main.reasoning, /NORMALE sul segnale: SELL resta SELL/);
-  assert.match(result.main.reasoning, /TP nominale \+0\.60 CHF, SL nominale -0\.20 CHF/);
+  assert.match(result.main.reasoning, /TP nominale \+0\.25 CHF, SL nominale -0\.20 CHF/);
 });
 
 test("PAPER keeps MAIN local and INVERSE shadow-only", () => {
