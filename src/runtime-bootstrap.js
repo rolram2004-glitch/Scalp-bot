@@ -29,10 +29,11 @@ if (
   process.env.LIVE_EXECUTION_VARIANT = "INVERSE";
   process.env.DEFAULT_UNITS = "1000";
   process.env.ACCOUNT_TARGET_CURRENCY = "CHF";
-  // Keep MIRROR execution while applying the fixed requested cash exits:
-  // TP +0.25 CHF and SL -0.20 CHF.
+  // Mirror both the execution direction and the previous cash exits: the old
+  // SL 0.60 CHF becomes TP +0.60 CHF, while the old TP 0.20 CHF becomes
+  // SL -0.20 CHF.
   process.env.NORMAL_STOP_LOSS_ACCOUNT = "0.2";
-  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.25";
+  process.env.NORMAL_TAKE_PROFIT_ACCOUNT = "0.6";
 }
 
 // ROHATO_ULTRA_100_PER_MINUTE is enabled only on Practice. It evaluates all 15
@@ -101,7 +102,7 @@ console.log(
   `brain=${openAiBrainEnabled ? `OPENAI:${config.OPENAI_MODEL}` : "DETERMINISTIC"} ` +
   `profile=${config.FOREX_SIGNAL_PROFILE} scan=${config.SCAN_INTERVAL / 1000}s forex=15 confidence=${config.MIN_CONFIDENCE} ` +
   `maxNew=${config.MAX_NEW_TRADES_PER_CYCLE} maxOpen=15 cooldown=${config.SYMBOL_REENTRY_COOLDOWN_MS / 60000}m ` +
-  `INVERSE=TP+0.25CHF/SL-0.20CHF maxUnits=1000 adaptiveSpreadSize=true exits=SL_TP_ONLY ` +
+  `INVERSE=TP+0.60CHF/SL-0.20CHF maxUnits=1000 adaptiveSpreadSize=true exits=SL_TP_ONLY ` +
   `dailyLoss=${config.DAILY_LOSS_LIMIT_ENABLED ? `${config.MAX_DAILY_LOSS}CHF` : "UNLIMITED_PRACTICE"} ` +
   `maxMinute=${config.MAX_TRADES_PER_MINUTE} maxDaily=${config.MAX_DAILY_TRADES} ` +
   `maxDailyPerSymbol=${config.MAX_DAILY_TRADES_PER_SYMBOL}`
