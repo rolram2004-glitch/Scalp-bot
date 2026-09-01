@@ -15,7 +15,7 @@ const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExec
 // Practice contract; runtime-bootstrap selects INVERSE for this deployment so
 // a BUY signal submits SELL and a SELL signal submits BUY.
 const defaultAccountCashRisk = 0.2;
-const defaultAccountCashReward = 0.25;
+const defaultAccountCashReward = 0.6;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider
