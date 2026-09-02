@@ -158,7 +158,7 @@ function LaneCard({ variant, lane, symbol, executionReady }: { variant: 'MAIN' |
         <div><span>R:R</span><strong>{numeric(lane?.riskRewardRatio) === undefined ? 'N/A' : `1:${Number(lane?.riskRewardRatio).toFixed(2)}`}</strong></div>
       </div>
       <div className="pro-lane-tags"><span>{lane?.setupType || 'SETUP N/A'}</span><span>{lane?.executionState || 'STATE N/A'}</span><span>{lane?.mode || 'MODE N/A'}</span></div>
-      <p>{selected ? variant === 'MAIN' ? 'MAIN OPERATIVA: direzione normale invariata, TP nominale +0,60 CHF, SL nominale -0,20 CHF. ' : 'MIRROR OPERATIVA: il segnale BUY apre SELL e il segnale SELL apre BUY, TP nominale +0,60 CHF, SL nominale -0,20 CHF. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
+      <p>{selected ? variant === 'MAIN' ? 'MAIN OPERATIVA: direzione normale invariata, TP nominale +0,03 CHF, SL nominale -0,15 CHF. ' : 'MIRROR OPERATIVA: il segnale BUY apre SELL e il segnale SELL apre BUY, TP nominale +0,03 CHF, SL nominale -0,15 CHF. ' : ''}{lane?.reasoning || 'Nessuno snapshot OANDA disponibile.'}</p>
     </article>
   );
 }
@@ -252,7 +252,7 @@ export function CommandSetupPage({
         <div className="pro-hero-brand">
           <span>$Rohato$🤖111 · PROFESSIONAL SETUP</span>
           <h1>SEL Scalp Bot Command Center</h1>
-          <p>Modalità MIRROR ULTRA: il motore dei segnali resta invariato, ma il segnale BUY apre SELL e il segnale SELL apre BUY. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Protezioni fisse: TP +0,60 CHF e SL -0,20 CHF. Size massima 1.000 unità, ridotta automaticamente soltanto quando lo spread lo richiede.</p>
+          <p>Modalità MIRROR ULTRA: il motore dei segnali resta invariato, ma il segnale BUY apre SELL e il segnale SELL apre BUY. Scansione ogni 1s; massimo 100 ingressi al minuto e 15.000 al giorno, senza limite di perdita giornaliera su OANDA Practice. Protezioni fisse: TP +0,03 CHF e SL -0,15 CHF. Size massima 1.000 unità, ridotta automaticamente soltanto quando lo spread lo richiede.</p>
         </div>
         <div className={`pro-diagnosis ${diagnostic.tone}`}>
           <span>{diagnostic.eyebrow}</span><strong>{diagnostic.title}</strong><p>{diagnostic.detail}</p><b>{diagnostic.action}</b>
@@ -324,7 +324,7 @@ export function CommandSetupPage({
 
       <section className="pro-duel">
         <LaneCard variant="MAIN" lane={primaryPair?.main} symbol={primarySymbol} executionReady={executionReady} />
-        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>MIRROR/INVERSE</b> invia OANDA nella direzione opposta: BUY→SELL, SELL→BUY.<br />TP nominale +0,60 CHF · SL nominale -0,20 CHF; MAIN resta PAPER SHADOW.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
+        <div className="pro-duel-rule"><span>STESSO SNAPSHOT</span><strong>VS</strong><p><b>MIRROR/INVERSE</b> invia OANDA nella direzione opposta: BUY→SELL, SELL→BUY.<br />TP nominale +0,03 CHF · SL nominale -0,15 CHF; MAIN resta PAPER SHADOW.</p><Link to="/vs">APRI CONFRONTO COMPLETO</Link></div>
         <LaneCard variant="INVERSE" lane={primaryPair?.inverse} symbol={primarySymbol} executionReady={executionReady} />
       </section>
 
