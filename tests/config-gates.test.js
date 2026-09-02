@@ -154,22 +154,22 @@ test("Rohato ultra Practice profile scans every second and enforces the 100-per-
   assert.equal(config.DAILY_LOSS_LIMIT_ENABLED, false);
 });
 
-test("INVERSE Practice uses the fixed SL 0.15 CHF and TP 0.03 CHF contract", () => {
+test("INVERSE Practice uses the fixed SL 2.00 CHF and TP 0.20 CHF contract", () => {
   const config = readConfig({
     TRADING_MODE: "OANDA_DEMO",
     OANDA_ENVIRONMENT: "PRACTICE",
     OANDA_ORDER_EXECUTION_ENABLED: "true",
     LIVE_EXECUTION_VARIANT: "INVERSE",
     DEFAULT_UNITS: "1000",
-    NORMAL_STOP_LOSS_ACCOUNT: "0.15",
-    NORMAL_TAKE_PROFIT_ACCOUNT: "0.03",
+    NORMAL_STOP_LOSS_ACCOUNT: "2",
+    NORMAL_TAKE_PROFIT_ACCOUNT: "0.2",
     ACCOUNT_TARGET_CURRENCY: "chf"
   });
 
   assert.equal(config.DEFAULT_UNITS, 1000);
   assert.equal(config.LIVE_EXECUTION_VARIANT, "INVERSE");
-  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 0.15);
-  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.03);
+  assert.equal(config.NORMAL_STOP_LOSS_ACCOUNT, 2);
+  assert.equal(config.NORMAL_TAKE_PROFIT_ACCOUNT, 0.2);
   assert.equal(config.ACCOUNT_TARGET_CURRENCY, "CHF");
 });
 
@@ -227,8 +227,8 @@ test("Railway bootstrap forces Practice INVERSE without changing the ultra scan 
     executionEnabled: "true",
     practiceVariant: "INVERSE",
     liveVariant: "INVERSE",
-    risk: "0.15",
-    reward: "0.03",
+    risk: "2",
+    reward: "0.2",
     scan: "1000",
     cooldown: "0",
     maxMinute: "100"

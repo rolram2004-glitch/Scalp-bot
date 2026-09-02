@@ -376,6 +376,11 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
 
   const latestPrice = formatted.length > 0 ? formatted[formatted.length - 1].close : undefined;
   const selectedPair = status?.pairedSignals?.[displaySymbol];
+  const selectedOperationalLane = displaySymbol === 'XAUUSD'
+    ? selectedPair?.main
+    : status?.liveExecutionVariant === 'INVERSE'
+      ? selectedPair?.inverse
+      : selectedPair?.main;
   const selectedOpenTrade = selectedOpenTrades[0];
   const snapshotMatchesSymbol = compactSymbol(status?.currentSymbol) === displaySymbol;
   const mainOpenTrade = selectedOpenTrades.find((trade: any) => (trade.strategyVariant || 'MAIN') === 'MAIN');
@@ -408,8 +413,13 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
               const market = status?.marketData?.[item] || marketData?.[item];
               const pair = status?.pairedSignals?.[item];
               const quote = status?.livePrices?.[item];
-              const action = pair?.main?.action || status?.lastSignals?.[item]?.action;
-              const scoreSource = pair?.main || status?.lastSignals?.[item];
+              const activeLane = item === 'XAUUSD'
+                ? pair?.main
+                : status?.liveExecutionVariant === 'INVERSE'
+                  ? pair?.inverse
+                  : pair?.main;
+              const action = activeLane?.action || status?.lastSignals?.[item]?.action;
+              const scoreSource = activeLane || status?.lastSignals?.[item];
               return (
                 <button key={item} className={item === displaySymbol ? 'active' : ''} onClick={() => setSymbol(item)}>
                   <strong>{item}</strong>
@@ -470,14 +480,14 @@ export function ChartPage({ status, marketData }: { status: StatusSnapshot | nul
           </article>
 
           <section className="scenario-grid">
-            <ScenarioCard title="SCENARIO BUY" lane={{ ...(selectedPair?.main || {}), action: 'BUY' }} pair={selectedPair} symbol={displaySymbol} stopLoss={mainScenarioStop} takeProfit={mainScenarioTakeProfit} />
-            <ScenarioCard title="SCENARIO SELL" lane={{ ...(selectedPair?.inverse || {}), action: 'SELL' }} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
+            <ScenarioCard title="CORSIA MAIN" lane={selectedPair?.main} pair={selectedPair} symbol={displaySymbol} stopLoss={mainScenarioStop} takeProfit={mainScenarioTakeProfit} />
+            <ScenarioCard title="CORSIA MIRROR / INVERSE" lane={selectedPair?.inverse} pair={selectedPair} symbol={displaySymbol} stopLoss={inverseScenarioStop} takeProfit={inverseScenarioTakeProfit} />
           </section>
 
           <section className="cockpit-panel final-decision-panel">
             <span>DECISIONE FINALE</span>
-            <strong>{selectedPair?.main?.action || 'HOLD'}</strong>
-            <small>Confronto informativo BUY/SELL · nessun doppio ordine</small>
+            <strong>{selectedOperationalLane?.action || 'HOLD'}</strong>
+            <small>{displaySymbol === 'XAUUSD' ? 'ANALISI MAIN · NESSUN ORDINE' : `CORSIA ${status?.liveExecutionVariant || 'N/A'} · NESSUN DOPPIO ORDINE`}</small>
           </section>
 
           <section className="cockpit-panel target-ladder-panel">
