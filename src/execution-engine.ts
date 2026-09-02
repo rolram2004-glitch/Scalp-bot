@@ -47,17 +47,16 @@ const PRACTICE_CASH_MAX_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
 // A stop loss that sits inside normal bid/ask noise can close the trade before
 // price moves in the signal's direction. Require the stop to be at least two
-// current spreads from the executable quote. A deliberately close final take
-// profit is allowed. The provisional TP submitted with the market order is at
-// least as wide as the SL cash target so normal fill slippage cannot move it to
-// the wrong side; immediately after the verified fill it is replaced with the
-// exact configured TP calculated from the real fill price.
+// current spreads from the executable quote. With the swapped cash contract,
+// the stop is the tighter exit, so adaptive sizing keeps it outside spread
+// noise. The provisional TP is submitted no closer than the SL cash target;
+// after the verified fill both exits are replaced from the real fill price.
 const ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE = 2;
 
 function practiceCashContract(variant: "MAIN" | "INVERSE") {
   const contracts = {
-    MAIN: { risk: 2, reward: 0.2 },
-    INVERSE: { risk: 2, reward: 0.2 }
+    MAIN: { risk: 0.2, reward: 2 },
+    INVERSE: { risk: 0.2, reward: 2 }
   } as const;
   return contracts[variant];
 }

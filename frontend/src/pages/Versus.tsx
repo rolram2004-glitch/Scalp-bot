@@ -299,7 +299,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
         <div>
           <p className="vs3-eyebrow">$Rohato$🤖111 · STRATEGY COMPARISON</p>
           <h1>MAIN contro MIRROR, senza confusione.</h1>
-          <p>Stesso Signal ID per il confronto. La corsia {selectedLane === 'MAIN' ? 'MAIN è operativa nella stessa direzione, con TP +0,20 CHF e SL -2,00 CHF' : 'MIRROR/INVERSE è operativa e inverte una volta qualunque segnale finale degli indicatori: BUY→SELL e SELL→BUY, con TP +0,20 CHF e SL -2,00 CHF'}.</p>
+          <p>Stesso Signal ID per il confronto. La corsia {selectedLane === 'MAIN' ? 'MAIN è operativa nella stessa direzione, con TP +2,00 CHF e SL -0,20 CHF' : 'MIRROR/INVERSE è operativa e inverte una volta qualunque segnale finale degli indicatori: BUY→SELL e SELL→BUY, con TP +2,00 CHF e SL -0,20 CHF'}.</p>
         </div>
         <div className={`vs3-gate ${gate.tone}`}><span>STATO OPERATIVO</span><strong>{gate.label}</strong><small>{gate.detail}</small></div>
       </section>
@@ -310,7 +310,7 @@ export function VersusPage({ status }: { status: StatusSnapshot | null }) {
           <span>{selectedLane === 'MAIN' ? 'REGOLA CORSIA MAIN SELEZIONATA' : 'REGOLA MIRROR OPERATIVA'} · PROTEZIONE FISSA</span>
           <div className="vs3-mirror-rules" aria-label="Mappatura degli esiti MAIN e MIRROR">
             <div className="vs3-result-swap"><b className="loss">SEGNALE MAIN</b><i>→</i><b className="win">{selectedLane === 'MAIN' ? 'STESSA DIREZIONE' : 'DIREZIONE OPPOSTA'}</b></div>
-            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +0,20 · SL -2,00 CHF</b></div>
+            <div className="vs3-result-swap"><b className="win">PROTEZIONE FISSA</b><i>→</i><b className="loss">TP +2,00 · SL -0,20 CHF</b></div>
           </div>
           <small>Gli importi sono nominali nella valuta conto. Il risultato verificato usa i dati reali OANDA, quindi spread e slippage restano visibili.</small>
         </div>
