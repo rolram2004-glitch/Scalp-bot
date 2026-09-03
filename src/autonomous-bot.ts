@@ -456,7 +456,7 @@ function cashRules(symbol: string) {
       }
     : {
         riskAmount: Number(config.NORMAL_STOP_LOSS_ACCOUNT || 0.2),
-        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 2)
+        rewardAmount: Number(config.NORMAL_TAKE_PROFIT_ACCOUNT || 0.1)
       };
 }
 
@@ -1563,12 +1563,11 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
 
     botState.signalsAnalyzed += 1;
     botState.currentSymbol = symbol;
-    // Publish the same final action that the configured Practice lane uses.
-    // Every indicator/setup first produces one MAIN decision, then INVERSE
-    // flips that result exactly once. XAUUSD remains analysis-only.
-    const publishInverseDecision = config.LIVE_EXECUTION_VARIANT === "INVERSE" &&
-      !isGold(symbol) && liveModeConfigured();
-    const publishedDecision = publishInverseDecision
+    // Publish the same final action and executable quote used by the selected
+    // Practice lane. MAIN keeps the indicator direction; INVERSE flips it once.
+    // XAUUSD remains analysis-only.
+    const publishSelectedLaneDecision = !isGold(symbol) && liveModeConfigured();
+    const publishedDecision = publishSelectedLaneDecision
       ? decisionForExecution
       : rankedDecision;
     botState.currentAction = publishedDecision.action;
@@ -1577,7 +1576,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     botState.lastSignals = botState.lastSignals || {};
     botState.lastSignals[symbol] = {
       // Preserve the unmodified indicator result for the MAIN audit trail.
-      // The public current decision and OANDA order use the INVERSE lane.
+      // The public current decision and OANDA order use the selected lane.
       ...rankedDecision,
       scannedAt: evaluatedAt
     };
@@ -1587,7 +1586,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
     botState.currentPrice = pairedSignal.market.mid;
     botState.entryPrice = publishedDecision.action === "HOLD"
       ? undefined
-      : publishInverseDecision
+      : publishSelectedLaneDecision
         ? selectedLane.entryPrice ?? pairedSignal.market.mid
         : rankedDecision.entryPrice ?? pairedSignal.market.mid;
     const cash = cashRules(symbol);
@@ -1772,8 +1771,8 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           const aiResult = await confirmSetupWithAi({
             signalId: pairedSignal.pairId,
             symbol,
-            // Confirm the actual indicator setup first. The configured
-            // MIRROR lane flips its approved final action exactly once below.
+            // Confirm the actual indicator setup first. The selected lane is
+            // then applied exactly once below (MAIN unchanged, MIRROR flipped).
             action: rankedDecision.action as "BUY" | "SELL",
             setupScore: Number(rankedDecision.confidence),
             scoreBreakdown: (rankedDecision as TradingDecision & {
