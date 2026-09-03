@@ -12,10 +12,11 @@ const oandaLiveConfirmed = process.env.OANDA_LIVE_CONFIRMATION === "I_CONFIRM_RE
 const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "").trim().toUpperCase();
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
 // Direction and cash protection are independent. Both lanes use the requested
-// Practice contract; runtime-bootstrap selects MAIN for this deployment so the
-// final indicator signal is submitted once without another direction flip.
-const defaultAccountCashRisk = 0.2;
-const defaultAccountCashReward = 0.1;
+// Practice contract; runtime-bootstrap selects INVERSE so the final indicator
+// signal is flipped exactly once. The old TP 2.00 is now SL 2.00 and the old
+// SL 0.20 is now TP 0.20.
+const defaultAccountCashRisk = 2;
+const defaultAccountCashReward = 0.2;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider

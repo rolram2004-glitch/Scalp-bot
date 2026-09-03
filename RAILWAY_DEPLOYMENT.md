@@ -17,8 +17,8 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `OANDA_ENVIRONMENT=PRACTICE`;
    - `OANDA_ORDER_EXECUTION_ENABLED=false`;
    - `LIVE_TRADING_ENABLED=false`;
-   - `LIVE_EXECUTION_VARIANT=MAIN` (selettore esplicito usato da `OANDA_LIVE`; unico valore alternativo valido: `INVERSE`);
-   - `PRACTICE_EXECUTION_VARIANT=MAIN` per la MAIN operativa su OANDA Practice: tutti i segnali forex vengono eseguiti una sola volta nella direzione originale (`BUY→BUY`, `SELL→SELL`), TP nominale `+0,10 CHF`, SL nominale `-0,20 CHF`;
+   - `LIVE_EXECUTION_VARIANT=INVERSE` (selettore esplicito usato da `OANDA_LIVE`; unico valore alternativo valido: `MAIN`);
+   - `PRACTICE_EXECUTION_VARIANT=INVERSE` per la MIRROR operativa su OANDA Practice: tutti i segnali forex vengono invertiti una sola volta (`BUY→SELL`, `SELL→BUY`), TP nominale `+0,20 CHF`, SL nominale `-2,00 CHF`;
    - `SCAN_INTERVAL_MS=30000`;
    - `MAX_NEW_TRADES_PER_CYCLE=7`;
    - `MAX_OPEN_POSITIONS=15`;
@@ -87,8 +87,8 @@ Prima dell'attivazione devono essere tutti veri:
 - test automatici superati e conferma esplicita dell'utente.
 
 La dashboard calcola MAIN e MIRROR (INVERSE) dallo stesso snapshot OANDA e dallo stesso
-segnale. MAIN e la corsia operativa e usa TP nominale `+0,10 CHF` e
-SL nominale `-0,20 CHF`; il segnale BUY apre BUY e il segnale SELL apre SELL. La corsia MIRROR non selezionata resta
+segnale. MIRROR/INVERSE e la corsia operativa e usa TP nominale `+0,20 CHF` e
+SL nominale `-2,00 CHF`; il segnale BUY apre SELL e il segnale SELL apre BUY. La corsia MAIN non selezionata resta
 sempre `PAPER SHADOW`, non invia ordini e viene aperta soltanto dopo l'ingresso
 verificato della corsia operativa corrispondente. Il confronto usa R; il P&L
 originale resta separato per valuta. Non configurare mai entrambe le
@@ -112,14 +112,14 @@ TRADING_MODE=OANDA_DEMO
 OANDA_ENVIRONMENT=PRACTICE
 OANDA_ORDER_EXECUTION_ENABLED=true
 LIVE_TRADING_ENABLED=true
-LIVE_EXECUTION_VARIANT=MAIN
-PRACTICE_EXECUTION_VARIANT=MAIN
+LIVE_EXECUTION_VARIANT=INVERSE
+PRACTICE_EXECUTION_VARIANT=INVERSE
 ```
 
-La configurazione esegue esclusivamente la corsia MAIN. Il segnale finale non viene invertito:
-`BUY` resta `BUY`, `SELL` resta `SELL` e `HOLD` resta `HOLD`, sullo stesso
-timestamp e sulla stessa quotazione. La corsia operativa usa TP nominale `+0,10 CHF` e SL nominale
-`-0,20 CHF`. Tutti i risultati BUY/SELL degli indicatori forex vengono inviati una sola volta; il ritmo di scansione resta invariato. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
+La configurazione esegue esclusivamente la corsia MIRROR. Il segnale finale viene invertito esattamente una volta:
+`BUY` diventa `SELL`, `SELL` diventa `BUY` e `HOLD` resta `HOLD`, sullo stesso
+timestamp e sulla stessa quotazione. Il precedente TP `2,00 CHF` diventa SL
+`-2,00 CHF` e il precedente SL `0,20 CHF` diventa TP `+0,20 CHF`. Tutti i risultati BUY/SELL degli indicatori forex vengono invertiti una sola volta; il ritmo di scansione resta invariato. XAUUSD continua a essere bloccato nell'esecuzione OANDA finche il suo modulo
 dedicato non e validato.
 
 Se uno solo dei gate manca, ogni ordine resta bloccato. `OANDA_LIVE` richiede inoltre `OANDA_ENVIRONMENT=LIVE` e `OANDA_LIVE_CONFIRMATION=I_CONFIRM_REAL_MONEY`; questa conferma non deve essere impostata senza un'autorizzazione finale esplicita.
