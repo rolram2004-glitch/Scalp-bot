@@ -199,7 +199,7 @@ function accountCashRequest(oanda, overrides = {}) {
     protectionMode: "ACCOUNT_CASH",
     targetAccountCurrency: "CHF",
     riskAmount: 2,
-    rewardAmount: 0.2,
+    rewardAmount: 0.33,
     ...overrides
   });
 }
@@ -530,8 +530,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "0.89810", takeProfit: "0.90030" },
-      SELL: { stopLoss: "0.90200", takeProfit: "0.89980" }
+      BUY: { stopLoss: "0.89810", takeProfit: "0.90043" },
+      SELL: { stopLoss: "0.90200", takeProfit: "0.89967" }
     }
   },
   {
@@ -547,8 +547,8 @@ const fixedCashCases = [
     homeConversions: [],
     directFactors: { negativeUnits: "0.90000", positiveUnits: "0.91000" },
     expected: {
-      BUY: { stopLoss: "1.09788", takeProfit: "1.10032" },
-      SELL: { stopLoss: "1.10222", takeProfit: "1.09978" }
+      BUY: { stopLoss: "1.09788", takeProfit: "1.10046" },
+      SELL: { stopLoss: "1.10222", takeProfit: "1.09964" }
     }
   },
   {
@@ -564,8 +564,8 @@ const fixedCashCases = [
     homeConversions: [{ currency: "JPY", accountLoss: "0.00610", accountGain: "0.00600" }],
     directFactors: undefined,
     expected: {
-      BUY: { stopLoss: "158.905", takeProfit: "159.266" },
-      SELL: { stopLoss: "159.559", takeProfit: "159.198" }
+      BUY: { stopLoss: "158.905", takeProfit: "159.288" },
+      SELL: { stopLoss: "159.559", takeProfit: "159.176" }
     }
   }
 ];
@@ -573,7 +573,7 @@ const fixedCashCases = [
 for (const cashCase of fixedCashCases) {
   for (const strategyVariant of ["MAIN", "INVERSE"]) {
     for (const side of ["BUY", "SELL"]) {
-      test(`${strategyVariant} ACCOUNT_CASH ${side} fixes SL 2.00 CHF and TP 0.20 CHF using ${cashCase.label}`, async () => {
+      test(`${strategyVariant} ACCOUNT_CASH ${side} fixes SL 2.00 CHF and TP 0.33 CHF using ${cashCase.label}`, async () => {
       const entry = side === "BUY" ? cashCase.ask : cashCase.bid;
       const signedUnits = side === "BUY" ? String(cashCase.expectedUnits) : String(-cashCase.expectedUnits);
       const { oanda, calls } = buildOandaMock({
@@ -645,7 +645,7 @@ for (const cashCase of fixedCashCases) {
         )
       );
       assert.ok(
-        Math.abs(actual.reward - 0.2) <= cashRoundingTolerance(
+        Math.abs(actual.reward - 0.33) <= cashRoundingTolerance(
           cashCase.displayPrecision,
           cashCase.expectedUnits,
           cashCase.gainFactor
@@ -663,7 +663,7 @@ for (const cashCase of fixedCashCases) {
 }
 
 for (const side of ["BUY", "SELL"]) {
-  test(`ACCOUNT_CASH ${side} reduces units when needed and preserves TP 0.20 / SL 2.00 CHF`, async () => {
+  test(`ACCOUNT_CASH ${side} reduces units when needed and preserves TP 0.33 / SL 2.00 CHF`, async () => {
     const expectedUnits = 277;
     const signedUnits = side === "BUY" ? String(expectedUnits) : String(-expectedUnits);
     const fillPrice = side === "BUY" ? "1.10400" : "1.10000";
@@ -709,7 +709,7 @@ for (const side of ["BUY", "SELL"]) {
     assert.equal(result.trade.units, expectedUnits);
     assert.equal(calls.replaceTradeDependentOrders, 1);
     assert.ok(Math.abs(result.trade.riskAmount - 2) <= cashRoundingTolerance(5, expectedUnits, 0.9));
-    assert.ok(Math.abs(result.trade.rewardAmount - 0.2) <= cashRoundingTolerance(5, expectedUnits, 0.91));
+    assert.ok(Math.abs(result.trade.rewardAmount - 0.33) <= cashRoundingTolerance(5, expectedUnits, 0.91));
   });
 }
 
@@ -779,14 +779,14 @@ test("MAIN ACCOUNT_CASH recalculates protection from the verified post-fill entr
   assert.deepEqual(calls.lastReplacement, {
     tradeId: "post-fill-cash",
     stopLoss: "1.09770",
-    takeProfit: "1.10044",
+    takeProfit: "1.10060",
     strategyVariant: "MAIN"
   });
   assert.notEqual(calls.lastReplacement.stopLoss, calls.lastOrder.stopLoss);
 
   assert.notEqual(calls.lastReplacement.takeProfit, calls.lastOrder.takeProfit);
 
-  const actual = cashAtProtection(1.10020, "1.09770", "1.10044", 1000, 0.8, 0.82);
+  const actual = cashAtProtection(1.10020, "1.09770", "1.10060", 1000, 0.8, 0.82);
   assert.ok(Math.abs(result.trade.riskAmount - actual.risk) < 1e-10);
   assert.ok(Math.abs(result.trade.rewardAmount - actual.reward) < 1e-10);
 });
