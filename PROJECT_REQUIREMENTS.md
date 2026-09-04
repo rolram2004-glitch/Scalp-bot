@@ -74,6 +74,13 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 - Il gemello di confronto non si apre su segnali grezzi o su trade della corsia operativa bloccati dai gate. Viene registrato uno-a-uno soltanto dopo un ingresso effettivo e condivide lo stesso Signal ID.
 - Non presentare il punteggio euristico come probabilita: usare `SETUP SCORE`, derivato in modo ripetibile da trend, momentum, struttura, liquidita, volatilita, spread, sessione, rischio e conferma AI.
 
+### Correzione spread/TP e confronto (4 settembre 2026)
+
+- La size Practice deve rispettare entrambi i target: SL e TP distano almeno due spread dalla quotazione eseguibile, salvo mezzo tick di arrotondamento. Usare le conversioni OANDA e ridurre le unita, mantenendo TP 0,33 CHF e SL 2 CHF. Se la size minima non lo consente, saltare l'ingresso.
+- La stima del costo spread all'ingresso non deve superare meta del TP nominale. Non comprende commissioni, finanziamento, spread futuro o slippage e non dimostra redditivita.
+- Il PAPER SHADOW usa le stesse unita del trade OANDA verificato anche dopo ridimensionamento; rischio, P&L corrente e P&L di chiusura usano le unita del record, mai il default globale.
+- Il confronto shadow resta una simulazione su quotazioni campionate: non costituisce una replica tick-per-tick degli ordini broker e non puo certificare che ogni stop storico sarebbe diventato un TP.
+
 ## XAUUSD dedicato
 
 XAUUSD usa un modulo distinto e originale basato su candele OANDA: swing, struttura, BOS, CHoCH, liquidity sweep, equal high/low, FVG, trend/EMA, volatilita, spread, sessione e momentum.
