@@ -65,8 +65,8 @@ posizione contemporanea per simbolo e non impone cooldown dopo una chiusura
 verificata. Riconosce trend, continuazioni rapide, impulsi iniziali e inversioni
 confermate nei range. I tetti sono 100 ingressi in una finestra mobile di 60
 secondi, 1.000 per simbolo e 15.000 complessivi al giorno UTC; non sono obiettivi
-forzati. Prima di ogni ordine, lo stop loss deve distare almeno due spread reali
-dal prezzo eseguibile; altrimenti l'ingresso viene
+forzati. Prima di ogni ordine, sia lo stop loss sia il take profit devono distare
+almeno due spread reali dal prezzo eseguibile (tolleranza: mezzo tick); altrimenti l'ingresso viene
 ridimensionato automaticamente sotto il massimo di 1.000 unità, conservando
 TP `+0,33 CHF` e SL `-2,00 CHF`. Prezzi reali, riconciliazione e SL/TP restano obbligatori. PAPER resta a
 100 complessivi; `OANDA_LIVE` resta hard-capped a 25 e richiede conferma separata.
@@ -75,6 +75,15 @@ dall'orario separato di XAUUSD, che resta `SIGNAL ONLY`. Posizioni Rohato
 verificate della corsia precedente possono terminare ai propri SL/TP su simboli
 gia occupati senza bloccare l'intero scanner operativo; esposizioni esterne o senza
 tag verificabile continuano a bloccare fail-closed.
+
+Il controllo considera il minore dei due budget e le conversioni OANDA: il
+costo spread stimato all'ingresso non supera metà del TP nominale. Non è una
+garanzia di profitto; ridurre le unità allontana anche i livelli in pip e può
+allungare la durata delle posizioni. Se nemmeno la quantità minima ammessa
+soddisfa il controllo, l'ordine viene saltato.
+Il gemello PAPER SHADOW usa le unità effettive del trade verificato, anche
+quando inferiori a 1.000, per rischio e P&L. Le uscite shadow restano campionate
+e non equivalgono a una verifica tick-per-tick degli ordini OANDA.
 
 Gli identificatori OANDA storici conservano il prefisso tecnico `GEMMO` per
 riconoscere in sicurezza le posizioni gia esistenti; il nome visibile del prodotto

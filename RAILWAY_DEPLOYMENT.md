@@ -26,7 +26,7 @@ Setup operativo: https://scalp-bot-production-761a.up.railway.app/setup
    - `SYMBOL_REENTRY_COOLDOWN_MS=600000`;
    - `MIN_SIGNAL_CONFIDENCE=55`;
    - `FOREX_SIGNAL_PROFILE=ROHATO_AGGRESSIVE_100`;
-   - `DEFAULT_UNITS=1000` come massimo; OANDA Practice riduce automaticamente la size quando serve per tenere lo SL fuori dallo spread;
+   - `DEFAULT_UNITS=1000` come massimo; OANDA Practice riduce automaticamente la size per tenere sia SL sia TP ad almeno due spread dalla quotazione eseguibile, con tolleranza di mezzo tick;
    - `ACCOUNT_TARGET_CURRENCY=CHF`;
    - `CONTROL_PANEL_TOKEN` con un valore segreto lungo e unico;
    - `ENABLE_OANDA_DEMO_TEST=false`;
@@ -39,6 +39,11 @@ copertura candele ed esecuzione sono gate distinti: un processo Railway sano non
 implica automaticamente che OANDA sia connesso.
 
 ## Verifica dopo ogni redeploy
+
+Per la correzione spread/TP verificare `/health`: `cashProtectionVersion`
+deve essere `TP_SL_SPREAD_V1`; `sourceCommit`, quando Railway lo fornisce,
+deve corrispondere al commit pubblicato. Una risposta `status=ok` da sola non
+dimostra che il nuovo codice sia attivo.
 
 Non considerare concluso un deploy finche `/api/status` non espone
 `signalProfile=ROHATO_AGGRESSIVE_100`, `maxDailyTrades=100`,

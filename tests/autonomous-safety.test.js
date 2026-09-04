@@ -252,6 +252,31 @@ test("strict MIRROR swaps MAIN risk and reward and preserves its explicit price 
   assert.equal(autonomousTestUtils.laneProtectionPlan("EURUSD", 1.1, "SELL", 1.099, 1.101), null);
 });
 
+test("shadow entry, risk and P&L use the paired order's reduced units", () => {
+  const market = { bid: 1.1, ask: 1.1002 };
+  const pair = { pairId: "SIG-SHADOW-SIZE", evaluatedAt: new Date().toISOString(), market: { time: new Date().toISOString() } };
+  for (const [side, stopLossPrice, takeProfitPrice] of [
+    ["BUY", 1.099, 1.102], ["SELL", 1.102, 1.099]
+  ]) {
+    const shadow = autonomousTestUtils.buildShadowTrade("EURUSD", {
+      variant: "MAIN", action: side, confidence: 75, reasoning: "size test",
+      stopLossPrice, takeProfitPrice
+    }, market, pair, { id: "OANDA-SIZE-TEST", units: 250 });
+    assert.equal(shadow.units, 250);
+    assert.equal(shadow.pairedWithTradeId, "OANDA-SIZE-TEST");
+    assert.equal(shadow.source, "PAPER_SHADOW");
+    assert.equal(shadow.pnlCurrency, "USD");
+    assert.ok(Math.abs(shadow.pnl + 0.05) < 1e-10);
+    assert.ok(Math.abs(shadow.riskAmount - Math.abs(shadow.entryPrice - stopLossPrice) * 250) < 1e-10);
+    const targetPnl = autonomousTestUtils.calculatePaperPnl("EURUSD", side, shadow.entryPrice, takeProfitPrice, shadow.units);
+    const stopPnl = autonomousTestUtils.calculatePaperPnl("EURUSD", side, shadow.entryPrice, stopLossPrice, shadow.units);
+    assert.ok(Math.abs(targetPnl - shadow.rewardAmount) < 1e-10);
+    assert.ok(Math.abs(stopPnl + shadow.riskAmount) < 1e-10);
+  }
+  assert.throws(() => autonomousTestUtils.buildShadowTrade("EURUSD", {}, market, pair,
+    { id: "BAD-SIZE", units: NaN }), /PAIRED_UNITS_INVALID/);
+});
+
 test("symbol cooldown prevents immediate repeat entries", () => {
   const now = Date.parse("2026-07-31T12:00:00.000Z");
   const closed = [{ symbol: "GBPJPY", closedAt: "2026-07-31T11:55:00.000Z" }];

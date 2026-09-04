@@ -464,12 +464,11 @@ function pipSize(symbol: string) {
   return /JPY$/i.test(cleanSymbol(symbol)) ? 0.01 : 0.0001;
 }
 
-function fixedPipPlan(symbol: string, entryPrice: number, side: "BUY" | "SELL" | "HOLD") {
+function fixedPipPlan(symbol: string, entryPrice: number, side: "BUY" | "SELL" | "HOLD", units = tradeUnits(symbol)) {
   const direction = side === "SELL" ? -1 : 1;
   const riskPips = Number(config.NORMAL_STOP_LOSS_PIPS || 10);
   const rewardPips = Number(config.NORMAL_TAKE_PROFIT_PIPS || 20);
   const unitPip = pipSize(symbol);
-  const units = tradeUnits(symbol);
   return {
     riskPips,
     rewardPips,
@@ -493,7 +492,8 @@ function laneProtectionPlan(
   entryPrice: number,
   side: "BUY" | "SELL" | "HOLD",
   stopLoss: unknown,
-  takeProfit: unknown
+  takeProfit: unknown,
+  units = tradeUnits(symbol)
 ) {
   const stop = optionalFinite(stopLoss);
   const target = optionalFinite(takeProfit);
@@ -503,7 +503,6 @@ function laneProtectionPlan(
   const multiplier = pipMultiplier(symbol);
   const riskPips = Math.abs(entryPrice - stop) * multiplier;
   const rewardPips = Math.abs(target - entryPrice) * multiplier;
-  const units = tradeUnits(symbol);
   return {
     stopLoss: stop,
     takeProfit: target,
@@ -520,10 +519,10 @@ function normalizedR(pnlPips: unknown, riskPips: unknown) {
   return Number.isFinite(pnl) && Number.isFinite(risk) && risk > 0 ? pnl / risk : undefined;
 }
 
-function calculatePaperPnl(symbol: string, side: "BUY" | "SELL" | "HOLD", entryPrice: number, currentPrice: number) {
+function calculatePaperPnl(symbol: string, side: "BUY" | "SELL" | "HOLD", entryPrice: number, currentPrice: number, units = tradeUnits(symbol)) {
   if (side === "HOLD") return 0;
   const direction = side === "BUY" ? 1 : -1;
-  return (currentPrice - entryPrice) * direction * tradeUnits(symbol);
+  return (currentPrice - entryPrice) * direction * units;
 }
 
 function quoteCurrency(symbol: string) {
@@ -669,13 +668,14 @@ function buildTrade(
   symbol: string,
   decision: TradingDecision,
   marketData: MarketData,
-  pairedSignal?: PairedSignalSnapshot
+  pairedSignal?: PairedSignalSnapshot,
+  units = tradeUnits(symbol)
 ): BotTrade {
   const entryPrice = paperExecutablePrice(decision.action, marketData);
   const direction = decision.action === "SELL" ? -1 : 1;
-  const plan = fixedPipPlan(symbol, entryPrice, decision.action);
+  const plan = fixedPipPlan(symbol, entryPrice, decision.action, units);
   const currentPrice = paperExitPrice(decision.action, marketData);
-  const pnl = calculatePaperPnl(symbol, decision.action, entryPrice, currentPrice);
+  const pnl = calculatePaperPnl(symbol, decision.action, entryPrice, currentPrice, units);
   const multiplier = pipMultiplier(symbol);
   const pnlPips = direction * (currentPrice - entryPrice) * multiplier;
 
@@ -697,10 +697,10 @@ function buildTrade(
     openedAt: new Date().toISOString(),
     setupType: decision.setupType,
     confidence: decision.confidence,
-    reasoning: `${decision.reasoning}. Paper trading only, units ${tradeUnits(symbol)}, SL ${plan.riskPips} pip, TP ${plan.rewardPips} pip; P&L espresso nella valuta quotata e risultato normalizzato in R.`,
+    reasoning: `${decision.reasoning}. Paper trading only, units ${units}, SL ${plan.riskPips} pip, TP ${plan.rewardPips} pip; P&L espresso nella valuta quotata e risultato normalizzato in R.`,
     status: "OPEN",
     source: "PAPER",
-    units: tradeUnits(symbol),
+    units,
     pnlCurrency: quoteCurrency(symbol),
     verificationStatus: "PAPER_RECORDED",
     strategyVariant: "MAIN",
@@ -1313,21 +1313,24 @@ function buildShadowTrade(
   lane: PairedSignalSnapshot["main"],
   marketData: MarketData,
   pairedSignal: PairedSignalSnapshot,
-  pairedWithTradeId: string
+  pairedTrade: Pick<BotTrade, "id" | "units">
 ): BotTrade {
+  const units = pairedTrade.units;
+  if (!Number.isFinite(units) || units <= 0) throw new Error("PAPER_SHADOW_PAIRED_UNITS_INVALID");
   const decision: TradingDecision = {
     action: lane.action,
     confidence: lane.confidence,
     reasoning: lane.reasoning,
     setupType: lane.setupType
   };
-  const trade = buildTrade(symbol, decision, marketData, pairedSignal);
+  const trade = buildTrade(symbol, decision, marketData, pairedSignal, units);
   const protection = laneProtectionPlan(
     symbol,
     trade.entryPrice,
     trade.side,
     lane.stopLossPrice,
-    lane.takeProfitPrice
+    lane.takeProfitPrice,
+    units
   );
   if (!protection) {
     throw new Error("PAPER_SHADOW_PROTECTIVE_LEVELS_INVALID");
@@ -1347,7 +1350,7 @@ function buildShadowTrade(
     setupType: lane.setupType,
     reasoning: `${lane.reasoning}. PAPER SHADOW: nessun ordine OANDA, livelli protettivi della corsia preservati; SL ${protection.riskPips.toFixed(2)} pip / TP ${protection.rewardPips.toFixed(2)} pip inclusivo dello spread.`,
     verificationStatus: "NOT_VERIFIED",
-    pairedWithTradeId
+    pairedWithTradeId: pairedTrade.id
   };
 }
 
@@ -1370,7 +1373,7 @@ function closeShadowTradeAtMarket(index: number, marketData: MarketData, reason:
     ...trade,
     status: "CLOSED",
     currentPrice: exitPrice,
-    pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, exitPrice),
+    pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, exitPrice, trade.units),
     pnlPips,
     pnlR: normalizedR(pnlPips, trade.riskPips),
     closedAt: new Date().toISOString(),
@@ -1386,7 +1389,7 @@ function openPairedShadowTrade(
   pair: PairedSignalSnapshot,
   marketData: MarketData,
   cycle: { shadowOpened: number },
-  pairedWithTradeId: string
+  pairedTrade: BotTrade
 ) {
   if (liveModeConfigured() && !liveExecutionActive()) return;
   const lane = shadowLaneForPair(pair);
@@ -1400,11 +1403,11 @@ function openPairedShadowTrade(
   if (existingIndex >= 0) closeShadowTradeAtMarket(existingIndex, marketData, "PAIR CLOSED");
   if (cycle.shadowOpened >= MAX_NEW_TRADES_PER_CYCLE || botState.shadowOpenTrades.length >= MAX_OPEN_POSITIONS) return;
 
-  const shadow = buildShadowTrade(symbol, lane, marketData, pair, pairedWithTradeId);
+  const shadow = buildShadowTrade(symbol, lane, marketData, pair, pairedTrade);
   botState.shadowOpenTrades = [shadow, ...botState.shadowOpenTrades].slice(0, MAX_OPEN_POSITIONS);
   botState.shadowTradeCount += 1;
   cycle.shadowOpened += 1;
-  pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} paired with ${pairedWithTradeId} | same signal ${pair.pairId} | no OANDA order`);
+  pushLog(`[${symbol}] ${lane.variant} PAPER SHADOW ${lane.action} paired with ${pairedTrade.id} | same signal ${pair.pairId} | ${shadow.units} units | no OANDA order`);
 }
 
 async function closeVerifiedOandaTrade(
@@ -1925,7 +1928,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
             pairedSignal,
             enrichedMarketData,
             cycle,
-            `OANDA-${trade.oandaTradeId}`
+            trade
           );
           pushLog(`[${symbol}] OANDA ${config.LIVE_EXECUTION_VARIANT} OPEN VERIFIED | ${trade.side} ${trade.units} | trade ID ${trade.oandaTradeId}`);
         } else {
@@ -1944,7 +1947,7 @@ async function scanSymbol(symbol: string, cycle: { opened: number; shadowOpened:
           (botState.dailyTradeCountBySymbol[normalizedSymbol] || 0) + 1;
         cycle.opened += 1;
         botState.openTrades = [trade, ...botState.openTrades].slice(0, MAX_OPEN_POSITIONS);
-        openPairedShadowTrade(symbol, pairedSignal, enrichedMarketData, cycle, trade.id);
+        openPairedShadowTrade(symbol, pairedSignal, enrichedMarketData, cycle, trade);
         pushLog(
           `[${symbol}] PAPER ${rankedDecision.action} | setup score ${rankedDecision.confidence}/100 | ${rankedDecision.reasoning}`
         );
@@ -2038,7 +2041,7 @@ async function monitorShadowTrades() {
       ...trade,
       currentPrice,
       priceTime: quote.time,
-      pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, currentPrice),
+      pnl: calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, currentPrice, trade.units),
       pnlPips: trade.side === "BUY"
         ? (currentPrice - trade.entryPrice) * multiplier
         : (trade.entryPrice - currentPrice) * multiplier
@@ -2105,7 +2108,7 @@ async function monitorTrades() {
           : currentPrice >= trade.stopLoss
         : false;
       const fillPrice = currentPrice;
-      const pnl = calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, fillPrice);
+      const pnl = calculatePaperPnl(trade.symbol, trade.side, trade.entryPrice, fillPrice, trade.units);
 
       const updatedTrade: BotTrade = {
         ...trade,
@@ -2235,6 +2238,8 @@ export function stopAutonomousBot() {
 }
 
 export const autonomousTestUtils = {
+  buildShadowTrade,
+  calculatePaperPnl,
   parseGemmoClientTag,
   isVerifiedRohatoOandaTrade,
   hasUnverifiedOandaExposure,

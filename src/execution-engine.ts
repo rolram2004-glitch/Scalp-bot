@@ -1,4 +1,5 @@
 export type OrderSide = "BUY" | "SELL";
+export const CASH_PROTECTION_VERSION = "TP_SL_SPREAD_V1";
 
 export interface VerifiedOrderRequest {
   oanda: any;
@@ -47,8 +48,11 @@ const PRACTICE_CASH_MAX_UNITS = 1000;
 const PRACTICE_CASH_CURRENCY = "CHF";
 // A stop loss that sits inside normal bid/ask noise can close the trade before
 // price moves in the signal's direction. Require the stop to be at least two
-// current spreads from the executable quote. A deliberately close final take
-// profit is allowed. The provisional TP submitted with the market order is at
+// current spreads from the executable quote. The final TP must meet the same
+// bound: a wide SL must not authorize a spread larger than the small TP. Size
+// is reduced, never increased, while the configured CHF targets stay fixed.
+// This controls entry cost; it is not evidence of a profitable strategy.
+// The provisional TP submitted with the market order is at
 // least as wide as the SL cash target so normal fill slippage cannot move it to
 // the wrong side; immediately after the verified fill it is replaced with the
 // exact configured TP calculated from the real fill price.
@@ -275,12 +279,19 @@ function adaptivePracticeCashUnits(
   unitsPrecision: number,
   riskTarget: number,
   lossFactor: number,
-  spread: number
+  spread: number,
+  rewardTarget: number,
+  gainFactor: number
 ) {
-  if (!Number.isFinite(spread) || spread < 0 || !finitePositive(lossFactor)) return null;
+  if (!Number.isFinite(spread) || spread < 0 ||
+      !finitePositive(lossFactor) || !finitePositive(gainFactor) ||
+      !finitePositive(riskTarget) || !finitePositive(rewardTarget)) return null;
   if (spread === 0) return roundedUnits(requestedUnits, unitsPrecision);
-  const maximumSafeUnits = riskTarget /
-    (spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE * lossFactor);
+  // Use the larger conversion factor for the TP budget so both its price
+  // distance and the spread's estimated loss in CHF satisfy the bound.
+  const quoteBudget = Math.min(riskTarget / lossFactor, rewardTarget / Math.max(lossFactor, gainFactor));
+  const maximumSafeUnits = quoteBudget /
+    (spread * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE);
   const units = roundedUnitsDown(Math.min(requestedUnits, maximumSafeUnits), unitsPrecision);
   return units >= minimumTradeSize ? units : null;
 }
@@ -472,7 +483,9 @@ export async function executeVerifiedMarketOrder(
         unitsPrecision,
         cashContract.risk,
         factors.loss,
-        executionSpread as number
+        executionSpread as number,
+        cashContract.reward,
+        factors.gain
       );
       if (!adaptiveUnits) {
         return { status: "SKIPPED", reason: "ACCOUNT_CASH_SPREAD_TOO_WIDE_FOR_MINIMUM_UNITS" };
@@ -493,6 +506,18 @@ export async function executeVerifiedMarketOrder(
     let stopLossNumber: number;
     let takeProfitNumber: number;
     if (accountCashProtection) {
+      const finalQuotedPlan = accountCashProtectionPlan(
+        entry, side, units, factors, displayPrecision, cashContract.risk, cashContract.reward
+      );
+      if (!finalQuotedPlan) {
+        return { status: "REJECTED", reason: "PROTECTIVE_LEVELS_INVALID_AFTER_ROUNDING" };
+      }
+      const minimumDistance = (executionSpread as number) * ACCOUNT_CASH_MIN_PROTECTION_SPREAD_MULTIPLE;
+      const priceHalfTick = 0.5 * 10 ** (-displayPrecision);
+      if (Math.min(Math.abs(entry - finalQuotedPlan.stopLossNumber),
+        Math.abs(entry - finalQuotedPlan.takeProfitNumber)) + priceHalfTick < minimumDistance) {
+        return { status: "SKIPPED", reason: "ACCOUNT_CASH_PROTECTION_TOO_CLOSE_TO_SPREAD" };
+      }
       const provisionalRewardTarget = Math.max(cashContract.reward, cashContract.risk);
       const initialCashPlan = accountCashProtectionPlan(
         entry,

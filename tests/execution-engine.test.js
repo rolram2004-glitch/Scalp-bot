@@ -664,7 +664,7 @@ for (const cashCase of fixedCashCases) {
 
 for (const side of ["BUY", "SELL"]) {
   test(`ACCOUNT_CASH ${side} reduces units when needed and preserves TP 0.33 / SL 2.00 CHF`, async () => {
-    const expectedUnits = 277;
+    const expectedUnits = 45;
     const signedUnits = side === "BUY" ? String(expectedUnits) : String(-expectedUnits);
     const fillPrice = side === "BUY" ? "1.10400" : "1.10000";
     const { oanda, calls } = buildOandaMock({
@@ -708,12 +708,56 @@ for (const side of ["BUY", "SELL"]) {
     assert.equal(calls.lastOrder.units, expectedUnits);
     assert.equal(result.trade.units, expectedUnits);
     assert.equal(calls.replaceTradeDependentOrders, 1);
+    assert.ok(0.004 * expectedUnits * 0.9 <= 0.33 / 2);
     assert.ok(Math.abs(result.trade.riskAmount - 2) <= cashRoundingTolerance(5, expectedUnits, 0.9));
     assert.ok(Math.abs(result.trade.rewardAmount - 0.33) <= cashRoundingTolerance(5, expectedUnits, 0.91));
   });
 }
 
-test("ACCOUNT_CASH skips only when even OANDA minimum units cannot keep the stop outside spread", async () => {
+for (const strategyVariant of ["MAIN", "INVERSE"]) {
+  for (const side of ["BUY", "SELL"]) {
+    test(`${strategyVariant} ${side} reduces a spread larger than TP even when SL alone would allow 1000 units`, async () => {
+      const expectedUnits = 302;
+      const entry = side === "BUY" ? "1.10060" : "1.10000";
+      const { oanda, calls } = buildOandaMock({
+        pricing: {
+          price: {
+            instrument: "EUR_USD", status: "tradeable", tradeable: true,
+            time: new Date().toISOString(),
+            asks: [{ price: "1.10060" }], bids: [{ price: "1.10000" }],
+            quoteHomeConversionFactors: { negativeUnits: "0.9", positiveUnits: "0.91" }
+          },
+          homeConversions: []
+        },
+        verifiedTrade: {
+          id: "200", state: "OPEN", instrument: "EUR_USD",
+          currentUnits: String(side === "BUY" ? expectedUnits : -expectedUnits),
+          price: entry, openTime: new Date().toISOString()
+        }
+      });
+      const result = await executeVerifiedMarketOrder(accountCashRequest(oanda, { side, strategyVariant }));
+      assert.equal(result.status, "OPENED");
+      assert.equal(calls.lastOrder.side, side);
+      assert.equal(result.trade.strategyVariant, strategyVariant);
+      assert.equal(result.trade.units, expectedUnits);
+      assert.equal(calls.lastOrder.units, expectedUnits);
+      assert.ok(0.0006 * 1000 * 0.9 > 0.33); // old size costs more than the TP
+      assert.ok(0.0006 * expectedUnits * 0.9 <= 0.33 / 2);
+      assert.ok(Math.abs(result.trade.riskAmount - 2) <= cashRoundingTolerance(5, expectedUnits, 0.9));
+      assert.ok(Math.abs(result.trade.rewardAmount - 0.33) <= cashRoundingTolerance(5, expectedUnits, 0.91));
+      assert.equal(calls.closeTrade, 0);
+    });
+  }
+}
+
+test("adaptive size respects the loss conversion when it exceeds the gain conversion", () => {
+  const units = executionTestUtils.adaptivePracticeCashUnits(1000, 1, 0, 2, 1.1, 0.001, 0.33, 0.9);
+  assert.ok(units <= 150);
+  assert.ok(0.001 * units * 1.1 <= 0.33 / 2);
+  assert.equal(executionTestUtils.adaptivePracticeCashUnits(1000, 200, 0, 2, 1.1, 0.001, 0.33, 0.9), null);
+});
+
+test("ACCOUNT_CASH skips when OANDA minimum units cannot protect both cash targets from spread", async () => {
   const { oanda, calls } = buildOandaMock({
     instrument: {
       name: "EUR_USD",

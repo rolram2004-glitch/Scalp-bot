@@ -15,7 +15,7 @@ const {
 const oanda = require("./src/oanda");
 const config = require("./src/config");
 const { loadMultiTimeframeIntelligence } = require("./src/multi-timeframe");
-const { executeVerifiedMarketOrder } = require("./src/execution-engine");
+const { executeVerifiedMarketOrder, CASH_PROTECTION_VERSION } = require("./src/execution-engine");
 
 const intelligenceCache = new Map();
 
@@ -80,6 +80,9 @@ function createApp() {
       service: "sel-scalp-bot-rohato-111",
       tradingMode: config.TRADING_MODE,
       oandaEnvironment: config.OANDA_ENVIRONMENT,
+      cashProtectionVersion: CASH_PROTECTION_VERSION,
+      sourceCommit: /^[a-f0-9]{40}$/i.test(process.env.RAILWAY_GIT_COMMIT_SHA || "")
+        ? process.env.RAILWAY_GIT_COMMIT_SHA : null,
       timestamp: new Date().toISOString(),
       uptime: process.uptime()
     });
