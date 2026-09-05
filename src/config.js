@@ -13,10 +13,10 @@ const liveExecutionVariantRaw = String(process.env.LIVE_EXECUTION_VARIANT || "")
 const liveExecutionVariantValid = liveExecutionVariantRaw === "MAIN" || liveExecutionVariantRaw === "INVERSE";
 // Direction and cash protection are independent. Both lanes use the requested
 // Practice contract; runtime-bootstrap selects INVERSE so the final indicator
-// signal is flipped exactly once. The active cash exits are SL 2.00 and
-// TP 0.33 in the verified CHF account.
-const defaultAccountCashRisk = 2;
-const defaultAccountCashReward = 0.33;
+// signal is flipped exactly once. The active cash exits are SL 0.20 and
+// TP 0.60 in the verified CHF account.
+const defaultAccountCashRisk = 0.2;
+const defaultAccountCashReward = 0.6;
 const requestedAiProvider = String(process.env.AI_PROVIDER || "DISABLED").trim().toUpperCase();
 const aiProvider = ["GEMINI", "OPENAI"].includes(requestedAiProvider)
   ? requestedAiProvider

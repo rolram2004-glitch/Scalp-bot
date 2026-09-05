@@ -43,7 +43,7 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
   marker segnali e layout responsive. Nessun livello sintetico.
 - Il cockpit deve separare chiaramente autenticazione account, feed prezzi, esecuzione e sincronizzazione.
 - Il Setup deve mostrare safety gate, copertura scansione, matrice dei 16 strumenti, confronto MAIN/INVERSE sullo stesso snapshot, ricevute OANDA verificate, orfani, shadow ledger, errori e diagnostica.
-- La pagina `VS` deve mantenere MAIN e MIRROR (INVERSE) in corsie separate. MIRROR e la corsia operativa, applica TP nominale `+0,33 CHF` e SL nominale `-2,00 CHF` e inverte una sola volta il segnale finale proveniente da qualunque setup o indicatore forex (`BUY→SELL`, `SELL→BUY`); MAIN conserva la direzione originale come PAPER SHADOW. Ogni PAPER SHADOW deve nascere soltanto dopo l'apertura verificata della corsia OANDA corrispondente. Il confronto primario usa l'unita normalizzata `R`; CHF, JPY, USD e altre valute restano esposte separatamente e non vengono mai sommate.
+- La pagina `VS` deve mantenere MAIN e MIRROR (INVERSE) in corsie separate. MIRROR e la corsia operativa, applica TP nominale `+0,60 CHF` e SL nominale `-0,20 CHF` e inverte una sola volta il segnale finale proveniente da qualunque setup o indicatore forex (`BUY→SELL`, `SELL→BUY`); MAIN conserva la direzione originale come PAPER SHADOW. Ogni PAPER SHADOW deve nascere soltanto dopo l'apertura verificata della corsia OANDA corrispondente. Il confronto primario usa l'unita normalizzata `R`; CHF, JPY, USD e altre valute restano esposte separatamente e non vengono mai sommate.
 - Ogni badge deve degradare a warning/error quando i dati sono vecchi o assenti; nessun verde basato su supposizioni.
 - L'identita visiva e `SEL SCALP BOT — $Rohato$🤖111`: cockpit professionale White Glass, con verde come accento e superfici bianche semitrasparenti. MAIN resta blu e MIRROR viola; verde e rosso identificano risultati positivi/negativi, non le corsie. Proporzioni uniformi, nessuna sovrapposizione, responsive desktop/tablet/telefono e target touch ampi. Se un pannello non entra deve andare in una pagina o sezione distinta, non essere schiacciato.
 - La dashboard principale include soltanto metriche derivabili da dati reali: P&L, win rate, trade oggi, posizioni, balance, equity/NAV, profit factor, drawdown, rischio, ultimo segnale e timestamp; quando non calcolabili mostra N/A.
@@ -63,7 +63,7 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
   o CHoCH corrente, MACD concorde e volume ratio almeno 0.95. Killzone o FVG
   storici da soli non sono trigger; RSI sopra 72 per BUY o sotto 28 per SELL blocca l'inseguimento.
 - Forex MAIN conserva il proprio piano di analisi. La MIRROR operativa usa
-  la direzione opposta (`BUY→SELL`, `SELL→BUY`), TP nominale `+0,33 CHF` e SL nominale `-2,00 CHF`, calcolati
+  la direzione opposta (`BUY→SELL`, `SELL→BUY`), TP nominale `+0,60 CHF` e SL nominale `-0,20 CHF`, calcolati
   nella valuta conto sul prezzo OANDA eseguibile. Il cooldown resta di
   10 minuti dopo la chiusura della stessa coppia. Gli importi nella valuta conto
   vengono ricalcolati da size, pip location e conversioni OANDA, non etichettati arbitrariamente.
@@ -74,9 +74,15 @@ Un test ordine OANDA_DEMO deve essere una funzione amministrativa separata, most
 - Il gemello di confronto non si apre su segnali grezzi o su trade della corsia operativa bloccati dai gate. Viene registrato uno-a-uno soltanto dopo un ingresso effettivo e condivide lo stesso Signal ID.
 - Non presentare il punteggio euristico come probabilita: usare `SETUP SCORE`, derivato in modo ripetibile da trend, momentum, struttura, liquidita, volatilita, spread, sessione, rischio e conferma AI.
 
+### Ripristino richiesto (5 settembre 2026)
+
+- Per i nuovi ingressi OANDA Practice ripristinare TP nominale +0,60 CHF e SL nominale -0,20 CHF, come nella versione `f7fa284`.
+- Conservare INVERSE: invertire una sola volta il segnale finale BUY/SELL, senza scambiare nuovamente gli importi di TP e SL. Conservare le correzioni spread e PAPER SHADOW del 4 settembre.
+- Il ripristino riguarda i nuovi ingressi; non modifica gli ordini protettivi delle posizioni gia aperte ne i risultati storici.
+
 ### Correzione spread/TP e confronto (4 settembre 2026)
 
-- La size Practice deve rispettare entrambi i target: SL e TP distano almeno due spread dalla quotazione eseguibile, salvo mezzo tick di arrotondamento. Usare le conversioni OANDA e ridurre le unita, mantenendo TP 0,33 CHF e SL 2 CHF. Se la size minima non lo consente, saltare l'ingresso.
+- La size Practice deve rispettare entrambi i target: SL e TP distano almeno due spread dalla quotazione eseguibile, salvo mezzo tick di arrotondamento. Usare le conversioni OANDA e ridurre le unita, mantenendo i target richiesti: TP 0,60 CHF e SL 0,20 CHF. Se la size minima non lo consente, saltare l'ingresso.
 - La stima del costo spread all'ingresso non deve superare meta del TP nominale. Non comprende commissioni, finanziamento, spread futuro o slippage e non dimostra redditivita.
 - Il PAPER SHADOW usa le stesse unita del trade OANDA verificato anche dopo ridimensionamento; rischio, P&L corrente e P&L di chiusura usano le unita del record, mai il default globale.
 - Il confronto shadow resta una simulazione su quotazioni campionate: non costituisce una replica tick-per-tick degli ordini broker e non puo certificare che ogni stop storico sarebbe diventato un TP.

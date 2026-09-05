@@ -28,6 +28,9 @@ test('health endpoint returns ok', async () => {
   assert.equal(response.statusCode, 200);
   assert.match(response.body, /"status":"ok"/);
   assert.equal(JSON.parse(response.body).cashProtectionVersion, 'TP_SL_SPREAD_V1');
+  assert.deepEqual(JSON.parse(response.body).cashTargets, {
+    currency: 'CHF', takeProfit: 0.6, stopLoss: 0.2
+  });
 
   await new Promise((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
 });
