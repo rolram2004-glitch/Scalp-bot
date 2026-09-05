@@ -81,6 +81,12 @@ function createApp() {
       tradingMode: config.TRADING_MODE,
       oandaEnvironment: config.OANDA_ENVIRONMENT,
       cashProtectionVersion: CASH_PROTECTION_VERSION,
+      executionVariant: config.LIVE_EXECUTION_VARIANT,
+      cashTargets: {
+        currency: config.ACCOUNT_TARGET_CURRENCY,
+        takeProfit: config.NORMAL_TAKE_PROFIT_ACCOUNT,
+        stopLoss: config.NORMAL_STOP_LOSS_ACCOUNT
+      },
       sourceCommit: /^[a-f0-9]{40}$/i.test(process.env.RAILWAY_GIT_COMMIT_SHA || "")
         ? process.env.RAILWAY_GIT_COMMIT_SHA : null,
       timestamp: new Date().toISOString(),
